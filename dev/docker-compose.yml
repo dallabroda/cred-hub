@@ -1,0 +1,69 @@
+# Cred Hub local para testar o app: docker compose -f dev/docker-compose.yml up -d --build
+# Base: imagem do Frappe CRM compilada como no servidor (ver README, seção Desenvolvimento).
+name: cred-hub-dev
+
+x-app: &app
+  build:
+    context: ..
+    dockerfile: dev/Dockerfile
+  image: credtech/credhub:dev
+  volumes:
+    - sites:/home/frappe/frappe-bench/sites
+  depends_on:
+    configurator:
+      condition: service_completed_successfully
+
+services:
+  db:
+    image: mariadb:11.8
+    command: [--character-set-server=utf8mb4, --collation-server=utf8mb4_unicode_ci, --skip-character-set-client-handshake]
+    environment:
+      MYSQL_ROOT_PASSWORD: dev
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      retries: 20
+  redis-cache:
+    image: redis:8.6-alpine
+  redis-queue:
+    image: redis:8.6-alpine
+  configurator:
+    build:
+      context: ..
+      dockerfile: dev/Dockerfile
+    image: credtech/credhub:dev
+    entrypoint: ["bash", "-c"]
+    command:
+      - >
+        ls -1 apps > sites/apps.txt;
+        bench set-config -g db_host db;
+        bench set-config -gp db_port 3306;
+        bench set-config -g redis_cache redis://redis-cache:6379;
+        bench set-config -g redis_queue redis://redis-queue:6379;
+        bench set-config -g redis_socketio redis://redis-queue:6379;
+        bench set-config -gp socketio_port 9000;
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+    depends_on:
+      db:
+        condition: service_healthy
+  backend:
+    <<: *app
+  worker:
+    <<: *app
+    command: bench worker --queue short,default,long
+  websocket:
+    <<: *app
+    command: ["node", "/home/frappe/frappe-bench/apps/frappe/socketio.js"]
+  frontend:
+    <<: *app
+    command: ["nginx-entrypoint.sh"]
+    environment:
+      BACKEND: backend:8000
+      SOCKETIO: websocket:9000
+      FRAPPE_SITE_NAME_HEADER: dev.localhost
+    ports:
+      - "8090:8080"
+
+volumes:
+  sites:
