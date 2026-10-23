@@ -10,7 +10,7 @@ Código aberto sob **AGPL-3.0**, a mesma licença do Frappe CRM, que exige publi
 
 Ao salvar uma **Organização** ou um **Lead** com CNPJ:
 
-1. O CNPJ é formatado (`00.000.000/0000-00`). Se os dígitos verificadores não conferirem, o usuário recebe um aviso e nada é consultado.
+1. O CNPJ é formatado (`00.000.000/0000-00`). Se os dígitos verificadores não conferirem, o usuário recebe um aviso e nada é consultado; o salvamento não é bloqueado (decisão de 24/10/2026).
 2. Em segundo plano, o CNPJ é consultado na [OpenCNPJ](https://opencnpj.org), com reserva na [BrasilAPI](https://brasilapi.com.br).
 3. Os campos da seção **Dados da Receita (CNPJ)** são preenchidos: razão social, nome fantasia, situação cadastral, data de abertura, CNAE principal, natureza jurídica, porte, capital social, telefone, e-mail e endereço.
 4. Na Organização, cada sócio (QSA) vira um **Contato** ligado a ela, sem duplicar.

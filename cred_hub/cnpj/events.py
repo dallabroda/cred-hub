@@ -11,7 +11,7 @@ def validate(doc, method=None):
 		return
 	doc.cnpj = format_cnpj(doc.cnpj)
 	if not is_valid_cnpj(doc.cnpj) and doc.has_value_changed("cnpj"):
-		# Só avisa: bloquear o salvamento é decisão de negócio ainda não tomada
+		# Decisão do dono (24/10/2026): CNPJ inválido só gera aviso, não bloqueia o salvamento
 		frappe.msgprint(
 			_("O CNPJ {0} parece inválido (dígitos verificadores não conferem). Os dados da Receita não serão buscados.").format(doc.cnpj),
 			indicator="orange",
