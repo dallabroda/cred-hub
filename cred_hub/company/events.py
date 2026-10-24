@@ -20,11 +20,11 @@ def on_update(doc, method=None):
 
 
 def _on_update(doc):
-	if doc.get("company_checked_at") or not company_name(doc):
+	if doc.get("company_checked_on") or not company_name(doc):
 		return
 	# Com CNPJ válido, espera a Receita responder (traz porte/CNAE para o piso SEBRAE); o job do
 	# CNPJ salva o documento de novo e este gatilho dispara outra vez.
-	if is_valid_cnpj(doc.get("cnpj") or "") and not doc.get("cnpj_checked_at"):
+	if is_valid_cnpj(doc.get("cnpj") or "") and not doc.get("cnpj_checked_on"):
 		return
 	enqueue(doc.doctype, doc.name)
 

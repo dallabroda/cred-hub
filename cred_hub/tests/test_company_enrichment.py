@@ -21,7 +21,7 @@ class TestCompanyEnrichment(IntegrationTestCase):
 
 	def test_fields_installed(self):
 		for dt in ("CRM Organization", "CRM Lead"):
-			for field in ("linkedin", "employee_count", "employee_range", "employee_source", "company_checked_at"):
+			for field in ("linkedin", "employee_count", "employee_range", "employee_source", "company_checked_on"):
 				self.assertTrue(frappe.get_meta(dt).has_field(field), (dt, field))
 
 	@patch.object(discovery, "discover", return_value=FOUND)
@@ -32,7 +32,7 @@ class TestCompanyEnrichment(IntegrationTestCase):
 		self.assertEqual(org.website, "https://site-do-usuario.com.br")
 		self.assertEqual(org.linkedin, FOUND["linkedin"])
 		self.assertEqual((org.employee_range, org.employee_source, org.no_of_employees), ("51-200", "LinkedIn", "51-200"))
-		self.assertTrue(org.company_checked_at)
+		self.assertTrue(org.company_checked_on)
 		# Porte/CNAE/MEI da v0.2 chegam no formato que o piso SEBRAE entende
 		self.assertEqual(discover.call_args.kwargs, {"porte": "DEMAIS", "cnae": "6201501", "opcao_mei": False})
 		# Só roda uma vez por registro
@@ -43,4 +43,4 @@ class TestCompanyEnrichment(IntegrationTestCase):
 	def test_failure_never_blocks(self, _discover):
 		org = self._org()
 		enrich.enrich_company("CRM Organization", org.name)
-		self.assertFalse(frappe.db.get_value("CRM Organization", org.name, "company_checked_at"))
+		self.assertFalse(frappe.db.get_value("CRM Organization", org.name, "company_checked_on"))

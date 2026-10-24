@@ -5,20 +5,28 @@ import json
 import frappe
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
-from cred_hub.cnpj.fields import DOCTYPES, SIDE_PANEL_FIELDS, custom_fields
+from cred_hub.cnpj.fields import CHECKED_DATE_FIELDS, DETAILS_ADDRESS_FIELDS, DOCTYPES, SIDE_PANEL_FIELDS, custom_fields
 from cred_hub.cnpj.sectors import SECTORS
 from cred_hub.company.fields import COMPANY_SECTION, COMPANY_SECTION_LABEL, COMPANY_SIDE_PANEL_FIELDS, company_custom_fields
 
 CNPJ_SECTION = "cred_hub_cnpj_section"
 CNPJ_SECTION_LABEL = "Company Registry (CNPJ)"
+# Território (região de vendas do Frappe CRM) sai das telas: a CredTech não usa (pedido do dono, 24/10/2026)
+HIDDEN_FIELDS = ("territory",)
+TERRITORY_DOCTYPES = ("CRM Lead", "CRM Deal", "CRM Organization")
 
 
 def after_install():
-	create_custom_fields({dt: custom_fields(insert_after="facebook") + _missing(dt, company_custom_fields(insert_after="cnpj_checked_at")) for dt in DOCTYPES}, update=True)
+	create_custom_fields({dt: custom_fields(insert_after="facebook") + _missing(dt, company_custom_fields(insert_after="cnpj_checked_on")) for dt in DOCTYPES}, update=True)
+	migrate_checked_dates()
 	add_industries()
 	for doctype in DOCTYPES:
 		add_side_panel_section(doctype)
 		add_side_panel_section(doctype, COMPANY_SECTION, COMPANY_SECTION_LABEL, COMPANY_SIDE_PANEL_FIELDS)
+		add_address_to_details(doctype)
+	for doctype in TERRITORY_DOCTYPES:
+		for kind in ("Side Panel", "Quick Entry", "Data Fields"):
+			remove_from_layout(f"{doctype}-{kind}", HIDDEN_FIELDS)
 	add_quick_entry_cnpj("CRM Organization", after="organization_name")
 	frappe.db.commit()
 
@@ -28,6 +36,78 @@ def _layout(name):
 		return None, None
 	doc = frappe.get_doc("CRM Fields Layout", name)
 	return doc, json.loads(doc.layout or "[]")
+
+
+def migrate_checked_dates():
+	"""Datas de consulta passaram de data e hora para só a data (o Frappe não troca o tipo de um campo
+	existente): copia o dia dos campos antigos para os novos e remove os antigos."""
+	for doctype in DOCTYPES:
+		for old, new in CHECKED_DATE_FIELDS.items():
+			name = f"{doctype}-{old}"
+			if not frappe.db.exists("Custom Field", name):
+				continue
+			if frappe.db.has_column(doctype, old):
+				table = f"tab{doctype}"
+				frappe.db.sql(f"update `{table}` set `{new}` = date(`{old}`) where `{new}` is null and `{old}` is not null")
+			frappe.delete_doc("Custom Field", name, ignore_permissions=True)
+
+
+def _field_name(field):
+	return field.get("fieldname") if isinstance(field, dict) else field
+
+
+def _strip_fields(node, names) -> bool:
+	"""Tira os campos `names` de toda lista "fields" do layout (qualquer formato: seções, abas)."""
+	changed = False
+	if isinstance(node, dict):
+		fields = node.get("fields")
+		if isinstance(fields, list):
+			kept = [f for f in fields if _field_name(f) not in names]
+			if len(kept) != len(fields):
+				node["fields"] = kept
+				changed = True
+		for value in node.values():
+			if isinstance(value, list | dict):
+				changed = _strip_fields(value, names) or changed
+	elif isinstance(node, list):
+		for item in node:
+			changed = _strip_fields(item, names) or changed
+	return changed
+
+
+def remove_from_layout(name, names):
+	doc, layout = _layout(name)
+	if doc is None:
+		return
+	changed = _strip_fields(layout, set(names))
+	# Seção própria do campo (ex.: "territory_section" do cadastro rápido) que ficou vazia sai junto
+	empty = {f"{n}_section" for n in names}
+	kept = [s for s in layout if not (s.get("name") in empty and not any(c.get("fields") for c in s.get("columns", [])))]
+	if changed or len(kept) != len(layout):
+		doc.layout = json.dumps(kept)
+		doc.save(ignore_permissions=True)
+
+
+def add_address_to_details(doctype):
+	"""UF, cidade e bairro na seção Detalhes do painel lateral, logo depois do Endereço (Organização) ou do
+	nº de funcionários (Lead, que não tem Endereço)."""
+	doc, layout = _layout(f"{doctype}-Side Panel")
+	if doc is None:
+		return
+	details = next((s for s in layout if s.get("name") == "details_section"), None)
+	if not details or not details.get("columns"):
+		return
+	fields = details["columns"][0].setdefault("fields", [])
+	anchor = next((a for a in ("address", "no_of_employees") if a in fields), None)
+	position = fields.index(anchor) + 1 if anchor else len(fields)
+	if fields[position : position + len(DETAILS_ADDRESS_FIELDS)] == DETAILS_ADDRESS_FIELDS:
+		return
+	_strip_fields(layout, set(DETAILS_ADDRESS_FIELDS))
+	fields = details["columns"][0]["fields"]
+	position = fields.index(anchor) + 1 if anchor else len(fields)
+	fields[position:position] = DETAILS_ADDRESS_FIELDS
+	doc.layout = json.dumps(layout)
+	doc.save(ignore_permissions=True)
 
 
 def _missing(doctype, fields):

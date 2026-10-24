@@ -12,7 +12,7 @@ Ao salvar uma **Organização** ou um **Lead** com CNPJ:
 
 1. O CNPJ é formatado (`00.000.000/0000-00`). Se os dígitos verificadores não conferirem, o usuário recebe um aviso e nada é consultado; o salvamento não é bloqueado (decisão de 24/10/2026).
 2. Em segundo plano, o CNPJ é consultado na [OpenCNPJ](https://opencnpj.org), com reserva na [BrasilAPI](https://brasilapi.com.br).
-3. Os campos da seção **Dados da Receita (CNPJ)** são preenchidos: razão social, nome fantasia, situação, CNAE principal, natureza jurídica, **porte resumido** (ME, EPP, Demais, Não informado), **É MEI?** (Sim/Não), **início da atividade**, **tempo de mercado em anos** (recalculado todo dia), capital social, **UF, cidade, bairro**, telefone e e-mail da Receita.
+3. Os campos da seção **Dados da Receita (CNPJ)** são preenchidos: razão social, nome fantasia, situação, CNAE principal, natureza jurídica, **porte resumido** (ME, EPP, Demais, Não informado), **É MEI?** (Sim/Não), **início da atividade**, **tempo de mercado em anos** (recalculado todo dia), capital social, telefone e e-mail da Receita e a **data da consulta** (só o dia). **UF, cidade e bairro** também vêm da Receita, mas ficam na seção **Detalhes** (logo depois do Endereço, na Organização), não na seção da Receita (pedido do dono, 24/10/2026).
 4. Na Organização, o **endereço** vira um Endereço padrão do Frappe ligado a ela (aparece em Detalhes; um endereço escolhido à mão não é trocado), e o **setor de atuação** é definido pelo CNAE principal com a tabela de-para de `cred_hub/cnpj/sectors.py` (~60 setores, por divisão ou grupo do CNAE). No Lead, o setor também é preenchido.
 5. Na Organização, cada sócio (QSA) vira um **Contato** ligado a ela, sem duplicar.
 6. No Lead, o campo Organização é preenchido com o nome fantasia (ou a razão social) se estiver vazio.
@@ -23,6 +23,11 @@ Regras:
 - Os campos da Receita refletem o CNPJ informado: mudar o CNPJ consulta e preenche de novo.
 - Salvar sem mudar o CNPJ não consulta de novo, exceto se a última tentativa falhou por indisponibilidade das APIs.
 - CNPJ inexistente é marcado como consultado, para não repetir a cada salvamento.
+- As datas de consulta (CNPJ e presença digital) guardam só o dia; a v0.4 trocou os campos de data e hora (`*_checked_at`) por campos de data (`*_checked_on`), copiando o dia.
+
+### Telas
+
+- **Território** (região de vendas do Frappe CRM) não aparece em Lead, Negócio e Organização (painel, cadastro rápido e campos): a CredTech não usa (pedido do dono, 24/10/2026). O dado continua no banco.
 
 ### Presença digital (site, LinkedIn, funcionários)
 

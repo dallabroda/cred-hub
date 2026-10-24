@@ -4763,7 +4763,7 @@ msgstr "Cidade"
 msgid "State (UF)"
 msgstr "UF"
 
-msgid "CNPJ Checked At"
+msgid "CNPJ Checked On"
 msgstr "CNPJ consultado em"
 
 msgid "Other size"
@@ -4974,6 +4974,6 @@ msgstr "Funcionários (faixa/piso)"
 msgid "Employees Source"
 msgstr "Fonte dos funcionários"
 
-msgid "Digital Presence Checked At"
+msgid "Digital Presence Checked On"
 msgstr "Presença digital consultada em"
 

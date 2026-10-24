@@ -67,7 +67,7 @@ def custom_fields(insert_after: str) -> list[dict]:
 		{"fieldname": "neighborhood", "fieldtype": "Data", "label": "Neighborhood"},
 		{"fieldname": "city", "fieldtype": "Data", "label": "City"},
 		{"fieldname": "state", "fieldtype": "Data", "label": "State (UF)", "length": 2},
-		{"fieldname": "cnpj_checked_at", "fieldtype": "Datetime", "label": "CNPJ Checked At", "read_only": 1},
+		{"fieldname": "cnpj_checked_on", "fieldtype": "Date", "label": "CNPJ Checked On", "read_only": 1},
 	]
 	previous = insert_after
 	for field in fields:
@@ -76,7 +76,14 @@ def custom_fields(insert_after: str) -> list[dict]:
 	return fields
 
 
-# Ordem dos campos na seção do painel lateral do CRM (pedido do dono: UF, Cidade, Bairro, Porte, Início, Capital, MEI)
+# Campos antigos (Datetime) trocados por campos de data (o dono quer só o dia); migração em install.py
+CHECKED_DATE_FIELDS = {"cnpj_checked_at": "cnpj_checked_on", "company_checked_at": "company_checked_on"}
+
+# Endereço fica em Detalhes, não na seção da Receita (pedido do dono, 24/10/2026); na Organização logo
+# depois do Endereço completo
+DETAILS_ADDRESS_FIELDS = ["state", "city", "neighborhood"]
+
+# Ordem dos campos na seção do painel lateral do CRM
 SIDE_PANEL_FIELDS = [
 	"cnpj",
 	"legal_name",
@@ -89,10 +96,7 @@ SIDE_PANEL_FIELDS = [
 	"activity_start_date",
 	"years_in_business",
 	"share_capital",
-	"state",
-	"city",
-	"neighborhood",
 	"registry_phone",
 	"registry_email",
-	"cnpj_checked_at",
+	"cnpj_checked_on",
 ]

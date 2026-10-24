@@ -15,7 +15,7 @@ def company_custom_fields(insert_after: str) -> list[dict]:
 		{"fieldname": "employee_count", "fieldtype": "Int", "label": "Employees (count)"},
 		{"fieldname": "employee_range", "fieldtype": "Data", "label": "Employees (range/floor)"},
 		{"fieldname": "employee_source", "fieldtype": "Data", "label": "Employees Source", "read_only": 1},
-		{"fieldname": "company_checked_at", "fieldtype": "Datetime", "label": "Digital Presence Checked At", "read_only": 1},
+		{"fieldname": "company_checked_on", "fieldtype": "Date", "label": "Digital Presence Checked On", "read_only": 1},
 	]
 	previous = insert_after
 	for field in fields:
@@ -29,5 +29,5 @@ COMPANY_SIDE_PANEL_FIELDS = [
 	"employee_count",
 	"employee_range",
 	"employee_source",
-	"company_checked_at",
+	"company_checked_on",
 ]

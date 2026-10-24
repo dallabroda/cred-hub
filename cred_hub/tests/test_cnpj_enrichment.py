@@ -41,7 +41,7 @@ class TestCnpjEnrichment(IntegrationTestCase):
 		self.assertEqual((org.company_size, org.is_mei), ("Other size", "No"))
 		self.assertEqual(org.years_in_business, enrich.years_between("2010-05-20"))
 		self.assertEqual(org.industry, "Software Development")
-		self.assertTrue(org.cnpj_checked_at)
+		self.assertTrue(org.cnpj_checked_on)
 		address = frappe.get_doc("Address", org.address)
 		self.assertEqual((address.address_line1, address.address_line2), ("RUA DAS FLORES, 100", "SALA 2, CENTRO"))
 		self.assertEqual((address.city, address.state, address.pincode, address.country), ("FLORIANOPOLIS", "SC", "88010-000", "Brazil"))
@@ -82,13 +82,13 @@ class TestCnpjEnrichment(IntegrationTestCase):
 	def test_not_found_marks_consulted(self, _fetch):
 		org = self._org()
 		enrich.enrich_doc("CRM Organization", org.name, "11222333000181")
-		self.assertTrue(frappe.db.get_value("CRM Organization", org.name, "cnpj_checked_at"))
+		self.assertTrue(frappe.db.get_value("CRM Organization", org.name, "cnpj_checked_on"))
 
 	@patch.object(client, "fetch", side_effect=client.CnpjUnavailable("down"))
 	def test_unavailable_allows_retry(self, _fetch):
 		org = self._org()
 		enrich.enrich_doc("CRM Organization", org.name, "11222333000181")
-		self.assertFalse(frappe.db.get_value("CRM Organization", org.name, "cnpj_checked_at"))
+		self.assertFalse(frappe.db.get_value("CRM Organization", org.name, "cnpj_checked_on"))
 
 	def test_stale_job_is_ignored(self):
 		org = self._org()
