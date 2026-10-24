@@ -6,6 +6,7 @@ import frappe
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
 from cred_hub.cnpj.fields import CHECKED_DATE_FIELDS, DETAILS_ADDRESS_FIELDS, DOCTYPES, SIDE_PANEL_FIELDS, custom_fields
+from cred_hub.chat.leads import CONVERSATION_FIELD
 from cred_hub.cnpj.sectors import SECTORS
 from cred_hub.company.fields import COMPANY_SECTION, COMPANY_SECTION_LABEL, COMPANY_SIDE_PANEL_FIELDS, company_custom_fields
 
@@ -14,11 +15,15 @@ CNPJ_SECTION_LABEL = "Company Registry (CNPJ)"
 # Território (região de vendas do Frappe CRM) sai das telas: a CredTech não usa (pedido do dono, 24/10/2026)
 HIDDEN_FIELDS = ("territory",)
 TERRITORY_DOCTYPES = ("CRM Lead", "CRM Deal", "CRM Organization")
+# Link da conversa do Cred Chat que originou o lead/negócio (cred_hub.chat)
+CHAT_FIELD_AFTER = {"CRM Lead": "source", "CRM Deal": "lead"}
+CHAT_PANEL_AFTER = {"CRM Lead": "source", "CRM Deal": "deal_owner"}
 
 
 def after_install():
 	create_custom_fields({dt: custom_fields(insert_after="facebook") + _missing(dt, company_custom_fields(insert_after="cnpj_checked_on")) for dt in DOCTYPES}, update=True)
 	migrate_checked_dates()
+	create_custom_fields({dt: [_chat_field(after)] for dt, after in CHAT_FIELD_AFTER.items()}, update=True)
 	add_industries()
 	for doctype in DOCTYPES:
 		add_side_panel_section(doctype)
@@ -27,6 +32,10 @@ def after_install():
 	for doctype in TERRITORY_DOCTYPES:
 		for kind in ("Side Panel", "Quick Entry", "Data Fields"):
 			remove_from_layout(f"{doctype}-{kind}", HIDDEN_FIELDS)
+	for doctype, after in CHAT_PANEL_AFTER.items():
+		add_to_side_panel(doctype, CONVERSATION_FIELD, after)
+	# Gera o token do webhook do Cred Chat na primeira vez (a URL aparece em Cred Hub Settings)
+	frappe.get_single("Cred Hub Settings").save(ignore_permissions=True)
 	add_quick_entry_cnpj("CRM Organization", after="organization_name")
 	frappe.db.commit()
 
@@ -108,6 +117,34 @@ def add_address_to_details(doctype):
 	fields[position:position] = DETAILS_ADDRESS_FIELDS
 	doc.layout = json.dumps(layout)
 	doc.save(ignore_permissions=True)
+
+
+def _chat_field(insert_after):
+	return {
+		"fieldname": CONVERSATION_FIELD,
+		"fieldtype": "Data",
+		"options": "URL",
+		"label": "Cred Chat Conversation",
+		"read_only": 1,
+		"insert_after": insert_after,
+	}
+
+
+def add_to_side_panel(doctype, field, after):
+	"""Põe `field` no painel lateral, logo depois de `after` (na seção onde `after` estiver)."""
+	doc, layout = _layout(f"{doctype}-Side Panel")
+	if doc is None:
+		return
+	for section in layout:
+		for column in section.get("columns", []):
+			fields = column.get("fields", [])
+			if field in fields:
+				return
+			if after in fields:
+				fields.insert(fields.index(after) + 1, field)
+				doc.layout = json.dumps(layout)
+				doc.save(ignore_permissions=True)
+				return
 
 
 def _missing(doctype, fields):

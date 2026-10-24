@@ -25,6 +25,17 @@ Regras:
 - CNPJ inexistente é marcado como consultado, para não repetir a cada salvamento.
 - As datas de consulta (CNPJ e presença digital) guardam só o dia; a v0.4 trocou os campos de data e hora (`*_checked_at`) por campos de data (`*_checked_on`), copiando o dia.
 
+### Conversa nova no Cred Chat vira lead
+
+Cada empresa (site) tem um webhook próprio, mostrado em **Cred Hub Settings** (`/app/cred-hub-settings`, só System Manager): `https://<empresa>/api/method/cred_hub.chat.webhook.conversation_created?token=<token>`. No Cred Chat da empresa: Configurações → Integrações → Webhooks, colar a URL e marcar só **Conversa criada**.
+
+A cada conversa nova:
+1. Procura a pessoa pelo **telefone** (qualquer formato; números do Brasil comparados por DDD + 8 últimos dígitos, então com ou sem o 9º dígito, +55, parênteses ou traço) ou pelo **e-mail**: primeiro em leads não convertidos, depois nos contatos de negócios.
+2. Achou lead ou negócio: guarda o link da conversa mais recente em **Conversa no Cred Chat** e comenta na linha do tempo (com a primeira mensagem). Não cria outro lead.
+3. Não achou: cria um **Lead** com nome, telefone, e-mail, origem **WhatsApp** (ou **Cred Chat** para outros canais) e o link da conversa.
+
+Regras: token errado = 403; "Criar leads…" desligado = nada é criado; **ID da conta no Cred Chat** preenchido = só aceita conversas daquela conta; contato sem telefone e sem e-mail é ignorado. O token vai na URL porque o Cred Chat não permite cabeçalho próprio (também aceita `X-Cred-Hub-Token`).
+
 ### Telas
 
 - **Território** (região de vendas do Frappe CRM) não aparece em Lead, Negócio e Organização (painel, cadastro rápido e campos): a CredTech não usa (pedido do dono, 24/10/2026). O dado continua no banco.
