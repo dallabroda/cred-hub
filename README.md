@@ -26,9 +26,9 @@ Regras:
 
 ### Presença digital (site, LinkedIn, funcionários)
 
-Ao salvar um Lead ou uma Organização com nome de empresa, um job em segundo plano (fila longa, uma vez por registro; com CNPJ válido, espera a Receita) busca o **site oficial**, o **LinkedIn** e o **nº de funcionários**: Wikidata → busca na web (DuckDuckGo, `ddgs`) → link do LinkedIn no próprio site → página pública do LinkedIn → faixa no resultado da busca → contagem pública → **piso SEBRAE** pelo porte e CNAE da Receita. Preenche a seção **Presença digital** e o `no_of_employees` do CRM (o "1-10" padrão do CRM conta como vazio); não sobrescreve site, LinkedIn ou nº de funcionários que o usuário preencheu. Qualquer falha só vai para o log: nunca impede salvar.
+Ao salvar um Lead ou uma Organização com nome de empresa, um job em segundo plano (fila longa, uma vez por registro; com CNPJ válido, espera a Receita) busca o **site oficial**, o **LinkedIn** e o **nº de funcionários**: Wikidata → busca na web (DuckDuckGo, `ddgs`) → link do LinkedIn no próprio site → contagem pública (Wikidata/web, porte grande) → **piso SEBRAE** pelo porte e CNAE da Receita. **Funcionários pelo LinkedIn desligados** por decisão do dono (24/10/2026): o LinkedIn bloqueia acesso automático e os termos de uso não permitem; só o endereço do perfil é guardado (`USE_LINKEDIN_EMPLOYEES` em `company/discover.py`). Preenche a seção **Presença digital** e o `no_of_employees` do CRM (o "1-10" padrão do CRM conta como vazio); não sobrescreve site, LinkedIn ou nº de funcionários que o usuário preencheu. Qualquer falha só vai para o log: nunca impede salvar.
 
-Para não trazer homônimo, o LinkedIn achado pela busca só é aceito se o endereço do perfil tiver todas as palavras do nome; o do próprio site ou do Wikidata vale sempre. O LinkedIn bloqueia o acesso automático depois de poucas consultas (HTTP 999) e não permite isso nos termos de uso; sem ele, vale o piso SEBRAE.
+Para não trazer homônimo, o LinkedIn achado pela busca só é aceito se o endereço do perfil tiver todas as palavras do nome; o do próprio site ou do Wikidata vale sempre.
 
 ## Instalação
 

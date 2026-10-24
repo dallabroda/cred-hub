@@ -4,7 +4,7 @@ Cascata:
   1. Wikidata (P856 site, P4264 LinkedIn, P1128 funcionários) - só entidade com site oficial.
   2. Busca web -> domínio oficial (descarta diretórios e redes sociais).
   3. Link do LinkedIn no HTML do site (garante que não é homônimo); senão busca no LinkedIn.
-  4. Funcionários: página pública do LinkedIn (JSON-LD) > faixa no snippet > contagem Wikidata/web > piso SEBRAE por CNPJ.
+  4. Funcionários: contagem Wikidata/web (porte grande) > piso SEBRAE por CNPJ. LinkedIn desligado (USE_LINKEDIN_EMPLOYEES).
 """
 
 import re
@@ -34,6 +34,8 @@ UA = {
 	"Accept-Language": "pt-BR,pt;q=0.9",
 }
 TIMEOUT = 12
+# Nº de funcionários lido do LinkedIn (página pública e faixa nos resultados): desligado por decisão do dono
+USE_LINKEDIN_EMPLOYEES = False
 
 # Faixas do campo "no_of_employees" do Frappe CRM
 CRM_BUCKETS = [(10, "1-10"), (50, "11-50"), (200, "51-200"), (500, "201-500"), (1000, "501-1000")]
@@ -323,15 +325,18 @@ def discover(name: str, porte: str = "", cnae: str = "", opcao_mei: bool = False
 	out["site"] = wd.get("site") or _safe(find_site, "", s, name)
 	out["linkedin"] = wd.get("linkedin") or (_safe(linkedin_from_site, "", s.http, out["site"]) if out["site"] else "")
 
+	# Só o endereço do perfil (vem da busca na web, sem acessar o LinkedIn). Funcionários pelo LinkedIn ficam
+	# desligados por decisão do dono (24/10/2026): a página deles bloqueia acesso automático e os termos de uso não
+	# permitem. Para religar: USE_LINKEDIN_EMPLOYEES = True.
 	url, faixa_snippet = _safe(linkedin_search, ("", ""), s, name, out["linkedin"])
 	out["linkedin"] = out["linkedin"] or url
-
-	n = _safe(linkedin_page_employees, 0, s.http, out["linkedin"]) if out["linkedin"] else 0
-	if n:
-		return _with_count(out, n, "LinkedIn")
-	if faixa_snippet:
-		out.update(faixa=faixa_snippet, crm_bucket=range_to_crm_bucket(faixa_snippet), fonte="LinkedIn")
-		return out
+	if USE_LINKEDIN_EMPLOYEES:
+		n = _safe(linkedin_page_employees, 0, s.http, out["linkedin"]) if out["linkedin"] else 0
+		if n:
+			return _with_count(out, n, "LinkedIn")
+		if faixa_snippet:
+			out.update(faixa=faixa_snippet, crm_bucket=range_to_crm_bucket(faixa_snippet), fonte="LinkedIn")
+			return out
 
 	# Sem LinkedIn: empresa de porte grande ("DEMAIS") ou desconhecido ainda tem contagem pública
 	if not porte or "DEMAIS" in porte.upper():
