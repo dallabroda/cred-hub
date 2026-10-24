@@ -57,26 +57,72 @@ def _phone(ddd, numero) -> str:
 	return f"({ddd}) {numero}" if ddd and numero else (numero or "")
 
 
-def _address(tipo, logradouro, numero, complemento, bairro) -> str:
-	rua = " ".join(p for p in (tipo, logradouro) if p).strip()
-	partes = [p for p in (rua, numero, complemento, bairro) if p and str(p).strip()]
-	return ", ".join(str(p).strip() for p in partes)
+# Porte da Receita resumido (decisão do dono, 24/10/2026). Valores em inglês no banco; pt-BR no .po:
+# ME -> ME, EPP -> EPP, Other size -> Demais, Not informed -> Não informado
+COMPANY_SIZES = ("ME", "EPP", "Other size", "Not informed")
+_SIZE_BY_CODE = {"01": "ME", "1": "ME", "03": "EPP", "3": "EPP", "05": "Other size", "5": "Other size"}
 
 
-def _socios(lista, nome_key, qualificacao_key, documento_key):
-	socios = []
+def company_size(code=None, text=None) -> str:
+	"""Código (01/03/05) ou texto da Receita -> ME, EPP, Other size ou Not informed."""
+	by_code = _SIZE_BY_CODE.get(str(code).strip()) if code not in (None, "") else None
+	if by_code:
+		return by_code
+	label = str(text or "").upper()
+	if "(ME)" in label or label.startswith("MICRO"):
+		return "ME"
+	if "EPP" in label or "PEQUENO PORTE" in label:
+		return "EPP"
+	if "DEMAIS" in label:
+		return "Other size"
+	return "Not informed"
+
+
+def _yes_no(value) -> str:
+	"""S/N, true/false da Receita -> Yes/No (traduzido Sim/Não). Só "S"/true é sim: a Receita deixa a opção
+	vazia para quem nunca optou (ex.: S/A); vazio só quando a fonte não traz o campo (None)."""
+	if value is None:
+		return ""
+	if isinstance(value, bool):
+		return "Yes" if value else "No"
+	return "Yes" if str(value).strip().upper() in ("S", "SIM", "TRUE", "1") else "No"
+
+
+def _cep(value) -> str:
+	digits = only_digits(value)
+	return f"{digits[:5]}-{digits[5:]}" if len(digits) == 8 else str(value or "").strip()
+
+
+def _clean(*parts) -> list[str]:
+	return [" ".join(str(p).split()) for p in parts if p and str(p).strip()]
+
+
+def _address(tipo, logradouro, numero, complemento, bairro, municipio, uf, cep) -> dict:
+	"""Partes do endereço para criar o Address do Frappe (bairro vai junto do complemento na linha 2)."""
+	rua = " ".join(_clean(tipo, logradouro))
+	return {
+		"address_line1": ", ".join(_clean(rua, numero)),
+		"address_line2": ", ".join(_clean(complemento, bairro)),
+		"city": (municipio or "").strip(),
+		"state": (uf or "").strip(),
+		"pincode": _cep(cep),
+	}
+
+
+def _partners(lista, nome_key, qualificacao_key, documento_key):
+	partners = []
 	for socio in lista or []:
 		nome = (socio.get(nome_key) or "").strip()
 		if not nome:
 			continue
-		socios.append(
+		partners.append(
 			{
-				"nome": nome,
-				"qualificacao": (socio.get(qualificacao_key) or "").strip(),
-				"documento": (socio.get(documento_key) or "").strip(),
+				"name": nome,
+				"qualification": (socio.get(qualificacao_key) or "").strip(),
+				"document": (socio.get(documento_key) or "").strip(),
 			}
 		)
-	return socios
+	return partners
 
 
 def from_opencnpj(data: dict) -> dict:
@@ -84,46 +130,48 @@ def from_opencnpj(data: dict) -> dict:
 	principal = next((c for c in cnaes if c.get("is_principal")), cnaes[0] if cnaes else {})
 	telefone = next((t for t in data.get("telefones") or [] if not t.get("is_fax")), {})
 	return {
-		"razao_social": data.get("razao_social") or "",
-		"nome_fantasia": data.get("nome_fantasia") or "",
-		"situacao_cadastral": (data.get("situacao_cadastral") or "").upper(),
-		"data_abertura": data.get("data_inicio_atividade") or None,
-		"cnae_principal": " - ".join(p for p in (principal.get("codigo") or data.get("cnae_principal"), principal.get("descricao")) if p),
-		"natureza_juridica": data.get("natureza_juridica") or "",
-		"porte": data.get("porte_empresa") or "",
-		"capital_social": parse_brl_number(data.get("capital_social")),
-		"telefone": _phone(telefone.get("ddd"), telefone.get("numero")),
-		"email": (data.get("email") or "").lower(),
-		"endereco": _address(data.get("tipo_logradouro"), data.get("logradouro"), data.get("numero"),
-		                     data.get("complemento"), data.get("bairro")),
-		"municipio": data.get("municipio") or "",
-		"uf": data.get("uf") or "",
-		"cep": data.get("cep") or "",
-		"socios": _socios(data.get("QSA") or data.get("qsa"), "nome_socio", "qualificacao_socio", "cnpj_cpf_socio"),
-		"fonte": "OpenCNPJ",
+		"legal_name": data.get("razao_social") or "",
+		"trade_name": data.get("nome_fantasia") or "",
+		"registration_status": (data.get("situacao_cadastral") or "").upper(),
+		"activity_start_date": data.get("data_inicio_atividade") or None,
+		"main_cnae": " - ".join(p for p in (principal.get("codigo") or data.get("cnae_principal"), principal.get("descricao")) if p),
+		"legal_nature": data.get("natureza_juridica") or "",
+		"company_size": company_size(text=data.get("porte_empresa")),
+		"is_mei": _yes_no(data.get("opcao_mei")),
+		"share_capital": parse_brl_number(data.get("capital_social")),
+		"registry_phone": _phone(telefone.get("ddd"), telefone.get("numero")),
+		"registry_email": (data.get("email") or "").lower(),
+		"neighborhood": (data.get("bairro") or "").strip(),
+		"city": (data.get("municipio") or "").strip(),
+		"state": (data.get("uf") or "").strip(),
+		"address": _address(data.get("tipo_logradouro"), data.get("logradouro"), data.get("numero"),
+		                    data.get("complemento"), data.get("bairro"), data.get("municipio"), data.get("uf"), data.get("cep")),
+		"partners": _partners(data.get("QSA") or data.get("qsa"), "nome_socio", "qualificacao_socio", "cnpj_cpf_socio"),
+		"source": "OpenCNPJ",
 	}
 
 
 def from_brasilapi(data: dict) -> dict:
 	tel = only_digits(data.get("ddd_telefone_1"))
 	return {
-		"razao_social": data.get("razao_social") or "",
-		"nome_fantasia": data.get("nome_fantasia") or "",
-		"situacao_cadastral": (data.get("descricao_situacao_cadastral") or "").upper(),
-		"data_abertura": data.get("data_inicio_atividade") or None,
-		"cnae_principal": " - ".join(
+		"legal_name": data.get("razao_social") or "",
+		"trade_name": data.get("nome_fantasia") or "",
+		"registration_status": (data.get("descricao_situacao_cadastral") or "").upper(),
+		"activity_start_date": data.get("data_inicio_atividade") or None,
+		"main_cnae": " - ".join(
 			p for p in (str(data.get("cnae_fiscal") or "").zfill(7) if data.get("cnae_fiscal") else "",
 			            data.get("cnae_fiscal_descricao")) if p),
-		"natureza_juridica": data.get("natureza_juridica") or "",
-		"porte": data.get("porte") or "",
-		"capital_social": parse_brl_number(data.get("capital_social")),
-		"telefone": _phone(tel[:2], tel[2:]) if len(tel) > 2 else "",
-		"email": (data.get("email") or "").lower(),
-		"endereco": _address(data.get("descricao_tipo_de_logradouro"), data.get("logradouro"), data.get("numero"),
-		                     data.get("complemento"), data.get("bairro")),
-		"municipio": data.get("municipio") or "",
-		"uf": data.get("uf") or "",
-		"cep": data.get("cep") or "",
-		"socios": _socios(data.get("qsa"), "nome_socio", "qualificacao_socio", "cnpj_cpf_do_socio"),
-		"fonte": "BrasilAPI",
+		"legal_nature": data.get("natureza_juridica") or "",
+		"company_size": company_size(code=data.get("codigo_porte"), text=data.get("porte")),
+		"is_mei": _yes_no(data.get("opcao_pelo_mei")),
+		"share_capital": parse_brl_number(data.get("capital_social")),
+		"registry_phone": _phone(tel[:2], tel[2:]) if len(tel) > 2 else "",
+		"registry_email": (data.get("email") or "").lower(),
+		"neighborhood": (data.get("bairro") or "").strip(),
+		"city": (data.get("municipio") or "").strip(),
+		"state": (data.get("uf") or "").strip(),
+		"address": _address(data.get("descricao_tipo_de_logradouro"), data.get("logradouro"), data.get("numero"),
+		                    data.get("complemento"), data.get("bairro"), data.get("municipio"), data.get("uf"), data.get("cep")),
+		"partners": _partners(data.get("qsa"), "nome_socio", "qualificacao_socio", "cnpj_cpf_do_socio"),
+		"source": "BrasilAPI",
 	}
