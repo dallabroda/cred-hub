@@ -22,7 +22,7 @@ def validate(doc, method=None):
 def on_update(doc, method=None):
 	if doc.flags.cred_hub_enriching or not doc.get("cnpj") or not is_valid_cnpj(doc.cnpj):
 		return
-	if not doc.has_value_changed("cnpj") and doc.get("cnpj_checked_at"):
+	if not doc.has_value_changed("cnpj") and doc.get("cnpj_checked_on"):
 		return
 	digits = only_digits(doc.cnpj)
 	frappe.enqueue(

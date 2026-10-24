@@ -3,7 +3,7 @@ Nunca sobrescreve o que o usuário já preencheu (website, nº de funcionários,
 
 import frappe
 from frappe import _
-from frappe.utils import now_datetime
+from frappe.utils import today
 
 from cred_hub.company import discover as discovery
 from cred_hub.company.events import company_name
@@ -17,7 +17,7 @@ def enrich_company(doctype, name):
 	if not frappe.db.exists(doctype, name):
 		return
 	doc = frappe.get_doc(doctype, name)
-	if doc.get("company_checked_at") or not company_name(doc):
+	if doc.get("company_checked_on") or not company_name(doc):
 		return
 
 	try:
@@ -33,7 +33,7 @@ def enrich_company(doctype, name):
 		return
 
 	apply(doc, found)
-	doc.company_checked_at = now_datetime()
+	doc.company_checked_on = today()
 	doc.flags.cred_hub_enriching = True  # não reconsulta o CNPJ por causa deste salvamento
 	doc.save(ignore_permissions=True)
 	doc.add_comment("Comment", summary(found))

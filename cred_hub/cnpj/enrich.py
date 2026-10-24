@@ -2,7 +2,7 @@
 
 import frappe
 from frappe import _
-from frappe.utils import getdate, now_datetime, today
+from frappe.utils import getdate, today
 
 from cred_hub.cnpj import client
 from cred_hub.cnpj.fields import DOCTYPES, RECEITA_FIELDS
@@ -55,7 +55,7 @@ def enrich_doc(doctype, name, cnpj):
 		doc.organization = data.get("trade_name") or data.get("legal_name")
 	if doctype == "CRM Organization":
 		doc.address = upsert_address(doc, data.get("address") or {}) or doc.address
-	doc.cnpj_checked_at = now_datetime()
+	doc.cnpj_checked_on = today()
 	doc.flags.cred_hub_enriching = True
 	doc.save(ignore_permissions=True)
 
@@ -69,10 +69,10 @@ def enrich_doc(doctype, name, cnpj):
 def _finish_without_data(doc, message, retry=False):
 	if not retry:
 		# Marca como consultado para não repetir a cada salvamento; mudar o CNPJ consulta de novo
-		doc.db_set("cnpj_checked_at", now_datetime(), update_modified=False)
+		doc.db_set("cnpj_checked_on", today(), update_modified=False)
 		from cred_hub.company.events import company_name, enqueue
 
-		if company_name(doc) and not doc.get("company_checked_at"):
+		if company_name(doc) and not doc.get("company_checked_on"):
 			enqueue(doc.doctype, doc.name)  # sem dados da Receita, segue só com a busca na web
 	doc.add_comment("Comment", message)
 
