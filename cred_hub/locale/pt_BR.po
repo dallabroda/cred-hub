@@ -4977,3 +4977,30 @@ msgstr "Fonte dos funcionários"
 msgid "Digital Presence Checked On"
 msgstr "Presença digital consultada em"
 
+
+msgid "Cred Hub Settings"
+msgstr "Configurações do Cred Hub"
+
+msgid "Cred Chat Conversation"
+msgstr "Conversa no Cred Chat"
+
+msgid "Create leads from new Cred Chat conversations"
+msgstr "Criar leads a partir de conversas novas no Cred Chat"
+
+msgid "Cred Chat URL"
+msgstr "Endereço do Cred Chat"
+
+msgid "Cred Chat Account ID"
+msgstr "ID da conta no Cred Chat"
+
+msgid "Only conversations from this Cred Chat account are accepted. Empty: any account."
+msgstr "Só aceita conversas desta conta do Cred Chat. Vazio: qualquer conta."
+
+msgid "Webhook URL"
+msgstr "URL do webhook"
+
+msgid "Webhook Token"
+msgstr "Token do webhook"
+
+msgid "New conversations in Cred Chat create leads here. In Cred Chat, go to Settings > Integrations > Webhooks, add the Webhook URL below and tick only \"Conversation Created\"."
+msgstr "Conversas novas no Cred Chat criam leads aqui. No Cred Chat, vá em Configurações > Integrações > Webhooks, adicione a URL do webhook abaixo e marque só \"Conversa criada\"."

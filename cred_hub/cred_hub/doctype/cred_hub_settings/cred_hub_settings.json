@@ -1,0 +1,72 @@
+{
+ "actions": [],
+ "creation": "2026-10-24 22:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "chat_section",
+  "enable_chat_leads",
+  "chat_url",
+  "chat_account_id",
+  "webhook_url",
+  "webhook_token"
+ ],
+ "fields": [
+  {
+   "fieldname": "chat_section",
+   "fieldtype": "Section Break",
+   "label": "Cred Chat",
+   "description": "New conversations in Cred Chat create leads here. In Cred Chat, go to Settings > Integrations > Webhooks, add the Webhook URL below and tick only \"Conversation Created\"."
+  },
+  {
+   "default": "1",
+   "fieldname": "enable_chat_leads",
+   "fieldtype": "Check",
+   "label": "Create leads from new Cred Chat conversations"
+  },
+  {
+   "default": "https://chat.credtechdigital.com.br",
+   "fieldname": "chat_url",
+   "fieldtype": "Data",
+   "label": "Cred Chat URL",
+   "options": "URL"
+  },
+  {
+   "description": "Only conversations from this Cred Chat account are accepted. Empty: any account.",
+   "fieldname": "chat_account_id",
+   "fieldtype": "Int",
+   "label": "Cred Chat Account ID"
+  },
+  {
+   "fieldname": "webhook_url",
+   "fieldtype": "Small Text",
+   "label": "Webhook URL",
+   "read_only": 1
+  },
+  {
+   "fieldname": "webhook_token",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Webhook Token",
+   "read_only": 1
+  }
+ ],
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-10-24 22:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Cred Hub",
+ "name": "Cred Hub Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "read": 1,
+   "role": "System Manager",
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
