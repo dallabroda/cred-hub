@@ -17,10 +17,10 @@ scheduler_events = {"daily": ["cred_hub.cnpj.enrich.update_years_in_business"]}
 doc_events = {
 	"CRM Organization": {
 		"validate": "cred_hub.cnpj.events.validate",
-		"on_update": "cred_hub.cnpj.events.on_update",
+		"on_update": ["cred_hub.cnpj.events.on_update", "cred_hub.company.events.on_update"],
 	},
 	"CRM Lead": {
 		"validate": "cred_hub.cnpj.events.validate",
-		"on_update": "cred_hub.cnpj.events.on_update",
+		"on_update": ["cred_hub.cnpj.events.on_update", "cred_hub.company.events.on_update"],
 	},
 }

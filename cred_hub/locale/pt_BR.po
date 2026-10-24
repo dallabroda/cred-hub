@@ -4958,3 +4958,22 @@ msgstr "Reparos e serviços pessoais"
 msgid "Other Activities"
 msgstr "Outros"
 
+# Cred Hub: presença digital (site, LinkedIn, funcionários)
+msgid "Digital Presence"
+msgstr "Presença digital"
+
+msgid "Company LinkedIn"
+msgstr "LinkedIn da empresa"
+
+msgid "Employees (count)"
+msgstr "Funcionários (nº)"
+
+msgid "Employees (range/floor)"
+msgstr "Funcionários (faixa/piso)"
+
+msgid "Employees Source"
+msgstr "Fonte dos funcionários"
+
+msgid "Digital Presence Checked At"
+msgstr "Presença digital consultada em"
+

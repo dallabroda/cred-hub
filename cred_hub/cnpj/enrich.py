@@ -70,6 +70,10 @@ def _finish_without_data(doc, message, retry=False):
 	if not retry:
 		# Marca como consultado para não repetir a cada salvamento; mudar o CNPJ consulta de novo
 		doc.db_set("cnpj_checked_at", now_datetime(), update_modified=False)
+		from cred_hub.company.events import company_name, enqueue
+
+		if company_name(doc) and not doc.get("company_checked_at"):
+			enqueue(doc.doctype, doc.name)  # sem dados da Receita, segue só com a busca na web
 	doc.add_comment("Comment", message)
 
 
