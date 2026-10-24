@@ -11,6 +11,9 @@ required_apps = ["crm"]
 after_install = "cred_hub.install.after_install"
 after_migrate = "cred_hub.install.after_install"
 
+# Tempo de mercado (anos) muda com o tempo: recalculado todo dia
+scheduler_events = {"daily": ["cred_hub.cnpj.enrich.update_years_in_business"]}
+
 doc_events = {
 	"CRM Organization": {
 		"validate": "cred_hub.cnpj.events.validate",

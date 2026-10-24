@@ -4714,3 +4714,247 @@ msgstr "⚠️ Nenhum dado encontrado para o campo pai: {0}"
 msgid "⚠️ No row found for idx: {0} in parent field: {1}"
 msgstr "⚠️ Nenhuma linha encontrada para o idx: {0} no campo pai: {1}"
 
+# Cred Hub: campos de CNPJ, porte e setores (tabela de-para CNAE), credtech#65
+msgid "Company Registry (CNPJ)"
+msgstr "Dados da Receita (CNPJ)"
+
+msgid "Legal Name"
+msgstr "Razão social"
+
+msgid "Trade Name"
+msgstr "Nome fantasia"
+
+msgid "Registration Status"
+msgstr "Situação cadastral"
+
+msgid "Main CNAE"
+msgstr "CNAE principal"
+
+msgid "Legal Nature"
+msgstr "Natureza jurídica"
+
+msgid "Company Size"
+msgstr "Porte"
+
+msgid "Is MEI?"
+msgstr "É MEI?"
+
+msgid "Activity Start Date"
+msgstr "Início da atividade"
+
+msgid "Years in Business"
+msgstr "Tempo de mercado (anos)"
+
+msgid "Share Capital"
+msgstr "Capital social"
+
+msgid "Registry Phone"
+msgstr "Telefone (Receita)"
+
+msgid "Registry Email"
+msgstr "E-mail (Receita)"
+
+msgid "Neighborhood"
+msgstr "Bairro"
+
+msgid "City"
+msgstr "Cidade"
+
+msgid "State (UF)"
+msgstr "UF"
+
+msgid "CNPJ Checked At"
+msgstr "CNPJ consultado em"
+
+msgid "Other size"
+msgstr "Demais"
+
+msgid "Not informed"
+msgstr "Não informado"
+
+msgid "Agriculture and Livestock"
+msgstr "Agricultura e pecuária"
+
+msgid "Forestry, Fishing and Aquaculture"
+msgstr "Silvicultura, pesca e aquicultura"
+
+msgid "Mining, Oil and Gas"
+msgstr "Mineração, petróleo e gás"
+
+msgid "Food and Beverage Manufacturing"
+msgstr "Indústria de alimentos e bebidas"
+
+msgid "Textile, Apparel and Footwear Manufacturing"
+msgstr "Indústria têxtil, vestuário e calçados"
+
+msgid "Wood, Paper and Printing"
+msgstr "Indústria de madeira, papel e gráfica"
+
+msgid "Chemicals, Pharmaceuticals and Plastics"
+msgstr "Indústria química, farmacêutica e plásticos"
+
+msgid "Minerals, Metallurgy and Metal Products"
+msgstr "Indústria de minerais, metalurgia e produtos de metal"
+
+msgid "Electronics and Electrical Equipment"
+msgstr "Indústria eletroeletrônica"
+
+msgid "Machinery and Vehicle Manufacturing"
+msgstr "Indústria de máquinas e veículos"
+
+msgid "Furniture and Other Manufacturing"
+msgstr "Indústria de móveis e outras"
+
+msgid "Electricity and Gas"
+msgstr "Energia elétrica e gás"
+
+msgid "Water, Sanitation and Waste"
+msgstr "Água, saneamento e resíduos"
+
+msgid "Building Construction and Development"
+msgstr "Construção de edifícios e incorporação"
+
+msgid "Infrastructure Works"
+msgstr "Obras de infraestrutura"
+
+msgid "Specialized Construction Services"
+msgstr "Serviços especializados de construção"
+
+msgid "Vehicle Sales and Repair"
+msgstr "Comércio e manutenção de veículos"
+
+msgid "Wholesale and Distribution"
+msgstr "Comércio atacadista e distribuição"
+
+msgid "Supermarkets and Food Retail"
+msgstr "Supermercados e comércio de alimentos"
+
+msgid "Fuel Stations"
+msgstr "Postos de combustível"
+
+msgid "Building Materials, Furniture and Appliances Retail"
+msgstr "Materiais de construção, móveis e eletro"
+
+msgid "Bookstores, Stationery and Cultural Goods"
+msgstr "Livrarias, papelarias e artigos culturais"
+
+msgid "Pharmacies, Perfumeries and Opticians"
+msgstr "Farmácias, perfumarias e óticas"
+
+msgid "Apparel, Footwear and Accessories Retail"
+msgstr "Vestuário, calçados e acessórios"
+
+msgid "Other Retail"
+msgstr "Outros varejos"
+
+msgid "Road and Rail Freight Transport"
+msgstr "Transporte rodoviário de cargas"
+
+msgid "Passenger Transport"
+msgstr "Transporte de passageiros"
+
+msgid "Water and Air Transport"
+msgstr "Transporte aquaviário e aéreo"
+
+msgid "Warehousing, Logistics and Postal Services"
+msgstr "Armazenagem, logística e correios"
+
+msgid "Hotels and Lodging"
+msgstr "Hotéis e hospedagem"
+
+msgid "Restaurants, Bars and Food Services"
+msgstr "Restaurantes, bares e alimentação"
+
+msgid "Travel Agencies and Tourism"
+msgstr "Agências de viagem e turismo"
+
+msgid "Publishing, Audiovisual and Broadcasting"
+msgstr "Editoras, audiovisual e rádio/TV"
+
+msgid "Telecommunications and Internet"
+msgstr "Telecomunicações e internet"
+
+msgid "Software Development"
+msgstr "Desenvolvimento de software"
+
+msgid "IT Consulting and Services"
+msgstr "Consultoria e serviços de TI"
+
+msgid "Data, Hosting and Web Portals"
+msgstr "Dados, hospedagem e portais"
+
+msgid "Banking, Credit and Financing"
+msgstr "Bancos, crédito e financeiras"
+
+msgid "Insurance and Pension Funds"
+msgstr "Seguros e previdência"
+
+msgid "Brokerage and Financial Services"
+msgstr "Corretoras e serviços financeiros"
+
+msgid "Real Estate"
+msgstr "Imobiliárias e administração de imóveis"
+
+msgid "Legal Services"
+msgstr "Advocacia e serviços jurídicos"
+
+msgid "Accounting and Auditing"
+msgstr "Contabilidade e auditoria"
+
+msgid "Management Consulting"
+msgstr "Consultoria em gestão"
+
+msgid "Engineering, Architecture and Research"
+msgstr "Engenharia, arquitetura e pesquisa"
+
+msgid "Advertising, Marketing and Market Research"
+msgstr "Publicidade, marketing e pesquisa de mercado"
+
+msgid "Design, Photography and Veterinary"
+msgstr "Design, fotografia e veterinária"
+
+msgid "Vehicle and Equipment Rental"
+msgstr "Aluguel de veículos e equipamentos"
+
+msgid "Recruitment and Temporary Staffing"
+msgstr "Recrutamento e mão de obra temporária"
+
+msgid "Security, Cleaning and Facilities"
+msgstr "Segurança, limpeza e facilities"
+
+msgid "Administrative Services and Call Centers"
+msgstr "Serviços administrativos e call center"
+
+msgid "Public Administration"
+msgstr "Administração pública"
+
+msgid "Education"
+msgstr "Educação e ensino"
+
+msgid "Hospitals"
+msgstr "Hospitais"
+
+msgid "Clinics, Dental Offices and Laboratories"
+msgstr "Clínicas, consultórios, odontologia e laboratórios"
+
+msgid "Other Health Services"
+msgstr "Outros serviços de saúde"
+
+msgid "Social Assistance and Care"
+msgstr "Assistência social e cuidados"
+
+msgid "Culture, Arts and Entertainment"
+msgstr "Cultura, artes e entretenimento"
+
+msgid "Sports, Gyms and Leisure"
+msgstr "Esportes, academias e lazer"
+
+msgid "Associations, Unions and NGOs"
+msgstr "Associações, sindicatos e ONGs"
+
+msgid "Repairs and Personal Services"
+msgstr "Reparos e serviços pessoais"
+
+msgid "Other Activities"
+msgstr "Outros"
+

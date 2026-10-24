@@ -12,12 +12,14 @@ Ao salvar uma **Organização** ou um **Lead** com CNPJ:
 
 1. O CNPJ é formatado (`00.000.000/0000-00`). Se os dígitos verificadores não conferirem, o usuário recebe um aviso e nada é consultado; o salvamento não é bloqueado (decisão de 24/10/2026).
 2. Em segundo plano, o CNPJ é consultado na [OpenCNPJ](https://opencnpj.org), com reserva na [BrasilAPI](https://brasilapi.com.br).
-3. Os campos da seção **Dados da Receita (CNPJ)** são preenchidos: razão social, nome fantasia, situação cadastral, data de abertura, CNAE principal, natureza jurídica, porte, capital social, telefone, e-mail e endereço.
-4. Na Organização, cada sócio (QSA) vira um **Contato** ligado a ela, sem duplicar.
-5. No Lead, o campo Organização é preenchido com o nome fantasia (ou a razão social) se estiver vazio.
-6. Um comentário na linha do tempo registra a consulta e a fonte.
+3. Os campos da seção **Dados da Receita (CNPJ)** são preenchidos: razão social, nome fantasia, situação, CNAE principal, natureza jurídica, **porte resumido** (ME, EPP, Demais, Não informado), **É MEI?** (Sim/Não), **início da atividade**, **tempo de mercado em anos** (recalculado todo dia), capital social, **UF, cidade, bairro**, telefone e e-mail da Receita.
+4. Na Organização, o **endereço** vira um Endereço padrão do Frappe ligado a ela (aparece em Detalhes; um endereço escolhido à mão não é trocado), e o **setor de atuação** é definido pelo CNAE principal com a tabela de-para de `cred_hub/cnpj/sectors.py` (~60 setores, por divisão ou grupo do CNAE). No Lead, o setor também é preenchido.
+5. Na Organização, cada sócio (QSA) vira um **Contato** ligado a ela, sem duplicar.
+6. No Lead, o campo Organização é preenchido com o nome fantasia (ou a razão social) se estiver vazio.
+7. Um comentário na linha do tempo registra a consulta e a fonte.
 
 Regras:
+- **Idioma:** nomes internos dos campos e setores em inglês; a interface usa `cred_hub/locale/pt_BR.po` para quem está em pt-BR (decisão do dono). A v0.2 migrou os campos da v0.1 (nomes em português) e reprocessou os CNPJs existentes (`patches/v0_2/english_fieldnames.py`).
 - Os campos da Receita refletem o CNPJ informado: mudar o CNPJ consulta e preenche de novo.
 - Salvar sem mudar o CNPJ não consulta de novo, exceto se a última tentativa falhou por indisponibilidade das APIs.
 - CNPJ inexistente é marcado como consultado, para não repetir a cada salvamento.
