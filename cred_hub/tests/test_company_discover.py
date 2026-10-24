@@ -66,3 +66,29 @@ class TestDiscoverFailsSoft(unittest.TestCase):
 		self.assertEqual(out["crm_bucket"], "1-10")
 		self.assertEqual(out["fonte"], "SEBRAE/CNPJ")
 		self.assertEqual(out["site"], "")
+
+
+class TestLinkedinEmployeesOff(unittest.TestCase):
+	def test_linkedin_range_and_page_are_ignored(self):
+		class Http:
+			def __init__(self):
+				self.urls = []
+
+			def get(self, url, *a, **k):
+				self.urls.append(url)
+				raise RuntimeError("sem rede")
+
+		class Searcher(d.Searcher):
+			def __init__(self):
+				self.http = Http()
+
+			def hits(self, query, n=8):
+				if "linkedin" in query:
+					return [{"url": "https://www.linkedin.com/company/padaria-x", "text": "Padaria X | 51-200 funcionários"}]
+				return []
+
+		s = Searcher()
+		out = d.discover("Padaria X", porte="MICRO EMPRESA", cnae="4721102", searcher=s)
+		self.assertEqual(out["linkedin"], "https://www.linkedin.com/company/padaria-x")
+		self.assertEqual((out["faixa"], out["fonte"]), ("1-9", "SEBRAE/CNPJ"))
+		self.assertFalse(any("linkedin.com" in u for u in s.http.urls))
