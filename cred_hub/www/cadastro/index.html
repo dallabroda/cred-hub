@@ -24,6 +24,17 @@
 			</div>
 		</div>
 
+		{%- if no_account %}
+		<p class="no-account-note text-sm mb-0">
+			{%- if prefill.email -%}
+			{{ _("There is no Cred Hub account with {0}.").format('<b>' ~ (prefill.email | e) ~ '</b>') }}
+			{%- else -%}
+			{{ _("There is no account with this e-mail in that company.") }}
+			{%- endif %}
+			{{ _("To join a company that already uses Cred Hub, ask its administrator for an invite. To create your own company, fill in the form below.") }}
+		</p>
+		{%- endif %}
+
 		<form id="signup-form" class="flex flex-col gap-5" novalidate>
 			<div class="page-card-body flex flex-col gap-4">
 				<div class="form-group">
@@ -41,12 +52,12 @@
 				</div>
 				<div class="form-group">
 					<label class="text-base text-ink-gray-5" for="full_name">{{ _("Your name") }}</label>
-					<input type="text" id="full_name" class="form-control" maxlength="140" autocomplete="name" required>
+					<input type="text" id="full_name" class="form-control" maxlength="140" autocomplete="name" value="{{ prefill.full_name or '' }}" required>
 					<p class="field-hint text-sm" data-hint="full_name"></p>
 				</div>
 				<div class="form-group">
 					<label class="text-base text-ink-gray-5" for="email">{{ _("Your e-mail") }}</label>
-					<input type="email" id="email" class="form-control" placeholder="{{ _('name@company.com') }}" autocomplete="email" required>
+					<input type="email" id="email" class="form-control" placeholder="{{ _('name@company.com') }}" autocomplete="email" value="{{ prefill.email or '' }}" required>
 					<p class="field-hint text-sm" data-hint="email"></p>
 				</div>
 				<p class="plan-note text-sm">{{ _("Free for up to 2 users. From the third user on, R$ 60 per user per month.") }}</p>
@@ -67,6 +78,8 @@
 		<div id="signup-sent" class="page-card-body flex flex-col gap-4" hidden>
 			<p class="text-p-base text-ink-gray-7 mb-0">{{ _("We sent a link to {0}. Open it to create your company.").format('<b id="sent-email"></b>') }}</p>
 			<p class="text-p-sm text-ink-gray-6 mb-0">{{ _("The link is valid for 24 hours. Didn't get it? Check your spam folder.") }}</p>
+			<button class="es-button w-full" data-variant="subtle" type="button" id="signup-resend">{{ _("Send the link again") }}</button>
+			<p class="field-hint text-sm" id="resend-hint"></p>
 		</div>
 
 		<div class="text-center text-p-sm text-ink-gray-6 mt-auto mb-0">
@@ -94,6 +107,8 @@
 	// Depois que a pessoa mexe no endereço, o nome da empresa não o troca mais
 	let addressEdited = false;
 	let lookup = 0;
+	// O que foi enviado: "Enviar de novo" repete o mesmo pedido (o servidor manda um link novo)
+	let payload = null;
 
 	function hint(id, text, kind) {
 		const el = document.querySelector(`[data-hint="${id}"]`);
@@ -188,12 +203,14 @@
 		submit.disabled = true;
 		submit.textContent = T.sending;
 		const email = fields.email.value.trim();
-		const res = await signupApi.post("request_signup", {
+		payload = {
 			company_name: fields.company_name.value.trim(),
 			subdomain: fields.subdomain.value,
 			full_name: fields.full_name.value.trim(),
 			email,
-		});
+			accepted_terms: 1,
+		};
+		const res = await signupApi.post("request_signup", payload);
 		submit.disabled = false;
 		submit.textContent = T.submit;
 		if (!res.ok) {
@@ -206,6 +223,20 @@
 		document.getElementById("signup-sent").hidden = false;
 		document.getElementById("signup-title").textContent = {{ _("Confirm your e-mail") | tojson }};
 		document.getElementById("signup-subtitle").hidden = true;
+		document.querySelector(".no-account-note")?.remove();
+	});
+
+	const resend = document.getElementById("signup-resend");
+	const resendHint = document.getElementById("resend-hint");
+	resend.addEventListener("click", async () => {
+		resend.disabled = true;
+		resendHint.className = "field-hint text-sm text-ink-gray-5";
+		resendHint.textContent = T.sending;
+		const res = await signupApi.post("request_signup", payload);
+		resendHint.className = `field-hint text-sm ${res.ok ? "hint-ok" : "hint-error"}`;
+		resendHint.textContent = res.ok ? T.resent : res.message || T.generic_error;
+		// Evita vários e-mails seguidos (o servidor também limita por hora)
+		setTimeout(() => (resend.disabled = false), 30000);
 	});
 })();
 </script>

@@ -5,6 +5,7 @@ from frappe import _
 from frappe.core.doctype.navbar_settings.navbar_settings import get_app_logo
 
 from cred_hub.signup import _domain
+from cred_hub.signup_access import get_prefill
 
 no_cache = 1
 
@@ -21,6 +22,9 @@ def get_context(context):
 	context.domain = _domain()
 	context.terms_url = TERMS_URL
 	context.privacy_url = PRIVACY_URL
+	# Quem chegou sem conta: pelo login social do hub (de=chave com e-mail e nome) ou de outra empresa (sem_conta=1)
+	context.prefill = get_prefill(frappe.form_dict.get("de"))
+	context.no_account = bool(context.prefill) or bool(frappe.form_dict.get("sem_conta"))
 	# Textos do JavaScript, já traduzidos no idioma do visitante
 	context.messages = {
 		"checking": _("Checking..."),
@@ -31,6 +35,7 @@ def get_context(context):
 		"choose_address": _("Choose an available address."),
 		"sending": _("Sending..."),
 		"submit": _("Create my company"),
+		"resent": _("We sent a new link. Use the newest e-mail."),
 		"generic_error": _("Something went wrong. Please try again in a few minutes."),
 	}
 	return context

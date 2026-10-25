@@ -67,6 +67,12 @@
 	background-color: var(--surface-gray-1, #f8f8f8);
 	color: var(--ink-gray-6);
 }
+.signup-card .no-account-note {
+	padding: 10px 12px;
+	border-radius: var(--radius);
+	background-color: var(--surface-amber-1, #fff7e6);
+	color: var(--ink-gray-8);
+}
 .signup-card .form-error {
 	margin: 0;
 	color: #c0392b;

@@ -6,9 +6,8 @@ const signupApi = (() => {
 			const list = JSON.parse(data._server_messages || "[]");
 			const last = list.length ? JSON.parse(list[list.length - 1]) : null;
 			if (last && last.message) {
-				const div = document.createElement("div");
-				div.innerHTML = last.message;
-				return div.textContent;
+				// DOMParser não carrega nada (img onerror etc.), só tira as tags
+				return new DOMParser().parseFromString(last.message, "text/html").body.textContent;
 			}
 		} catch (e) {
 			// sem mensagem legível: quem chamou mostra a genérica
