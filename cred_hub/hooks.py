@@ -19,6 +19,10 @@ doc_events = {
 		"validate": "cred_hub.cnpj.events.validate",
 		"on_update": ["cred_hub.cnpj.events.on_update", "cred_hub.company.events.on_update"],
 	},
+	# Card criado de um lead com CNPJ: o CNPJ vai para a Organização do card (épico #66)
+	"CRM Deal": {
+		"after_insert": "cred_hub.cnpj.card.after_insert",
+	},
 	"CRM Lead": {
 		"validate": "cred_hub.cnpj.events.validate",
 		"on_update": ["cred_hub.cnpj.events.on_update", "cred_hub.company.events.on_update"],
