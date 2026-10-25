@@ -555,3 +555,6 @@ msgstr "<p>Olá, {0}!</p><p>Para criar <b>{1}</b> no Cred Hub, em <b>{2}</b>, co
 
 msgid "This link is invalid. Please sign up again."
 msgstr "Este link é inválido. Faça o cadastro de novo."
+
+msgid "Only failed signups can be retried."
+msgstr "Só cadastros que falharam podem ser tentados de novo."

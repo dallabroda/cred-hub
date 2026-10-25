@@ -41,12 +41,13 @@ RESERVED = frozenset(
 	logout signup cadastro conta contas account accounts auth oauth sso id portal painel dashboard status
 	docs doc help ajuda suporte support blog news billing pagamento pagamentos cobranca financeiro
 	credtech credtechdigital cred credhub credchat leticia test teste testes dev staging homolog demo
-	autodiscover autoconfig localhost
+	autodiscover autoconfig localhost empresa exemplo suaempresa sua-empresa minhaempresa
 	""".split()
 )
 SUBDOMAIN_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,28}[a-z0-9]$")
 LEGAL_SUFFIXES = ("ltda", "me", "mei", "epp", "eireli", "sa", "ss", "slu")
-OPEN_STATUSES = ("Pending Confirmation", "Confirmed", "Provisioning", "Active")
+# Failed também segura o endereço: a CredTech tenta de novo (retry_provision) ou apaga o cadastro
+OPEN_STATUSES = ("Pending Confirmation", "Confirmed", "Provisioning", "Active", "Failed")
 
 
 def _require_central_site():
@@ -70,16 +71,6 @@ def _hash(token):
 	return hashlib.sha256(token.encode()).hexdigest()
 
 
-def _expire_old_links():
-	frappe.db.set_value(
-		"Cred Hub Signup",
-		{"status": "Pending Confirmation", "expires_on": ("<", now_datetime())},
-		"status",
-		"Expired",
-		update_modified=False,
-	)
-
-
 def availability(subdomain, exclude=None):
 	"""(disponível, motivo): motivo é "invalid", "reserved" ou "taken"."""
 	subdomain = (subdomain or "").strip().lower()
@@ -87,11 +78,16 @@ def availability(subdomain, exclude=None):
 		return False, "invalid"
 	if subdomain in RESERVED:
 		return False, "reserved"
-	_expire_old_links()
-	filters = {"subdomain": subdomain, "status": ("in", OPEN_STATUSES)}
-	if exclude:
-		filters["name"] = ("!=", exclude)
-	if _site_exists(_site_name(subdomain)) or frappe.db.exists("Cred Hub Signup", filters):
+	if _site_exists(_site_name(subdomain)):
+		return False, "taken"
+	holding = frappe.get_all(
+		"Cred Hub Signup",
+		filters={"subdomain": subdomain, "status": ("in", OPEN_STATUSES), "name": ("!=", exclude or "")},
+		fields=["status", "expires_on"],
+	)
+	now = now_datetime()
+	# Link vencido e não confirmado não segura o endereço (o status vira Expired se alguém clicar nele)
+	if any(row.status != "Pending Confirmation" or (row.expires_on and row.expires_on > now) for row in holding):
 		return False, "taken"
 	return True, None
 
@@ -158,7 +154,7 @@ def suggest_subdomain(company_name: str):
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
-@rate_limit(limit=5, seconds=60 * 60)
+@rate_limit(limit=20, seconds=60 * 60)
 def request_signup(company_name: str, subdomain: str, full_name: str, email: str):
 	"""Registra o pedido e manda o link de confirmação. A empresa só é criada depois do clique (dono)."""
 	_require_central_site()
@@ -268,18 +264,40 @@ def signup_status(token: str):
 # Criação da empresa (worker credhub_provision)
 
 
-def _bench(args, env=None, timeout=900):
+def _run(command, cwd, env=None, timeout=900):
 	result = subprocess.run(
-		["bench", *args],
-		cwd=get_bench_path(),
+		command,
+		cwd=cwd,
 		env={**os.environ, **(env or {})},
 		capture_output=True,
 		text=True,
 		timeout=timeout,
 	)
 	if result.returncode != 0:
-		raise RuntimeError(f"bench {args[0]} {args[1] if len(args) > 1 else ''} failed: {result.stderr[-2000:]}")
+		raise RuntimeError(f"{' '.join(command[:4])} failed: {result.stderr[-2000:]}")
 	return result.stdout
+
+
+def _bench(args, env=None, timeout=900):
+	return _run(["bench", *args], get_bench_path(), env=env, timeout=timeout)
+
+
+def _create_site(site):
+	"""Site e banco novos (cred_hub.provision_site): senhas por ambiente, desfaz tudo se falhar."""
+	bench = get_bench_path()
+	# Prefixo fixo: o usuário de banco do cadastro só tem direitos em `chsite%` (o MariaDB não aceita conceder a
+	# partir de um curinga com "_" escapado, que é o prefixo padrão do Frappe)
+	db_name = f"{DB_PREFIX}{secrets.token_hex(8)}"
+	_run(
+		[os.path.join(bench, "env", "bin", "python"), "-m", "cred_hub.provision_site", site, db_name],
+		os.path.join(bench, "sites"),
+		timeout=1500,
+	)
+
+
+def _site_ready(site):
+	"""Site já criado por uma tentativa anterior, com os apps instalados (retomar daí)."""
+	return _site_exists(site) and "cred_hub" in _bench(["--site", site, "list-apps"])
 
 
 def _site_secrets():
@@ -317,35 +335,14 @@ def provision(signup):
 	if doc.status != "Confirmed":
 		return
 	site = _site_name(doc.subdomain)
-	doc.db_set({"status": "Provisioning", "site_name": site})
+	doc.db_set({"status": "Provisioning", "site_name": site, "error": None})
 	frappe.db.commit()
 	try:
-		db_user = os.environ["CREDHUB_PROVISIONER_DB_USER"]
-		db_password = os.environ["CREDHUB_PROVISIONER_DB_PASSWORD"]
-		_bench(
-			[
-				"new-site",
-				site,
-				# Prefixo fixo: o usuário de banco do cadastro só tem direitos em `chsite%` (o MariaDB não aceita
-				# conceder a partir de um curinga com "_" escapado, o prefixo padrão do Frappe)
-				"--db-name",
-				f"{DB_PREFIX}{secrets.token_hex(8)}",
-				"--mariadb-user-host-login-scope=%",
-				"--db-root-username",
-				db_user,
-				"--db-root-password",
-				db_password,
-				# Administrator não é usado no dia a dia (o responsável é o administrador); a CredTech troca a
-				# senha com bench set-admin-password se precisar dar suporte
-				"--admin-password",
-				secrets.token_urlsafe(24),
-				"--install-app",
-				"crm",
-				"--install-app",
-				"cred_hub",
-			],
-			timeout=1500,
-		)
+		# Nova tentativa depois de uma falha: o site pode já existir (falhou depois de criado)
+		if not _site_ready(site):
+			if _site_exists(site):
+				raise RuntimeError(f"{site} exists but is incomplete: remove it (bench drop-site) before retrying")
+			_create_site(site)
 		# Links dos e-mails (boas-vindas, senha) com o endereço da empresa, também fora de requisição
 		_bench(["--site", site, "set-config", "host_name", f"https://{site}"])
 		_bench(["--site", site, "execute", "cred_hub.site_setup.apply_from_env"], env=_site_secrets())
@@ -369,20 +366,47 @@ def provision(signup):
 	frappe.db.commit()
 
 
+@frappe.whitelist(methods=["POST"])
+def retry_provision(signup: str):
+	"""Tenta de novo um cadastro que falhou (System Manager do site central). Retoma de onde parou."""
+	_require_central_site()
+	frappe.only_for("System Manager")
+	doc = frappe.get_doc("Cred Hub Signup", signup)
+	if doc.status != "Failed":
+		frappe.throw(_("Only failed signups can be retried."))
+	doc.db_set({"status": "Confirmed", "error": None})
+	frappe.enqueue(
+		"cred_hub.signup.provision",
+		queue=PROVISION_QUEUE,
+		timeout=1800,
+		job_id=f"credhub-signup-{doc.name}",
+		deduplicate=True,
+		enqueue_after_commit=True,
+		signup=doc.name,
+	)
+	return {"status": "Confirmed"}
+
+
 def create_owner(email, full_name):
 	"""Roda no site novo: o responsável vira o administrador e recebe o e-mail para criar a senha (ou entra
-	pelo Google/Microsoft/GitHub com o mesmo e-mail)."""
-	first, _sep, last = (full_name or "").strip().partition(" ")
-	user = frappe.get_doc(
-		{
-			"doctype": "User",
-			"email": email,
-			"first_name": first or email,
-			"last_name": last,
-			"language": "pt-BR",
-			"send_welcome_email": 1,
-			"roles": [{"role": role} for role in ("System Manager", "Sales Manager", "Sales User")],
-		}
-	).insert(ignore_permissions=True)
+	pelo Google/Microsoft/GitHub com o mesmo e-mail). Pode repetir (nova tentativa do cadastro)."""
+	roles = ("System Manager", "Sales Manager", "Sales User")
+	if frappe.db.exists("User", email):
+		user = frappe.get_doc("User", email)
+		user.enabled = 1
+		user.add_roles(*roles)
+	else:
+		first, _sep, last = (full_name or "").strip().partition(" ")
+		user = frappe.get_doc(
+			{
+				"doctype": "User",
+				"email": email,
+				"first_name": first or email,
+				"last_name": last,
+				"language": "pt-BR",
+				"send_welcome_email": 1,
+				"roles": [{"role": role} for role in roles],
+			}
+		).insert(ignore_permissions=True)
 	frappe.db.commit()
 	return user.name
