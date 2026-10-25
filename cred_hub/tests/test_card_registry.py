@@ -1,6 +1,7 @@
 """CNPJ no card (épico #66). Roda no bench: `bench --site <site> run-tests --app cred_hub`."""
 
 import frappe
+from crm.tests import default_test_pipeline
 from frappe.tests import IntegrationTestCase
 
 CNPJ = "11.222.333/0001-81"
@@ -21,7 +22,7 @@ class TestCardRegistry(IntegrationTestCase):
 		from crm.fcrm.doctype.crm_lead.crm_lead import convert_to_deal
 
 		lead = frappe.get_doc(
-			{"doctype": "CRM Lead", "first_name": "Ana", "cnpj": CNPJ, "trade_name": "Exemplo"}
+			{"doctype": "CRM Lead", "pipeline": default_test_pipeline(), "first_name": "Ana", "cnpj": CNPJ, "trade_name": "Exemplo"}
 		)
 		lead.insert(ignore_permissions=True)
 		lead.flags.ignore_permissions = True
@@ -34,7 +35,7 @@ class TestCardRegistry(IntegrationTestCase):
 
 		frappe.get_doc({"doctype": "CRM Organization", "organization_name": "Org Sem CNPJ"}).insert()
 		lead = frappe.get_doc(
-			{"doctype": "CRM Lead", "first_name": "Bia", "organization": "Org Sem CNPJ", "cnpj": CNPJ}
+			{"doctype": "CRM Lead", "pipeline": default_test_pipeline(), "first_name": "Bia", "organization": "Org Sem CNPJ", "cnpj": CNPJ}
 		)
 		lead.insert(ignore_permissions=True)
 		lead.flags.ignore_permissions = True
@@ -44,7 +45,7 @@ class TestCardRegistry(IntegrationTestCase):
 	def _convert(self, **lead_fields):
 		from crm.fcrm.doctype.crm_lead.crm_lead import convert_to_deal
 
-		lead = frappe.get_doc({"doctype": "CRM Lead", "first_name": "Teste", **lead_fields})
+		lead = frappe.get_doc({"doctype": "CRM Lead", "pipeline": default_test_pipeline(), "first_name": "Teste", **lead_fields})
 		lead.insert(ignore_permissions=True)
 		lead.flags.ignore_permissions = True
 		return frappe.get_doc("CRM Deal", convert_to_deal(lead.name, doc=lead))
