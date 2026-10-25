@@ -558,3 +558,6 @@ msgstr "Este link é inválido. Faça o cadastro de novo."
 
 msgid "Only failed signups can be retried."
 msgstr "Só cadastros que falharam podem ser tentados de novo."
+
+msgid "Accept the Terms of Use to create your company."
+msgstr "Aceite os Termos de uso para criar sua empresa."

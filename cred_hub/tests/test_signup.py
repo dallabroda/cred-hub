@@ -25,7 +25,7 @@ class TestSignup(IntegrationTestCase):
 		frappe.db.rollback()
 
 	def request(self, subdomain="acme-teste", email="ana@example.com"):
-		signup.request_signup.__wrapped__("Acme Teste Ltda", subdomain, "Ana Souza", email)
+		signup.request_signup.__wrapped__("Acme Teste Ltda", subdomain, "Ana Souza", email, accepted_terms=1)
 		return self.sent[-1]
 
 	def test_only_on_central_site(self):
@@ -94,9 +94,11 @@ class TestSignup(IntegrationTestCase):
 			patch.object(signup, "_create_site", side_effect=create or (lambda site: calls.append(["create", site]))),
 			patch.object(frappe.db, "commit"),
 			patch.object(frappe.db, "rollback"),
+			patch.object(signup, "_alert_team") as alert,
 		):
 			signup.provision(doc.name)
 		doc.reload()
+		self.alerted = alert.called
 		return calls
 
 	def test_provision_runs_steps_and_activates(self):
@@ -122,6 +124,7 @@ class TestSignup(IntegrationTestCase):
 		self.provision(doc, bench=setup_fails)
 		self.assertEqual(doc.status, "Failed")
 		self.assertIn("smtp down", doc.error)
+		self.assertTrue(self.alerted)  # equipe avisada
 		self.assertIsNone(signup.signup_status.__wrapped__(token)["address"])
 		self.assertEqual(signup.availability("acme-teste"), (False, "taken"))  # não libera um endereço criado
 
@@ -146,3 +149,20 @@ class TestSignup(IntegrationTestCase):
 			signup.create_owner(email, "Dono Repetido")
 		self.assertTrue(frappe.db.get_value("User", email, "enabled"))
 		self.assertIn("System Manager", frappe.get_roles(email))
+
+	def test_terms_must_be_accepted_and_are_recorded(self):
+		with self.assertRaises(frappe.ValidationError):
+			signup.request_signup.__wrapped__("Acme", "acme-termos", "Ana", "ana@example.com")
+		doc, token = self.request(subdomain="acme-termos")
+		self.assertEqual(doc.terms_version, signup.TERMS_VERSION)
+		self.assertTrue(doc.terms_accepted_on)
+
+	def test_same_request_again_resends_a_new_link(self):
+		doc, first = self.request()
+		again, second = self.request()  # mesmo e-mail e endereço: não é "em uso"
+		self.assertEqual(again.name, doc.name)
+		self.assertNotEqual(first, second)
+		self.assertEqual(frappe.db.count("Cred Hub Signup", {"subdomain": "acme-teste"}), 1)
+		with self.assertRaises(frappe.DoesNotExistError):
+			signup.signup_status.__wrapped__(first)  # o link antigo deixa de valer
+		self.assertEqual(signup.signup_status.__wrapped__(second)["status"], "Pending Confirmation")

@@ -33,6 +33,8 @@ DEFAULT_DOMAIN = "credtechdigital.com.br"
 LINK_HOURS = 24
 PROVISION_QUEUE = "credhub_provision"
 DB_PREFIX = "chsite"
+# Versão dos Termos de uso aceita no cadastro (data da Parte C, Cred Hub, em credtechdigital.com.br/termos)
+TERMS_VERSION = "2026-10-25"
 # Endereços da própria plataforma, de infraestrutura ou que confundem o cliente
 RESERVED = frozenset(
 	"""
@@ -155,8 +157,9 @@ def suggest_subdomain(company_name: str):
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @rate_limit(limit=20, seconds=60 * 60)
-def request_signup(company_name: str, subdomain: str, full_name: str, email: str):
-	"""Registra o pedido e manda o link de confirmação. A empresa só é criada depois do clique (dono)."""
+def request_signup(company_name: str, subdomain: str, full_name: str, email: str, accepted_terms: int = 0):
+	"""Registra o pedido e manda o link de confirmação. A empresa só é criada depois do clique (dono).
+	Pedido repetido (mesmo e-mail e mesmo endereço, link ainda válido) manda um link novo."""
 	_require_central_site()
 	company_name = (company_name or "").strip()
 	full_name = (full_name or "").strip()
@@ -166,6 +169,27 @@ def request_signup(company_name: str, subdomain: str, full_name: str, email: str
 		frappe.throw(_("Fill in the company name and your name."), frappe.MandatoryError)
 	if not frappe.utils.validate_email_address(email):
 		frappe.throw(_("Enter a valid e-mail address."), frappe.InvalidEmailAddressError)
+	if not frappe.utils.cint(accepted_terms):
+		frappe.throw(_("Accept the Terms of Use to create your company."), frappe.ValidationError)
+
+	token = secrets.token_urlsafe(32)
+	link = {
+		"company_name": company_name[:140],
+		"full_name": full_name[:140],
+		"token_hash": _hash(token),
+		"expires_on": add_to_date(now_datetime(), hours=LINK_HOURS),
+		"request_ip": frappe.local.request_ip,
+		# Prova do aceite: quando e qual versão dos Termos
+		"terms_accepted_on": now_datetime(),
+		"terms_version": TERMS_VERSION,
+	}
+	pending = _pending(subdomain, email)
+	if pending:
+		# O e-mail não chegou ou se perdeu: link novo para o mesmo pedido (o anterior deixa de valer)
+		pending.db_set(link)
+		_send_confirmation(pending, token)
+		return {"ok": True}
+
 	available, reason = availability(subdomain)
 	if not available:
 		frappe.throw(_reason_message(reason), frappe.ValidationError)
@@ -175,22 +199,25 @@ def request_signup(company_name: str, subdomain: str, full_name: str, email: str
 	if recent >= 3:
 		frappe.throw(_("Too many signups with this e-mail today. Please try again tomorrow."), frappe.RateLimitExceededError)
 
-	token = secrets.token_urlsafe(32)
 	doc = frappe.get_doc(
-		{
-			"doctype": "Cred Hub Signup",
-			"company_name": company_name[:140],
-			"subdomain": subdomain,
-			"full_name": full_name[:140],
-			"email": email,
-			"status": "Pending Confirmation",
-			"token_hash": _hash(token),
-			"expires_on": add_to_date(now_datetime(), hours=LINK_HOURS),
-			"request_ip": frappe.local.request_ip,
-		}
+		{"doctype": "Cred Hub Signup", "subdomain": subdomain, "email": email, "status": "Pending Confirmation", **link}
 	).insert(ignore_permissions=True)
 	_send_confirmation(doc, token)
 	return {"ok": True}
+
+
+def _pending(subdomain, email):
+	"""Pedido do mesmo e-mail para o mesmo endereço ainda esperando a confirmação (link dentro da validade)."""
+	name = frappe.db.get_value(
+		"Cred Hub Signup",
+		{
+			"subdomain": subdomain,
+			"email": email,
+			"status": "Pending Confirmation",
+			"expires_on": (">", now_datetime()),
+		},
+	)
+	return frappe.get_doc("Cred Hub Signup", name) if name else None
 
 
 def _send_confirmation(doc, token):
@@ -361,9 +388,32 @@ def provision(signup):
 		doc.db_set({"status": "Failed", "error": str(e)[-4000:]})
 		frappe.db.commit()
 		frappe.log_error(title=f"Cred Hub signup failed: {site}")
+		_alert_team(doc)
 		return
 	doc.db_set({"status": "Active", "active_on": now_datetime()})
 	frappe.db.commit()
+
+
+def _alert_team(doc):
+	"""Avisa a equipe CredTech (System Managers do site central) que um cadastro falhou."""
+	recipients = frappe.get_all(
+		"User",
+		filters={"enabled": 1, "user_type": "System User", "name": ("not in", ("Administrator", "Guest"))},
+		pluck="name",
+	)
+	recipients = [user for user in recipients if "System Manager" in frappe.get_roles(user)]
+	if not recipients:
+		return
+	frappe.sendmail(
+		recipients=recipients,
+		subject=f"Cred Hub: cadastro de {doc.company_name} falhou",
+		message=(
+			f"<p>O cadastro de <b>{frappe.utils.escape_html(doc.company_name)}</b> ({doc.site_name}, "
+			f"{frappe.utils.escape_html(doc.email)}) falhou.</p>"
+			f"<p>Veja o erro em <a href=\"{get_url(f'/app/cred-hub-signup/{doc.name}')}\">Cred Hub Signup</a> "
+			"e tente de novo com retry_provision.</p>"
+		),
+	)
 
 
 @frappe.whitelist(methods=["POST"])

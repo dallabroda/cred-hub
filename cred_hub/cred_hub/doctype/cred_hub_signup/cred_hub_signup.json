@@ -18,6 +18,8 @@
   "email",
   "column_break_owner",
   "request_ip",
+  "terms_accepted_on",
+  "terms_version",
   "confirmation_section",
   "token_hash",
   "expires_on",
@@ -99,6 +101,18 @@
    "read_only": 1
   },
   {
+   "fieldname": "terms_accepted_on",
+   "fieldtype": "Datetime",
+   "label": "Terms Accepted On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "terms_version",
+   "fieldtype": "Data",
+   "label": "Terms Version",
+   "read_only": 1
+  },
+  {
    "collapsible": 1,
    "fieldname": "confirmation_section",
    "fieldtype": "Section Break",
@@ -138,7 +152,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-10-25 18:00:00.000000",
+ "modified": "2026-10-25 20:00:00.000000",
  "modified_by": "Administrator",
  "module": "Cred Hub",
  "name": "Cred Hub Signup",
