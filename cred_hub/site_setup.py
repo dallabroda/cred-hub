@@ -48,7 +48,7 @@ TRANSLATIONS = {
 }
 
 # pt-BR por padrão; inglês para quem escolheu inglês (o idioma é do usuário)
-WELCOME_SUBJECT = "{% if doc.language == 'en' %}Welcome to Cred Hub{% else %}Bem-vindo ao Cred Hub{% endif %}"
+WELCOME_SUBJECT = "{% if doc.language == 'en' %}Welcome to Cred Hub{% else %}Boas-vindas ao Cred Hub{% endif %}"
 WELCOME_MESSAGE = """{% set url = frappe.utils.get_url("/crm") %}
 {% if doc.language == 'en' %}
 <p>Hi {{ doc.first_name or "" }},</p>
