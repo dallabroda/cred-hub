@@ -1,0 +1,140 @@
+{% extends "templates/web.html" %}
+{% block navbar %}{% endblock %}
+{% block footer %}{% endblock %}
+
+{% block head_include %}
+{{ include_style('login.bundle.css') }}
+<style>{% include "templates/includes/cred_hub_signup.css" %}</style>
+{% endblock %}
+
+{% block page_content %}
+<noscript>
+	<div class="text-center my-5">
+		<h4>{{ _("Javascript is disabled on your browser") }}</h4>
+		<p class="text-muted">{{ _("You need to enable JavaScript for your app to work.") }}</p>
+	</div>
+</noscript>
+<section class="for-login">
+	<div class="login-content page-card signup-card flex flex-col gap-5">
+		<div class="page-card-head flex flex-col items-start gap-4 text-left">
+			<img class="app-logo" src="{{ logo }}" alt="Cred Hub">
+			<div class="page-card-head-text flex flex-col gap-1.5 w-full">
+				<h4 class="text-3xl-bold text-ink-gray-9 w-full mt-0 mb-0" id="state-title">{{ messages.checking[0] }}</h4>
+				<p class="page-card-subtitle text-p-base text-ink-gray-6 mb-0" id="state-text"></p>
+			</div>
+		</div>
+		<div class="page-card-body flex flex-col gap-4">
+			<p class="text-p-base text-ink-gray-8 mb-0" id="company" hidden></p>
+			<p class="text-p-sm text-ink-gray-6 mb-0" id="address" hidden></p>
+			<div class="spinner" id="spinner" aria-hidden="true"></div>
+		</div>
+		<div class="page-card-actions flex flex-col gap-3" id="actions" hidden>
+			<a class="es-button w-full" data-variant="solid" id="action-link"></a>
+		</div>
+	</div>
+</section>
+{% endblock %}
+
+{% block script %}
+<script>
+{% include "templates/includes/cred_hub_signup.js" %}
+
+(() => {
+	const T = {{ messages | tojson }};
+	const SUPPORT = {{ support_url | tojson }};
+	const POLL_MS = 3000;
+	// Depois disso, para de consultar e explica (a criação continua no servidor)
+	const SLOW_AFTER_MS = 10 * 60 * 1000;
+	const token = new URLSearchParams(window.location.search).get("token") || "";
+	const started = Date.now();
+	const el = (id) => document.getElementById(id);
+
+	function show(state, { company, address, action } = {}) {
+		const [title, text] = T[state];
+		el("state-title").textContent = title;
+		el("state-text").textContent = text;
+		el("state-text").hidden = !text;
+		el("spinner").hidden = !["checking", "creating"].includes(state);
+		el("company").hidden = !company;
+		if (company) el("company").textContent = company;
+		el("address").hidden = !address;
+		if (address) el("address").textContent = address.replace("https://", "");
+		el("actions").hidden = !action;
+		if (action) {
+			el("action-link").textContent = action.label;
+			el("action-link").href = action.href;
+			el("action-link").dataset.variant = action.solid === false ? "subtle" : "solid";
+			el("action-link").target = action.external ? "_blank" : "";
+			el("action-link").rel = action.external ? "noopener" : "";
+		}
+		document.title = title;
+	}
+
+	function render(result) {
+		const company = result.company_name;
+		switch (result.status) {
+			case "Active":
+				show("active", { company, address: result.address, action: { label: T.open, href: `${result.address}/login` } });
+				return true;
+			case "Failed":
+				show("failed", { company, action: { label: T.whatsapp, href: SUPPORT, external: true } });
+				return true;
+			case "Expired":
+				show("expired", { company, action: { label: T.signup_again, href: "/cadastro" } });
+				return true;
+			default:
+				// Pending Confirmation (antes do clique), Confirmed e Provisioning: a empresa está sendo criada
+				show("creating", { company });
+				return false;
+		}
+	}
+
+	async function poll() {
+		if (Date.now() - started > SLOW_AFTER_MS) {
+			show("slow", { action: { label: T.whatsapp, href: SUPPORT, external: true } });
+			return;
+		}
+		const res = await signupApi.get("signup_status", { token });
+		if (res.ok) {
+			if (!render(res.data)) setTimeout(poll, POLL_MS);
+			return;
+		}
+		if (res.excType === "DoesNotExistError") {
+			show("invalid", { action: { label: T.signup_again, href: "/cadastro" } });
+			return;
+		}
+		// Falha passageira (rede, limite de requisições): tenta de novo
+		setTimeout(poll, POLL_MS * 2);
+	}
+
+	async function start() {
+		if (!token) {
+			show("invalid", { action: { label: T.signup_again, href: "/cadastro" } });
+			return;
+		}
+		// Reabrir o link (ou recarregar a página) só consulta: confirmar tem limite por hora no servidor
+		const current = await signupApi.get("signup_status", { token });
+		if (current.ok && current.data.status !== "Pending Confirmation") {
+			if (!render(current.data)) setTimeout(poll, POLL_MS);
+			return;
+		}
+		if (!current.ok && current.excType === "DoesNotExistError") {
+			show("invalid", { action: { label: T.signup_again, href: "/cadastro" } });
+			return;
+		}
+		// Abrir o link é a confirmação do e-mail (decisão do dono): confirma e acompanha a criação
+		const res = await signupApi.post("confirm_signup", { token });
+		if (!res.ok) {
+			if (res.excType === "DoesNotExistError") show("invalid", { action: { label: T.signup_again, href: "/cadastro" } });
+			else show("error", { action: { label: T.signup_again, href: "/cadastro", solid: false } });
+			return;
+		}
+		if (!render(res.data)) setTimeout(poll, POLL_MS);
+	}
+
+	start();
+})();
+</script>
+{% endblock %}
+
+{% block sidebar %}{% endblock %}

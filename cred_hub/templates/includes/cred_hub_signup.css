@@ -1,0 +1,93 @@
+/* Páginas do cadastro (/cadastro e /cadastro/confirmar): mesmo cartão da tela de login (login.bundle.css) */
+.signup-card .form-group {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	margin-bottom: 0;
+}
+.signup-card label {
+	margin-bottom: 0;
+}
+.signup-card .page-card-body input[type="text"],
+.signup-card .page-card-body input[type="email"] {
+	width: 100%;
+}
+.signup-card .address-field {
+	display: flex;
+	align-items: center;
+	width: 100%;
+	border: 1px solid var(--outline-gray-2);
+	border-radius: var(--radius);
+	background-color: var(--surface-base);
+}
+.signup-card .address-field:focus-within {
+	box-shadow: var(--focus-default, 0 0 0 2px var(--outline-gray-3));
+}
+.signup-card .page-card-body .address-field input[type="text"] {
+	border: 0;
+	min-width: 0;
+	flex: 1;
+	box-shadow: none;
+}
+.signup-card .address-suffix {
+	padding: 0 8px 0 0;
+	color: var(--ink-gray-5);
+	white-space: nowrap;
+}
+.signup-card .field-hint {
+	margin: 0;
+	min-height: 18px;
+}
+.signup-card .hint-ok {
+	color: #16794c;
+}
+.signup-card .hint-error {
+	color: #c0392b;
+}
+.signup-card .terms {
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+	margin: 0;
+	color: var(--ink-gray-6);
+	cursor: pointer;
+}
+.signup-card .terms input {
+	margin-top: 3px;
+}
+.signup-card .terms a,
+.signup-card .muted-link {
+	color: var(--ink-gray-8);
+	text-decoration: underline;
+}
+.signup-card .plan-note {
+	margin: 0;
+	padding: 10px 12px;
+	border-radius: var(--radius);
+	background-color: var(--surface-gray-1, #f8f8f8);
+	color: var(--ink-gray-6);
+}
+.signup-card .form-error {
+	margin: 0;
+	color: #c0392b;
+}
+.signup-card .status-icon {
+	width: 40px;
+	height: 40px;
+}
+.signup-card .spinner {
+	width: 28px;
+	height: 28px;
+	border: 3px solid var(--outline-gray-2);
+	border-top-color: var(--ink-gray-8);
+	border-radius: 50%;
+	animation: signup-spin 0.9s linear infinite;
+}
+@keyframes signup-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+.signup-card [hidden] {
+	display: none !important;
+}

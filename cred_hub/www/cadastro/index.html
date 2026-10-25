@@ -1,0 +1,214 @@
+{% extends "templates/web.html" %}
+{% block navbar %}{% endblock %}
+{% block footer %}{% endblock %}
+
+{% block head_include %}
+{{ include_style('login.bundle.css') }}
+<style>{% include "templates/includes/cred_hub_signup.css" %}</style>
+{% endblock %}
+
+{% block page_content %}
+<noscript>
+	<div class="text-center my-5">
+		<h4>{{ _("Javascript is disabled on your browser") }}</h4>
+		<p class="text-muted">{{ _("You need to enable JavaScript for your app to work.") }}</p>
+	</div>
+</noscript>
+<section class="for-login">
+	<div class="login-content page-card signup-card flex flex-col gap-5">
+		<div class="page-card-head flex flex-col items-start gap-4 text-left">
+			<img class="app-logo" src="{{ logo }}" alt="Cred Hub">
+			<div class="page-card-head-text flex flex-col gap-1.5 w-full">
+				<h4 class="text-3xl-bold text-ink-gray-9 w-full mt-0 mb-0" id="signup-title">{{ _("Create your company") }}</h4>
+				<p class="page-card-subtitle text-p-base text-ink-gray-6 mb-0" id="signup-subtitle">{{ _("Your company gets its own Cred Hub address. You will be its administrator.") }}</p>
+			</div>
+		</div>
+
+		<form id="signup-form" class="flex flex-col gap-5" novalidate>
+			<div class="page-card-body flex flex-col gap-4">
+				<div class="form-group">
+					<label class="text-base text-ink-gray-5" for="company_name">{{ _("Company name") }}</label>
+					<input type="text" id="company_name" class="form-control" maxlength="140" autocomplete="organization" required autofocus>
+					<p class="field-hint text-sm" data-hint="company_name"></p>
+				</div>
+				<div class="form-group">
+					<label class="text-base text-ink-gray-5" for="subdomain">{{ _("Address") }}</label>
+					<div class="address-field">
+						<input type="text" id="subdomain" maxlength="30" autocomplete="off" autocapitalize="off" spellcheck="false" required>
+						<span class="address-suffix text-base">.{{ domain }}</span>
+					</div>
+					<p class="field-hint text-sm" data-hint="subdomain"></p>
+				</div>
+				<div class="form-group">
+					<label class="text-base text-ink-gray-5" for="full_name">{{ _("Your name") }}</label>
+					<input type="text" id="full_name" class="form-control" maxlength="140" autocomplete="name" required>
+					<p class="field-hint text-sm" data-hint="full_name"></p>
+				</div>
+				<div class="form-group">
+					<label class="text-base text-ink-gray-5" for="email">{{ _("Your e-mail") }}</label>
+					<input type="email" id="email" class="form-control" placeholder="{{ _('name@company.com') }}" autocomplete="email" required>
+					<p class="field-hint text-sm" data-hint="email"></p>
+				</div>
+				<p class="plan-note text-sm">{{ _("Free for up to 2 users. From the third user on, R$ 60 per user per month.") }}</p>
+				<label class="terms text-sm" for="accept_terms">
+					<input type="checkbox" id="accept_terms">
+					<span>{{ _("I accept the {0} and the {1}.").format(
+						'<a href="' ~ terms_url ~ '" target="_blank" rel="noopener">' ~ _("Terms of use") ~ '</a>',
+						'<a href="' ~ privacy_url ~ '" target="_blank" rel="noopener">' ~ _("Privacy policy") ~ '</a>') }}</span>
+				</label>
+				<p class="field-hint text-sm" data-hint="accept_terms"></p>
+				<p class="form-error text-base" id="form-error" hidden></p>
+			</div>
+			<div class="page-card-actions flex flex-col gap-3">
+				<button class="es-button w-full" data-variant="solid" type="submit" id="signup-submit">{{ _("Create my company") }}</button>
+			</div>
+		</form>
+
+		<div id="signup-sent" class="page-card-body flex flex-col gap-4" hidden>
+			<p class="text-p-base text-ink-gray-7 mb-0">{{ _("We sent a link to {0}. Open it to create your company.").format('<b id="sent-email"></b>') }}</p>
+			<p class="text-p-sm text-ink-gray-6 mb-0">{{ _("The link is valid for 24 hours. Didn't get it? Check your spam folder.") }}</p>
+		</div>
+
+		<div class="text-center text-p-sm text-ink-gray-6 mt-auto mb-0">
+			{{ _("Already use Cred Hub?") }}
+			<a href="/login" class="text-p-sm-semibold text-ink-gray-6">{{ _("Sign in") }}</a>
+		</div>
+	</div>
+</section>
+{% endblock %}
+
+{% block script %}
+<script>
+{% include "templates/includes/cred_hub_signup.js" %}
+
+(() => {
+	const T = {{ messages | tojson }};
+	const form = document.getElementById("signup-form");
+	const fields = Object.fromEntries(
+		["company_name", "subdomain", "full_name", "email", "accept_terms"].map((id) => [id, document.getElementById(id)])
+	);
+	const submit = document.getElementById("signup-submit");
+	const formError = document.getElementById("form-error");
+	// Endereço livre conferido no servidor; null enquanto não se sabe
+	let addressOk = null;
+	// Depois que a pessoa mexe no endereço, o nome da empresa não o troca mais
+	let addressEdited = false;
+	let lookup = 0;
+
+	function hint(id, text, kind) {
+		const el = document.querySelector(`[data-hint="${id}"]`);
+		el.textContent = text || "";
+		el.className = `field-hint text-sm ${kind === "ok" ? "hint-ok" : kind === "error" ? "hint-error" : "text-ink-gray-5"}`;
+	}
+
+	function showAddress(result) {
+		addressOk = result.available;
+		// O endereço completo some no campo estreito (celular): mostra inteiro no aviso
+		if (result.available) hint("subdomain", `✓ ${T.available}: ${result.address.replace("https://", "")}`, "ok");
+		else hint("subdomain", result.message, "error");
+	}
+
+	function debounce(fn, wait) {
+		let timer;
+		return (...args) => {
+			clearTimeout(timer);
+			timer = setTimeout(() => fn(...args), wait);
+		};
+	}
+
+	const suggest = debounce(async (companyName) => {
+		const ticket = ++lookup;
+		const res = await signupApi.get("suggest_subdomain", { company_name: companyName });
+		if (ticket !== lookup || addressEdited || !res.ok) return;
+		fields.subdomain.value = res.data.subdomain;
+		showAddress(res.data);
+	}, 400);
+
+	const check = debounce(async (subdomain) => {
+		const ticket = ++lookup;
+		const res = await signupApi.get("check_subdomain", { subdomain });
+		if (ticket !== lookup) return;
+		if (res.ok) showAddress(res.data);
+		else hint("subdomain", res.message || T.generic_error, "error");
+	}, 400);
+
+	fields.company_name.addEventListener("input", () => {
+		hint("company_name", "");
+		const name = fields.company_name.value.trim();
+		if (addressEdited || name.length < 2) return;
+		addressOk = null;
+		hint("subdomain", T.checking);
+		suggest(name);
+	});
+
+	fields.subdomain.addEventListener("input", () => {
+		// Só o que o endereço aceita: minúsculas, números e hífen (acentos viram letras simples)
+		const clean = fields.subdomain.value
+			.normalize("NFD")
+			.replace(/[̀-ͯ]/g, "")
+			.toLowerCase()
+			.replace(/[\s_.]+/g, "-")
+			.replace(/[^a-z0-9-]/g, "")
+			.slice(0, 30);
+		if (clean !== fields.subdomain.value) fields.subdomain.value = clean;
+		addressEdited = clean.length > 0;
+		addressOk = null;
+		if (!clean) {
+			hint("subdomain", "");
+			return;
+		}
+		hint("subdomain", T.checking);
+		check(clean);
+	});
+
+	["full_name", "email"].forEach((id) => fields[id].addEventListener("input", () => hint(id, "")));
+	fields.accept_terms.addEventListener("change", () => hint("accept_terms", ""));
+
+	function validate() {
+		let first = null;
+		const fail = (id, text) => {
+			hint(id, text, "error");
+			first = first || fields[id];
+		};
+		if (!fields.company_name.value.trim()) fail("company_name", T.required);
+		if (!fields.subdomain.value) fail("subdomain", T.required);
+		else if (addressOk === false) fail("subdomain", T.choose_address);
+		if (!fields.full_name.value.trim()) fail("full_name", T.required);
+		if (!fields.email.value.trim()) fail("email", T.required);
+		else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(fields.email.value.trim())) fail("email", T.invalid_email);
+		if (!fields.accept_terms.checked) fail("accept_terms", T.accept_terms);
+		if (first) first.focus();
+		return !first;
+	}
+
+	form.addEventListener("submit", async (event) => {
+		event.preventDefault();
+		formError.hidden = true;
+		if (!validate()) return;
+		submit.disabled = true;
+		submit.textContent = T.sending;
+		const email = fields.email.value.trim();
+		const res = await signupApi.post("request_signup", {
+			company_name: fields.company_name.value.trim(),
+			subdomain: fields.subdomain.value,
+			full_name: fields.full_name.value.trim(),
+			email,
+		});
+		submit.disabled = false;
+		submit.textContent = T.submit;
+		if (!res.ok) {
+			formError.textContent = res.message || T.generic_error;
+			formError.hidden = false;
+			return;
+		}
+		form.hidden = true;
+		document.getElementById("sent-email").textContent = email;
+		document.getElementById("signup-sent").hidden = false;
+		document.getElementById("signup-title").textContent = {{ _("Confirm your e-mail") | tojson }};
+		document.getElementById("signup-subtitle").hidden = true;
+	});
+})();
+</script>
+{% endblock %}
+
+{% block sidebar %}{% endblock %}
