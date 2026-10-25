@@ -18,7 +18,9 @@ def _entries():
 
 
 def test_po_has_entries():
-	assert len(_entries()) > 1000
+	# Only this app's own texts: the CRM texts are translated in the crm app (dallabroda/crm#13),
+	# and repeating them here would override its wording (cred_hub loads after crm)
+	assert len(_entries()) > 100
 
 
 def test_placeholders_preserved():
