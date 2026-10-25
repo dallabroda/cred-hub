@@ -525,3 +525,33 @@ msgstr "Presença digital consultada em"
 
 msgid "The entry came with CNPJ {0}, different from the organization's ({1})."
 msgstr "A entrada veio com o CNPJ {0}, diferente do da organização ({1})."
+
+msgid "Company signup is not available here."
+msgstr "O cadastro de empresas não está disponível aqui."
+
+msgid "Use 3 to 30 lowercase letters, numbers or hyphens, starting and ending with a letter or number."
+msgstr "Use de 3 a 30 letras minúsculas, números ou hífens, começando e terminando com letra ou número."
+
+msgid "This address is reserved. Please choose another one."
+msgstr "Este endereço é reservado. Escolha outro."
+
+msgid "This address is already in use. Please choose another one."
+msgstr "Este endereço já está em uso. Escolha outro."
+
+msgid "Fill in the company name and your name."
+msgstr "Preencha o nome da empresa e o seu nome."
+
+msgid "Enter a valid e-mail address."
+msgstr "Informe um e-mail válido."
+
+msgid "Too many signups with this e-mail today. Please try again tomorrow."
+msgstr "Muitos cadastros com este e-mail hoje. Tente de novo amanhã."
+
+msgid "Confirm your e-mail to create {0} on Cred Hub"
+msgstr "Confirme seu e-mail para criar {0} no Cred Hub"
+
+msgid "<p>Hi, {0}!</p><p>To create <b>{1}</b> on Cred Hub, at <b>{2}</b>, confirm your e-mail:</p><p><a href=\"{3}\">Confirm and create my company</a></p><p>The link is valid for {4} hours. If you did not ask for this, ignore this e-mail.</p><p>CredTech team</p>"
+msgstr "<p>Olá, {0}!</p><p>Para criar <b>{1}</b> no Cred Hub, em <b>{2}</b>, confirme seu e-mail:</p><p><a href=\"{3}\">Confirmar e criar minha empresa</a></p><p>O link vale por {4} horas. Se você não pediu isso, ignore este e-mail.</p><p>Equipe CredTech</p>"
+
+msgid "This link is invalid. Please sign up again."
+msgstr "Este link é inválido. Faça o cadastro de novo."
