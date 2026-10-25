@@ -95,6 +95,8 @@ class TestSignup(IntegrationTestCase):
 		self.assertEqual(doc.status, "Active")
 		self.assertEqual(doc.site_name, "acme-teste.credtechdigital.com.br")
 		self.assertEqual(calls[0][:2], ["new-site", "acme-teste.credtechdigital.com.br"])
+		db_name = calls[0][calls[0].index("--db-name") + 1]
+		self.assertTrue(db_name.startswith(signup.DB_PREFIX))
 		self.assertIn("cred_hub.site_setup.apply_from_env", calls[2])
 		self.assertIn("cred_hub.signup.create_owner", calls[3])
 

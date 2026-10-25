@@ -32,6 +32,7 @@ from frappe.utils import add_to_date, get_bench_path, get_url, now_datetime
 DEFAULT_DOMAIN = "credtechdigital.com.br"
 LINK_HOURS = 24
 PROVISION_QUEUE = "credhub_provision"
+DB_PREFIX = "chsite"
 # Endereços da própria plataforma, de infraestrutura ou que confundem o cliente
 RESERVED = frozenset(
 	"""
@@ -325,6 +326,10 @@ def provision(signup):
 			[
 				"new-site",
 				site,
+				# Prefixo fixo: o usuário de banco do cadastro só tem direitos em `chsite%` (o MariaDB não aceita
+				# conceder a partir de um curinga com "_" escapado, o prefixo padrão do Frappe)
+				"--db-name",
+				f"{DB_PREFIX}{secrets.token_hex(8)}",
 				"--mariadb-user-host-login-scope=%",
 				"--db-root-username",
 				db_user,
