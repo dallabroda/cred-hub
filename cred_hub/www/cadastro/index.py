@@ -16,7 +16,7 @@ def get_context(context):
 	if not frappe.conf.get("credhub_signup"):
 		frappe.local.flags.redirect_location = "/login"
 		raise frappe.Redirect
-	context.title = _("Create your company")
+	context.title = f"{_('Create your company')} · Cred Hub"
 	context.logo = get_app_logo()
 	context.domain = _domain()
 	context.terms_url = TERMS_URL
