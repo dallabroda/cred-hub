@@ -14,9 +14,6 @@ msgstr "Outro CRM"
 msgid "Back to previous question"
 msgstr "Voltar para a pergunta anterior"
 
-msgid "CRM Deal"
-msgstr "Negócio"
-
 msgid "CRM Fields Layout"
 msgstr "Layout de campos do CRM"
 
@@ -42,7 +39,7 @@ msgid "Capturing Leads"
 msgstr "Captura de leads"
 
 msgid "Close my first deal"
-msgstr "Fechar meu primeiro negócio"
+msgstr "Fechar meu primeiro card"
 
 msgid "Collaborating with my team"
 msgstr "Colaborar com minha equipe"
@@ -57,7 +54,7 @@ msgid "Convert"
 msgstr "Converter"
 
 msgid "Convert lead to deal"
-msgstr "Converter lead em negócio"
+msgstr "Converter lead em card"
 
 msgid "Create Lead from Incoming Emails"
 msgstr "Criar lead a partir de e-mails recebidos"
@@ -88,9 +85,6 @@ msgstr "Status personalizados"
 
 msgid "Data Fields"
 msgstr "Campos de dados"
-
-msgid "Deal"
-msgstr "Negócio"
 
 msgid "Email Communication"
 msgstr "Comunicação por e-mail"
@@ -253,9 +247,6 @@ msgstr "O que você quer resolver primeiro?"
 
 msgid "You do not have enough permissions to access Frappe CRM. Please contact your administrator if you believe this is an error."
 msgstr "Você não tem permissão suficiente para acessar o Frappe CRM. Fale com o administrador se achar que isso é um erro."
-
-msgid "deal"
-msgstr "negócio"
 
 msgid "description"
 msgstr "descrição"
