@@ -4977,3 +4977,6 @@ msgstr "Fonte dos funcionários"
 msgid "Digital Presence Checked On"
 msgstr "Presença digital consultada em"
 
+
+msgid "The entry came with CNPJ {0}, different from the organization's ({1})."
+msgstr "A entrada veio com o CNPJ {0}, diferente do da organização ({1})."

@@ -4,6 +4,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 CNPJ = "11.222.333/0001-81"
+OTHER = "11.444.777/0001-61"
 
 
 class TestCardRegistry(IntegrationTestCase):
@@ -38,4 +39,44 @@ class TestCardRegistry(IntegrationTestCase):
 		lead.insert(ignore_permissions=True)
 		lead.flags.ignore_permissions = True
 		card = frappe.get_doc("CRM Deal", convert_to_deal(lead.name, doc=lead))
+		self.assertEqual(frappe.db.get_value("CRM Organization", card.organization, "cnpj"), CNPJ)
+
+	def _convert(self, **lead_fields):
+		from crm.fcrm.doctype.crm_lead.crm_lead import convert_to_deal
+
+		lead = frappe.get_doc({"doctype": "CRM Lead", "first_name": "Teste", **lead_fields})
+		lead.insert(ignore_permissions=True)
+		lead.flags.ignore_permissions = True
+		return frappe.get_doc("CRM Deal", convert_to_deal(lead.name, doc=lead))
+
+	def test_organization_with_other_cnpj_is_not_mixed(self):
+		frappe.get_doc(
+			{
+				"doctype": "CRM Organization",
+				"organization_name": "Org Outra",
+				"cnpj": OTHER,
+				"city": "JOINVILLE",
+			}
+		).insert()
+		card = self._convert(organization="Org Outra", cnpj=CNPJ, city="BLUMENAU", legal_name="OUTRA LTDA")
+		org = frappe.get_doc("CRM Organization", card.organization)
+		self.assertEqual((org.cnpj, org.city), (OTHER, "JOINVILLE"))
+		self.assertFalse(org.legal_name)
+		comments = frappe.get_all(
+			"Comment", {"reference_doctype": "CRM Deal", "reference_name": card.name}, pluck="content"
+		)
+		self.assertTrue(any(CNPJ in c for c in comments))
+
+	def test_homonym_with_other_cnpj_gets_its_own_organization(self):
+		frappe.get_doc(
+			{"doctype": "CRM Organization", "organization_name": "Padaria Central", "cnpj": OTHER}
+		).insert()
+		card = self._convert(cnpj=CNPJ, trade_name="Padaria Central")
+		self.assertEqual(card.organization, f"Padaria Central ({CNPJ})")
+		self.assertEqual(frappe.db.get_value("CRM Organization", card.organization, "cnpj"), CNPJ)
+
+	def test_homonym_without_cnpj_is_reused(self):
+		frappe.get_doc({"doctype": "CRM Organization", "organization_name": "Padaria Sem CNPJ"}).insert()
+		card = self._convert(cnpj=CNPJ, trade_name="Padaria Sem CNPJ")
+		self.assertEqual(card.organization, "Padaria Sem CNPJ")
 		self.assertEqual(frappe.db.get_value("CRM Organization", card.organization, "cnpj"), CNPJ)
