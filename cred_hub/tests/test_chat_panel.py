@@ -21,7 +21,7 @@ class FakeChat:
 	def __call__(self, method, path, token, **kwargs):
 		self.calls.append((method, path, kwargs.get("json")))
 		if path == "/api/v1/profile":
-			return {"accounts": [{"id": 3, "name": "Acme", "role": self.role}]}
+			return {"accounts": [{"id": i, "name": "Acme", "role": self.role} for i in (3, 4)]}
 		if path.endswith("/inboxes"):
 			return {"payload": []}
 		if path.endswith("/dashboard_apps"):
@@ -120,3 +120,18 @@ class TestChatPanel(IntegrationTestCase):
 		self.assertTrue(result["connected"])
 		self.assertFalse(result["panel_installed"])
 		self.assertIn("administrator", result["panel_error"])
+
+
+	def test_value_from_products_is_read_only(self):
+		name = self.card(PHONE, products=[{"product_name": "Plano", "qty": 2, "rate": 300}])
+		card = chat_panel.update_card(name, deal_value="9999")
+		self.assertTrue(card["value_from_products"])
+		self.assertEqual(card["deal_value"], 600)
+
+	def test_reconnecting_to_another_account_removes_the_old_panel(self):
+		chat = FakeChat()
+		with patch.object(welcome, "_call", chat):
+			welcome.connect_chat(3, "chave")
+			welcome.connect_chat(4, "chave")
+		self.assertIn(("DELETE", "/api/v1/accounts/3/dashboard_apps/42", None), chat.calls)
+		self.assertEqual(frappe.get_single(welcome.CONNECTION).account_id, 4)

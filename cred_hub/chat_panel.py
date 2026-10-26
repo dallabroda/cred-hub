@@ -162,6 +162,8 @@ def _card(row):
 		"status_type": stage.get("type"),
 		"status_color": stage.get("color"),
 		"deal_value": row.deal_value,
+		# Com produtos, o CRM regrava o valor com o total deles: o painel mostra sem deixar editar
+		"value_from_products": bool(frappe.db.exists("CRM Products", {"parenttype": "CRM Deal", "parent": row.name})),
 		"currency": row.currency,
 		"owner": frappe.utils.get_fullname(row.deal_owner) if row.deal_owner else None,
 		"url": get_url(f"/crm/deals/{row.name}"),
@@ -191,7 +193,7 @@ def update_card(name, status=None, deal_value=None):
 	doc.check_permission("write")
 	if status:
 		doc.status = status
-	if deal_value not in (None, ""):
+	if deal_value not in (None, "") and not doc.get("products"):
 		doc.deal_value = flt(deal_value)
 	doc.save()
 	row = frappe.get_list("CRM Deal", filters={"name": doc.name}, fields=_FIELDS)

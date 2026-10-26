@@ -172,7 +172,10 @@ def connect_chat(account_id, access_token):
 		_inboxes(account_id, access_token)
 	except ChatError as e:
 		frappe.throw(str(e))
-	doc = frappe.get_single(CONNECTION)
+	doc, old_token = _connection()
+	if doc and cint(doc.account_id) != account_id:
+		chat_panel.uninstall(doc, old_token)  # o painel não fica na conta antiga
+	doc = doc or frappe.get_single(CONNECTION)
 	doc.update(
 		{
 			"account_id": account_id,
