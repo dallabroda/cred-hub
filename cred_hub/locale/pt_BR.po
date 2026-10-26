@@ -1038,11 +1038,30 @@ msgstr "Informe um CEP válido."
 msgid "Choose between 0 and 500 extra users."
 msgstr "Escolha entre 0 e 500 usuários extras."
 
-msgid "Deactivate {0} users before reducing the plan."
-msgstr "Desative {0} usuários antes de diminuir o plano."
 
 msgid "Billing is not available right now. Please try again later."
 msgstr "A cobrança não está disponível agora. Tente de novo mais tarde."
 
 msgid "The payment service refused the request: {0}"
 msgstr "O serviço de pagamento recusou o pedido: {0}"
+
+msgid "The previous payment was just confirmed. Wait a minute and try again."
+msgstr "O pagamento anterior acabou de ser confirmado. Aguarde um minuto e tente de novo."
+
+msgid "Last Applied Upgrade Payment"
+msgstr "Último pagamento de aumento aplicado"
+
+msgid "Paid Extra Users Before Upgrade"
+msgstr "Extras pagos antes do aumento"
+
+msgid "Upgrade Due Date"
+msgstr "Vencimento da diferença"
+
+msgid "Extra Users From Next Due Date"
+msgstr "Extras a partir do próximo vencimento"
+
+msgid "Scheduled From"
+msgstr "A partir de"
+
+msgid "Grace Until"
+msgstr "Tolerância até"

@@ -1,14 +1,15 @@
 """Limite de usuários e cobrança de usuários extras pelo Asaas (credtech#25).
 
-Regras do dono (25 e 26/10/2026): cada empresa tem 2 usuários grátis; do 3º em diante, só com a assinatura ativa,
-R$ 60 por usuário a mais por mês, no cartão, pelo Asaas (a mesma conta do Cred Chat). Atraso ou cancelamento pausa
-os usuários acima do limite, começando pelos mais recentes, sem apagar nada; eles voltam quando a assinatura é
-regularizada.
+Regras do dono (25 e 26/10/2026): cada empresa tem 2 usuários grátis; do 3º em diante, R$ 60 por usuário a mais por
+mês, no cartão, pelo Asaas de produção (a mesma conta do Cred Chat). Padrão de mercado, e na dúvida não prejudicar
+o cliente: nunca cobrar duas vezes a mesma coisa, nunca tirar vaga já paga, toda falha de cobrança tem prazo de
+tolerância antes de pausar, e pausar começa pelo usuário mais recente, sem apagar nada.
 
 - O plano fica no doctype único "Cred Hub Plan" de cada empresa. Só administradores (System Manager) veem e mudam.
-- Aumentar com a assinatura ativa: cobra na hora a diferença proporcional aos dias que faltam no ciclo; os usuários
-  novos só liberam depois do pagamento e daí em diante a mensalidade já vem com o valor novo. Diminuir: o valor
-  menor vale a partir da próxima cobrança (sem reembolso do mês corrente). Decisões do dono, 26/10/2026.
+- Aumentar com a assinatura ativa: libera na hora e cobra a diferença proporcional por link, com 3 dias de prazo;
+  sem pagamento, só os usuários novos são pausados até pagar. Diminuir: as vagas pagas valem até o próximo
+  vencimento; a fatura seguinte vem com o valor menor e, na virada, quem passar do limite é pausado.
+- Mensalidade vencida: 3 dias de tolerância; depois, pausa acima dos 2 grátis até pagar.
 - A empresa da própria CredTech não tem limite (`credhub_unlimited_users` no site_config, gravado pelo deploy).
 - Todo usuário de sistema conta, inclusive os de integração (decisão do dono).
 - O cartão é digitado na página da fatura do Asaas (invoice_url), nunca no Cred Hub.
@@ -26,7 +27,7 @@ import re
 import frappe
 import requests
 from frappe import _
-from frappe.utils import cint, getdate, now_datetime
+from frappe.utils import add_days, cint, getdate, now_datetime
 
 from cred_hub.cnpj.mapping import is_valid_cnpj, only_digits
 
@@ -36,6 +37,10 @@ PLAN = "Cred Hub Plan"
 UNLIMITED = 1_000_000
 # Menor cobrança avulsa aceita pelo Asaas no cartão
 MIN_CHARGE = 5
+# Prazo para pagar a diferença de um aumento (os usuários novos já entram na hora)
+UPGRADE_DUE_DAYS = 3
+# Tolerância depois de uma mensalidade vencida antes de pausar alguém
+GRACE_DAYS = 3
 HIDDEN_USERS = ("Administrator", "Guest")
 CONFIRMED = ("CONFIRMED", "RECEIVED", "RECEIVED_IN_CASH")
 WEBHOOK_EVENTS = [
@@ -64,8 +69,9 @@ def user_limit(plan=None):
 	if frappe.conf.get("credhub_unlimited_users"):
 		return UNLIMITED
 	plan = plan or _plan()
-	# Extras só valem com a assinatura em dia; trocar de quantidade não tira os já pagos até o pagamento novo
-	extras = cint(plan.extra_users) if plan.status == "Active" else 0
+	# Extras valem com a assinatura em dia e, vencida, durante a tolerância
+	in_grace = plan.status == "Past Due" and plan.grace_until and getdate(plan.grace_until) >= getdate()
+	extras = cint(plan.extra_users) if plan.status == "Active" or in_grace else 0
 	return FREE_USERS + extras
 
 
@@ -122,7 +128,22 @@ def get_plan():
 		"limit": user_limit(plan),
 		"free": FREE_USERS,
 		"extras": cint(plan.extra_users),
-		"pending_extras": cint(plan.pending_extra_users),
+		# 1ª assinatura: extras que entram quando o 1º pagamento for confirmado
+		"pending_extras": cint(plan.pending_extra_users) if plan.status == "Awaiting Payment" else 0,
+		# Diminuição agendada: a quantidade nova vale a partir de scheduled_from (vencimento)
+		"scheduled_extras": cint(plan.scheduled_extra_users) if plan.scheduled_from else None,
+		"scheduled_from": plan.scheduled_from,
+		# Aumento já liberado, com a diferença a pagar até due_date (overdue: os novos estão pausados)
+		"upgrade": {
+			"extras": cint(plan.pending_extra_users),
+			"paid_extras": cint(plan.upgrade_base_users),
+			"due_date": plan.upgrade_due_date,
+			"overdue": cint(plan.extra_users) < cint(plan.pending_extra_users),
+			"invoice_url": plan.invoice_url,
+		}
+		if plan.upgrade_payment_id
+		else None,
+		"grace_until": plan.grace_until if plan.status == "Past Due" else None,
 		"used_active": len(active_users()),
 		"used_invited": len(pending_invitations()),
 		"status": plan.status,
@@ -182,81 +203,31 @@ def _clean_payer(payer):
 
 @frappe.whitelist(methods=["POST"])
 def request_extra_users(quantity: int, payer=None):
-	"""Quantos usuários extras a empresa quer (0 = só os grátis). Devolve {ok, invoice_url} ou {ok: False, ...}."""
+	"""Quantos usuários extras a empresa quer (0 = só os grátis). Devolve {ok, invoice_url, status} ou {ok: False, ...}."""
 	frappe.only_for("System Manager")
 	quantity = cint(quantity)
 	if quantity < 0 or quantity > 500:
 		return _field_error("quantity", _("Choose between 0 and 500 extra users."))
 	plan = _plan()
-	needed_off = len(active_users()) - (FREE_USERS + quantity)
-	if needed_off > 0:
-		return {
-			"ok": False,
-			"field": "quantity",
-			"deactivate": needed_off,
-			"message": _("Deactivate {0} users before reducing the plan.").format(needed_off),
-		}
+	if plan.status == "Active" and plan.asaas_subscription_id:
+		return _change_active_plan(plan, quantity)
 
 	if quantity == 0:
-		if plan.asaas_subscription_id:
-			_asaas("DELETE", f"/subscriptions/{plan.asaas_subscription_id}", allow_missing=True)
-		_save_plan(
-			plan,
-			status="Free",
-			extra_users=0,
-			pending_extra_users=0,
-			monthly_amount=0,
-			asaas_subscription_id=None,
-			invoice_url=None,
-			next_due_date=None,
-			upgrade_payment_id=None,
-		)
+		# Sem assinatura paga não há vaga paga a preservar: volta a só os grátis
+		_forget_subscription(plan)
+		_save_plan(plan, status="Free", monthly_amount=0, invoice_url=None, next_due_date=None, grace_until=None, **_cleared())
+		pause_over_limit()
 		return {"ok": True, "invoice_url": None, "status": "Free"}
-
-	value = PRICE_PER_USER * quantity
-	description = f"Cred Hub - {quantity} usuário(s) a mais - {frappe.local.site}"
-	if plan.status == "Active" and plan.asaas_subscription_id:
-		current = cint(plan.extra_users)
-		if quantity <= current:
-			# Diminuir: o valor menor vale a partir da próxima cobrança (a fatura já gerada fica como está)
-			_asaas(
-				"PUT",
-				f"/subscriptions/{plan.asaas_subscription_id}",
-				{"value": value, "description": description, "updatePendingPayments": False},
-			)
-			_save_plan(plan, extra_users=quantity, pending_extra_users=0, monthly_amount=value, invoice_url=None)
-			return {"ok": True, "invoice_url": None, "status": "Active"}
-		# Aumentar: cobra agora a diferença proporcional; os novos só liberam com o pagamento
-		amount = _prorated(quantity - current, plan.next_due_date)
-		payment = _asaas(
-			"POST",
-			"/payments",
-			{
-				"customer": plan.asaas_customer_id,
-				"billingType": "CREDIT_CARD",
-				"value": amount,
-				"dueDate": str(getdate()),
-				"description": f"Cred Hub - {quantity - current} usuário(s) a mais até o próximo vencimento - {frappe.local.site}",
-				"externalReference": frappe.local.site,
-			},
-		)
-		_save_plan(
-			plan,
-			pending_extra_users=quantity,
-			upgrade_payment_id=payment["id"],
-			invoice_url=payment.get("invoiceUrl"),
-		)
-		return {"ok": True, "invoice_url": payment.get("invoiceUrl"), "status": "Active", "amount": amount}
 
 	clean = None
 	if not plan.asaas_customer_id:
 		clean, error = _clean_payer(payer)
 		if error:
 			return error
-	if plan.asaas_subscription_id:
-		# Assinatura antiga sem pagamento (aguardando, em atraso ou cancelada): começa de novo
-		_asaas("DELETE", f"/subscriptions/{plan.asaas_subscription_id}", allow_missing=True)
+	# Assinatura antiga sem pagamento (aguardando, em atraso ou cancelada): começa de novo
+	_forget_subscription(plan)
 	customer = plan.asaas_customer_id or _create_customer(clean)
+	value = PRICE_PER_USER * quantity
 	subscription = _asaas(
 		"POST",
 		"/subscriptions",
@@ -266,7 +237,7 @@ def request_extra_users(quantity: int, payer=None):
 			"value": value,
 			"nextDueDate": str(getdate()),
 			"cycle": "MONTHLY",
-			"description": description,
+			"description": _description(quantity),
 			"externalReference": frappe.local.site,
 		},
 	)
@@ -275,17 +246,147 @@ def request_extra_users(quantity: int, payer=None):
 	_save_plan(
 		plan,
 		status="Awaiting Payment",
-		pending_extra_users=quantity,
 		monthly_amount=value,
 		asaas_customer_id=customer,
 		payer_name=clean["name"] if clean else plan.payer_name,
 		payer_email=clean["email"] if clean else plan.payer_email,
-		upgrade_payment_id=None,
 		asaas_subscription_id=subscription["id"],
 		invoice_url=invoice_url,
 		next_due_date=subscription.get("nextDueDate"),
+		grace_until=None,
+		# A 1ª assinatura libera os extras quando o 1º pagamento é confirmado
+		**{**_cleared(), "pending_extra_users": quantity},
 	)
 	return {"ok": True, "invoice_url": invoice_url, "status": "Awaiting Payment"}
+
+
+def _description(quantity):
+	return f"Cred Hub - {quantity} usuário(s) a mais - {frappe.local.site}"
+
+
+def _cleared():
+	"""Campos de aumento e diminuição em andamento, zerados."""
+	return {
+		"pending_extra_users": 0,
+		"upgrade_payment_id": None,
+		"upgrade_base_users": 0,
+		"upgrade_due_date": None,
+		"scheduled_extra_users": 0,
+		"scheduled_from": None,
+	}
+
+
+def _change_active_plan(plan, quantity):
+	"""Assinatura ativa. Padrão de mercado, sem prejudicar o cliente (decisão do dono, 26/10/2026):
+	- aumentar libera na hora e cobra a diferença proporcional por link, com 3 dias de prazo (a conta do Asaas não
+	  guarda o cartão para cobrar sozinha); sem pagamento no prazo, só os usuários novos são pausados até pagar;
+	- diminuir: as vagas já pagas continuam até o próximo vencimento; a fatura seguinte já vem com o valor menor e,
+	  na virada, quem passar do limite novo é pausado, do mais recente para o mais antigo."""
+	error = _drop_upgrade_payment(plan)
+	if error:
+		return error
+	paid = cint(plan.extra_users)
+	if plan.scheduled_from:
+		# Mudou de ideia antes da virada: a mensalidade volta ao que está pago e o agendamento sai
+		_asaas(
+			"PUT",
+			f"/subscriptions/{plan.asaas_subscription_id}",
+			{"value": PRICE_PER_USER * paid, "description": _description(paid), "updatePendingPayments": True},
+		)
+		_save_plan(plan, scheduled_extra_users=0, scheduled_from=None, monthly_amount=PRICE_PER_USER * paid)
+
+	if quantity == paid:
+		return {"ok": True, "invoice_url": None, "status": "Active"}
+
+	if quantity < paid:
+		if quantity == 0:
+			# A assinatura é apagada na véspera do vencimento (daily_check): até lá as vagas pagas continuam
+			_save_plan(plan, scheduled_extra_users=0, scheduled_from=plan.next_due_date, monthly_amount=0)
+		else:
+			_asaas(
+				"PUT",
+				f"/subscriptions/{plan.asaas_subscription_id}",
+				{"value": PRICE_PER_USER * quantity, "description": _description(quantity), "updatePendingPayments": True},
+			)
+			_save_plan(
+				plan,
+				scheduled_extra_users=quantity,
+				scheduled_from=plan.next_due_date,
+				monthly_amount=PRICE_PER_USER * quantity,
+			)
+		return {"ok": True, "invoice_url": None, "status": "Active", "scheduled_from": plan.next_due_date}
+
+	amount = _prorated(quantity - paid, plan.next_due_date)
+	due = add_days(getdate(), UPGRADE_DUE_DAYS)
+	payment = _asaas(
+		"POST",
+		"/payments",
+		{
+			"customer": plan.asaas_customer_id,
+			"billingType": "CREDIT_CARD",
+			"value": amount,
+			"dueDate": str(due),
+			"description": f"Cred Hub - {quantity - paid} usuário(s) a mais até o próximo vencimento - {frappe.local.site}",
+			"externalReference": frappe.local.site,
+		},
+	)
+	_save_plan(
+		plan,
+		extra_users=quantity,
+		pending_extra_users=quantity,
+		upgrade_base_users=paid,
+		upgrade_payment_id=payment["id"],
+		upgrade_due_date=due,
+		invoice_url=payment.get("invoiceUrl"),
+	)
+	restore_paused()
+	return {"ok": True, "invoice_url": payment.get("invoiceUrl"), "status": "Active", "amount": amount}
+
+
+def _drop_upgrade_payment(plan):
+	"""Cancela no Asaas a cobrança da diferença de um aumento que ainda não foi paga (o admin pediu outro aumento ou
+	diminuiu): as vagas desse aumento saem junto, as pagas ficam. Se ela acabou de ser paga, não mexe: o webhook
+	aplica e o admin tenta de novo depois (nunca cobrar duas vezes)."""
+	if not plan.upgrade_payment_id:
+		return None
+	payment = _asaas("GET", f"/payments/{plan.upgrade_payment_id}", allow_missing=True)
+	if payment and payment.get("status") in CONFIRMED:
+		return {
+			"ok": False,
+			"field": "quantity",
+			"message": _("The previous payment was just confirmed. Wait a minute and try again."),
+		}
+	if payment and not payment.get("deleted"):
+		# Pago no meio do caminho, o Asaas recusa o DELETE (erro na tela) e o webhook aplica o pagamento
+		_asaas("DELETE", f"/payments/{plan.upgrade_payment_id}", allow_missing=True)
+	_save_plan(
+		plan,
+		extra_users=cint(plan.upgrade_base_users),
+		pending_extra_users=0,
+		upgrade_payment_id=None,
+		upgrade_base_users=0,
+		upgrade_due_date=None,
+		invoice_url=None,
+	)
+	return None
+
+
+def _forget_subscription(plan):
+	"""Apaga a assinatura antiga sem corrida com o webhook: o plano deixa de apontar para ela (commit) antes do
+	DELETE no Asaas, então o SUBSCRIPTION_DELETED que chegar é ignorado. Se o Asaas recusar, o plano volta a
+	apontar para ela (a assinatura continua cobrando, então o plano não pode fingir que acabou)."""
+	old = plan.asaas_subscription_id
+	if not old:
+		return
+	_save_plan(plan, asaas_subscription_id=None)
+	frappe.db.commit()
+	try:
+		_asaas("DELETE", f"/subscriptions/{old}", allow_missing=True)
+	except Exception:
+		plan.reload()
+		_save_plan(plan, asaas_subscription_id=old)
+		frappe.db.commit()
+		raise
 
 
 def _prorated(extra, next_due_date):
@@ -450,21 +551,21 @@ def apply_asaas_event(event, payment_id=None, subscription_id=None):
 		if payment.get("status") not in CONFIRMED or payment.get("subscription") != subscription_id:
 			return
 		subscription = _asaas("GET", f"/subscriptions/{subscription_id}")
-		_save_plan(
-			plan,
-			status="Active",
-			extra_users=cint(plan.pending_extra_users) or cint(plan.extra_users),
-			pending_extra_users=0,
-			invoice_url=None,
-			next_due_date=subscription.get("nextDueDate"),
-		)
+		values = {"status": "Active", "grace_until": None, "next_due_date": subscription.get("nextDueDate")}
+		if not plan.upgrade_payment_id:
+			# 1ª assinatura: os extras entram agora (com um aumento em aberto, as vagas já estão certas)
+			values.update(extra_users=cint(plan.pending_extra_users) or cint(plan.extra_users), pending_extra_users=0)
+			values["invoice_url"] = None
+		_save_plan(plan, **values)
 		restore_paused()
 	elif event == "PAYMENT_OVERDUE":
 		payment = _asaas("GET", f"/payments/{payment_id}")
 		if payment.get("status") != "OVERDUE" or payment.get("subscription") != subscription_id:
 			return
-		_save_plan(plan, status="Past Due", invoice_url=payment.get("invoiceUrl"))
-		pause_over_limit()
+		# Tolerância antes de pausar (daily_check pausa depois de grace_until)
+		_save_plan(
+			plan, status="Past Due", invoice_url=payment.get("invoiceUrl"), grace_until=add_days(getdate(), GRACE_DAYS)
+		)
 	else:
 		subscription = _asaas("GET", f"/subscriptions/{subscription_id}", allow_missing=True)
 		if subscription and not subscription.get("deleted") and subscription.get("status") == "ACTIVE":
@@ -473,45 +574,97 @@ def apply_asaas_event(event, payment_id=None, subscription_id=None):
 			plan,
 			status="Canceled",
 			extra_users=0,
-			pending_extra_users=0,
 			monthly_amount=0,
 			asaas_subscription_id=None,
 			invoice_url=None,
 			next_due_date=None,
+			grace_until=None,
+			**_cleared(),
 		)
 		pause_over_limit()
 	frappe.db.commit()
 
 
 def _apply_upgrade_payment(plan, event, payment_id):
-	"""Cobrança avulsa da diferença de um aumento: confirmada, libera os extras e sobe a mensalidade."""
-	if event not in ("PAYMENT_CONFIRMED", "PAYMENT_RECEIVED") or not payment_id:
+	"""Cobrança avulsa da diferença de um aumento. Paga (no prazo ou depois): as vagas novas ficam e a mensalidade
+	sobe. Vencida sem pagamento: só os usuários novos são pausados, até pagar."""
+	if not payment_id or payment_id == plan.applied_upgrade_payment_id:
+		return  # o Asaas manda CONFIRMED e depois RECEIVED para o mesmo pagamento
+	if event == "PAYMENT_OVERDUE":
+		if payment_id == plan.upgrade_payment_id and _asaas("GET", f"/payments/{payment_id}").get("status") == "OVERDUE":
+			_upgrade_overdue(plan)
+			frappe.db.commit()
 		return
-	if plan.upgrade_payment_id != payment_id or plan.status != "Active":
+	if event not in ("PAYMENT_CONFIRMED", "PAYMENT_RECEIVED"):
 		return
 	payment = _asaas("GET", f"/payments/{payment_id}")
 	if payment.get("status") not in CONFIRMED:
 		return
+	if plan.upgrade_payment_id != payment_id or plan.status != "Active" or not plan.asaas_subscription_id:
+		# Dinheiro entrou para um aumento que não vale mais (cancelado, trocado ou diminuído): avisa para estornar
+		frappe.log_error(
+			title="Asaas: pagamento sem aumento pendente",
+			message=f"Pagamento {payment_id} ({payment.get('value')}) confirmado em {frappe.local.site}, mas o plano não "
+			"espera este aumento. Conferir e estornar no Asaas se for o caso.",
+		)
+		return
 	quantity = cint(plan.pending_extra_users)
-	value = PRICE_PER_USER * quantity
 	_asaas(
 		"PUT",
 		f"/subscriptions/{plan.asaas_subscription_id}",
-		{
-			"value": value,
-			"description": f"Cred Hub - {quantity} usuário(s) a mais - {frappe.local.site}",
-			"updatePendingPayments": True,
-		},
+		{"value": PRICE_PER_USER * quantity, "description": _description(quantity), "updatePendingPayments": True},
 	)
 	_save_plan(
 		plan,
 		extra_users=quantity,
+		monthly_amount=PRICE_PER_USER * quantity,
 		pending_extra_users=0,
-		monthly_amount=value,
 		upgrade_payment_id=None,
+		upgrade_base_users=0,
+		upgrade_due_date=None,
+		applied_upgrade_payment_id=payment_id,
 		invoice_url=None,
 	)
 	restore_paused()
+	frappe.db.commit()
+
+
+def _upgrade_overdue(plan):
+	"""Prazo da diferença venceu: as vagas voltam às pagas e os usuários novos (os mais recentes) são pausados.
+	A cobrança continua aberta: pagando, eles voltam."""
+	if cint(plan.extra_users) <= cint(plan.upgrade_base_users):
+		return
+	_save_plan(plan, extra_users=cint(plan.upgrade_base_users))
+	pause_over_limit()
+
+
+def daily_check():
+	"""Agendador diário (cada empresa): diminuição que chega na virada, tolerância vencida e aumento sem pagamento
+	cujo aviso do Asaas não chegou."""
+	if frappe.conf.get("credhub_unlimited_users"):
+		return
+	plan = _plan()
+	today = getdate()
+	if plan.scheduled_from:
+		turn = getdate(plan.scheduled_from)
+		if cint(plan.scheduled_extra_users) == 0 and plan.asaas_subscription_id and today >= add_days(turn, -1):
+			# Cancelamento: a assinatura sai na véspera, para não gerar a cobrança do mês seguinte
+			_forget_subscription(plan)
+		if today >= turn:
+			quantity = cint(plan.scheduled_extra_users)
+			values = {"extra_users": quantity, "scheduled_extra_users": 0, "scheduled_from": None}
+			if quantity == 0:
+				values.update(status="Free", monthly_amount=0, next_due_date=None, invoice_url=None)
+			_save_plan(plan, **values)
+			pause_over_limit()
+	if plan.status == "Past Due" and plan.grace_until and today > getdate(plan.grace_until):
+		pause_over_limit()
+	if plan.upgrade_payment_id and plan.upgrade_due_date and today > getdate(plan.upgrade_due_date):
+		payment = _asaas("GET", f"/payments/{plan.upgrade_payment_id}", allow_missing=True)
+		if payment.get("status") in CONFIRMED:
+			_apply_upgrade_payment(plan, "PAYMENT_CONFIRMED", plan.upgrade_payment_id)
+		else:
+			_upgrade_overdue(plan)
 	frappe.db.commit()
 
 

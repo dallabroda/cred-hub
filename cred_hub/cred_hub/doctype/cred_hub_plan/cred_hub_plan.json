@@ -13,6 +13,12 @@
   "next_due_date",
   "invoice_url",
   "upgrade_payment_id",
+  "applied_upgrade_payment_id",
+  "upgrade_base_users",
+  "upgrade_due_date",
+  "scheduled_extra_users",
+  "scheduled_from",
+  "grace_until",
   "asaas_section",
   "asaas_customer_id",
   "asaas_subscription_id",
@@ -74,6 +80,42 @@
    "read_only": 1
   },
   {
+   "fieldname": "applied_upgrade_payment_id",
+   "fieldtype": "Data",
+   "label": "Last Applied Upgrade Payment",
+   "read_only": 1
+  },
+  {
+   "fieldname": "upgrade_base_users",
+   "fieldtype": "Int",
+   "label": "Paid Extra Users Before Upgrade",
+   "read_only": 1
+  },
+  {
+   "fieldname": "upgrade_due_date",
+   "fieldtype": "Date",
+   "label": "Upgrade Due Date",
+   "read_only": 1
+  },
+  {
+   "fieldname": "scheduled_extra_users",
+   "fieldtype": "Int",
+   "label": "Extra Users From Next Due Date",
+   "read_only": 1
+  },
+  {
+   "fieldname": "scheduled_from",
+   "fieldtype": "Date",
+   "label": "Scheduled From",
+   "read_only": 1
+  },
+  {
+   "fieldname": "grace_until",
+   "fieldtype": "Date",
+   "label": "Grace Until",
+   "read_only": 1
+  },
+  {
    "collapsible": 1,
    "fieldname": "asaas_section",
    "fieldtype": "Section Break",
@@ -107,7 +149,7 @@
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-10-26 16:00:00.000000",
+ "modified": "2026-10-26 23:00:00.000000",
  "modified_by": "Administrator",
  "module": "Cred Hub",
  "name": "Cred Hub Plan",

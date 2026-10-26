@@ -13,7 +13,8 @@ after_migrate = "cred_hub.install.after_install"
 
 # Tempo de mercado (anos) muda com o tempo: recalculado todo dia
 scheduler_events = {
-	"daily": ["cred_hub.cnpj.enrich.update_years_in_business"],
+	# Cobrança: diminuição na virada, tolerância vencida e aumento sem pagamento (credtech#25)
+	"daily": ["cred_hub.cnpj.enrich.update_years_in_business", "cred_hub.billing.daily_check"],
 	# Rede de segurança dos leads da Meta: o que o webhook não trouxe (credtech#51)
 	"cron": {"*/10 * * * *": ["cred_hub.meta_leads.catch_up"]},
 }
