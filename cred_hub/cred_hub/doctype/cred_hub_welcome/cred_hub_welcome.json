@@ -1,0 +1,75 @@
+{
+ "actions": [],
+ "creation": "2026-10-26 20:00:00.000000",
+ "description": "Welcome message (approved WhatsApp template) sent through the Cred Chat to each new lead of a lead source (credtech#53).",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "source",
+  "enabled",
+  "inbox_id",
+  "template_name",
+  "template_language",
+  "template_category",
+  "variables"
+ ],
+ "fields": [
+  {
+   "fieldname": "source",
+   "fieldtype": "Data",
+   "label": "Lead Source",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enabled"
+  },
+  {
+   "fieldname": "inbox_id",
+   "fieldtype": "Int",
+   "label": "Inbox"
+  },
+  {
+   "fieldname": "template_name",
+   "fieldtype": "Data",
+   "label": "Template"
+  },
+  {
+   "fieldname": "template_language",
+   "fieldtype": "Data",
+   "label": "Template Language"
+  },
+  {
+   "fieldname": "template_category",
+   "fieldtype": "Data",
+   "label": "Template Category"
+  },
+  {
+   "fieldname": "variables",
+   "fieldtype": "Small Text",
+   "label": "Variables"
+  }
+ ],
+ "links": [],
+ "modified": "2026-10-26 20:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Cred Hub",
+ "name": "Cred Hub Welcome",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "read": 1,
+   "role": "System Manager"
+  },
+  {
+   "read": 1,
+   "role": "Sales Manager"
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "autoname": "field:source"
+}

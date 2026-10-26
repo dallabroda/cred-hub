@@ -1,0 +1,62 @@
+{
+ "actions": [],
+ "creation": "2026-10-26 20:00:00.000000",
+ "description": "Cred Chat account of this company, used to send the welcome message to new ad and form leads (credtech#53).",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "account_id",
+  "account_name",
+  "access_token",
+  "connected_by",
+  "connected_on"
+ ],
+ "fields": [
+  {
+   "fieldname": "account_id",
+   "fieldtype": "Int",
+   "label": "Account ID",
+   "read_only": 1
+  },
+  {
+   "fieldname": "account_name",
+   "fieldtype": "Data",
+   "label": "Account",
+   "read_only": 1
+  },
+  {
+   "fieldname": "access_token",
+   "fieldtype": "Password",
+   "label": "Access Key"
+  },
+  {
+   "fieldname": "connected_by",
+   "fieldtype": "Link",
+   "label": "Connected By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "connected_on",
+   "fieldtype": "Datetime",
+   "label": "Connected On",
+   "read_only": 1
+  }
+ ],
+ "links": [],
+ "modified": "2026-10-26 20:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Cred Hub",
+ "name": "Cred Hub Chat Connection",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "read": 1,
+   "role": "System Manager"
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "issingle": 1
+}
