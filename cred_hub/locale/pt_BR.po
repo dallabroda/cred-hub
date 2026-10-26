@@ -564,3 +564,191 @@ msgstr "Aceite os Termos de uso para criar sua empresa."
 
 msgid "Too many links sent for this signup. Please try again tomorrow."
 msgstr "Muitos links enviados para este cadastro. Tente de novo amanhã."
+
+#: cred_hub/www/cadastro/index.py
+msgid "Create your company"
+msgstr "Crie sua empresa"
+
+#: cred_hub/www/cadastro/index.py
+msgid "Checking..."
+msgstr "Verificando..."
+
+#: cred_hub/www/cadastro/index.py
+msgid "Available"
+msgstr "Disponível"
+
+#: cred_hub/www/cadastro/index.py
+msgid "Fill in this field."
+msgstr "Preencha este campo."
+
+#: cred_hub/www/cadastro/index.py
+msgid "Accept the terms to continue."
+msgstr "Aceite os termos para continuar."
+
+#: cred_hub/www/cadastro/index.py
+msgid "Choose an available address."
+msgstr "Escolha um endereço disponível."
+
+#: cred_hub/www/cadastro/index.py
+msgid "Sending..."
+msgstr "Enviando..."
+
+#: cred_hub/www/cadastro/index.py
+msgid "Create my company"
+msgstr "Criar minha empresa"
+
+#: cred_hub/www/cadastro/index.py
+msgid "Something went wrong. Please try again in a few minutes."
+msgstr "Algo deu errado. Tente de novo em alguns minutos."
+
+#: cred_hub/www/cadastro/index.html
+msgid "Your company gets its own Cred Hub address. You will be its administrator."
+msgstr "Sua empresa ganha um endereço próprio no Cred Hub, e você será o administrador."
+
+#: cred_hub/www/cadastro/index.html
+msgid "Company name"
+msgstr "Nome da empresa"
+
+#: cred_hub/www/cadastro/index.html
+msgid "Address"
+msgstr "Endereço"
+
+#: cred_hub/www/cadastro/index.html
+msgid "Your name"
+msgstr "Seu nome"
+
+#: cred_hub/www/cadastro/index.html
+msgid "Your e-mail"
+msgstr "Seu e-mail"
+
+#: cred_hub/www/cadastro/index.html
+msgid "name@company.com"
+msgstr "nome@empresa.com.br"
+
+#: cred_hub/www/cadastro/index.html
+msgid "Free for up to 2 users. From the third user on, R$ 60 per user per month."
+msgstr "Grátis até 2 usuários. A partir do terceiro, R$ 60 por usuário por mês."
+
+#: cred_hub/www/cadastro/index.html
+msgid "I accept the {0} and the {1}."
+msgstr "Li e aceito os {0} e a {1}."
+
+#: cred_hub/www/cadastro/index.html
+msgid "Terms of use"
+msgstr "Termos de uso"
+
+#: cred_hub/www/cadastro/index.html
+msgid "Privacy policy"
+msgstr "Política de privacidade"
+
+#: cred_hub/www/cadastro/index.html
+msgid "We sent a link to {0}. Open it to create your company."
+msgstr "Enviamos um link para {0}. Abra-o para criar sua empresa."
+
+#: cred_hub/www/cadastro/index.html
+msgid "The link is valid for 24 hours. Didn't get it? Check your spam folder."
+msgstr "O link vale por 24 horas. Não chegou? Confira a pasta de spam."
+
+#: cred_hub/www/cadastro/index.html
+msgid "Already use Cred Hub?"
+msgstr "Já usa o Cred Hub?"
+
+#: cred_hub/www/cadastro/index.html
+msgid "Sign in"
+msgstr "Entrar"
+
+#: cred_hub/www/cadastro/index.html
+msgid "Confirm your e-mail"
+msgstr "Confirme seu e-mail"
+
+#: cred_hub/www/cadastro/confirmar.py
+msgid "Confirming your e-mail..."
+msgstr "Confirmando seu e-mail..."
+
+#: cred_hub/www/cadastro/confirmar.py
+msgid "Creating your company..."
+msgstr "Criando sua empresa..."
+
+#: cred_hub/www/cadastro/confirmar.py
+msgid "This takes about two minutes. You can keep this page open."
+msgstr "Isso leva cerca de dois minutos. Pode deixar esta página aberta."
+
+#: cred_hub/www/cadastro/confirmar.py
+msgid "Your company is ready!"
+msgstr "Sua empresa está pronta!"
+
+#: cred_hub/www/cadastro/confirmar.py
+msgid "We sent you an e-mail to set your password. You can also sign in with Google, Microsoft or GitHub using the same e-mail."
+msgstr "Enviamos um e-mail para você criar sua senha. Você também pode entrar com Google, Microsoft ou GitHub usando o mesmo e-mail."
+
+#: cred_hub/www/cadastro/confirmar.py
+msgid "We could not create your company"
+msgstr "Não conseguimos criar sua empresa"
+
+#: cred_hub/www/cadastro/confirmar.py
+msgid "Our team can finish it for you. Talk to us on WhatsApp."
+msgstr "Nossa equipe pode concluir para você. Fale com a gente pelo WhatsApp."
+
+#: cred_hub/www/cadastro/confirmar.py
+msgid "This link has expired"
+msgstr "Este link expirou"
+
+#: cred_hub/www/cadastro/confirmar.py
+msgid "Links are valid for 24 hours. Please sign up again."
+msgstr "Os links valem por 24 horas. Faça o cadastro de novo."
+
+#: cred_hub/www/cadastro/confirmar.py
+msgid "This link is invalid"
+msgstr "Este link não é válido"
+
+#: cred_hub/www/cadastro/confirmar.py
+msgid "Check that you opened the full link from the e-mail, or sign up again."
+msgstr "Confira se abriu o link completo do e-mail, ou faça o cadastro de novo."
+
+#: cred_hub/www/cadastro/confirmar.py
+msgid "This is taking longer than usual"
+msgstr "Está demorando mais que o normal"
+
+#: cred_hub/www/cadastro/confirmar.py
+msgid "Your company is still being created. We will e-mail you when it is ready, or talk to us on WhatsApp."
+msgstr "Sua empresa ainda está sendo criada. Avisaremos por e-mail quando ficar pronta, ou fale com a gente pelo WhatsApp."
+
+#: cred_hub/www/cadastro/confirmar.py
+msgid "Something went wrong"
+msgstr "Algo deu errado"
+
+#: cred_hub/www/cadastro/confirmar.py
+msgid "Please try again in a few minutes."
+msgstr "Tente de novo em alguns minutos."
+
+#: cred_hub/www/cadastro/confirmar.py
+msgid "Sign in to my company"
+msgstr "Entrar na minha empresa"
+
+#: cred_hub/www/cadastro/confirmar.py
+msgid "Sign up again"
+msgstr "Fazer o cadastro de novo"
+
+#: cred_hub/www/cadastro/confirmar.py
+msgid "Talk to us on WhatsApp"
+msgstr "Falar no WhatsApp"
+
+#: cred_hub/www/cadastro/index.html
+msgid "There is no Cred Hub account with {0}."
+msgstr "Não há conta no Cred Hub com {0}."
+
+#: cred_hub/www/cadastro/index.html
+msgid "There is no account with this e-mail in that company."
+msgstr "Não há conta com esse e-mail naquela empresa."
+
+#: cred_hub/www/cadastro/index.html
+msgid "To join a company that already uses Cred Hub, ask its administrator for an invite. To create your own company, fill in the form below."
+msgstr "Para entrar numa empresa que já usa o Cred Hub, peça um convite ao administrador dela. Para criar a sua empresa, preencha o formulário abaixo."
+
+#: cred_hub/www/cadastro/index.html
+msgid "Send the link again"
+msgstr "Enviar o link de novo"
+
+#: cred_hub/www/cadastro/index.py
+msgid "We sent a new link. Use the newest e-mail."
+msgstr "Enviamos um link novo. Use o e-mail mais recente."

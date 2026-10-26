@@ -14,6 +14,10 @@ after_migrate = "cred_hub.install.after_install"
 # Tempo de mercado (anos) muda com o tempo: recalculado todo dia
 scheduler_events = {"daily": ["cred_hub.cnpj.enrich.update_years_in_business"]}
 
+# Quem chega sem conta vai para o cadastro de empresa nova (credtech#25)
+oauth_without_account = "cred_hub.signup_access.oauth_without_account"
+login_signup_url = "cred_hub.signup_access.login_signup_url"
+
 doc_events = {
 	"CRM Organization": {
 		"validate": "cred_hub.cnpj.events.validate",
