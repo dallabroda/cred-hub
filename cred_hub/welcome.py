@@ -23,6 +23,8 @@ import requests
 from frappe import _
 from frappe.utils import cint, now_datetime
 
+from cred_hub import chat_panel
+
 CONNECTION = "Cred Hub Chat Connection"
 WELCOME = "Cred Hub Welcome"
 EVENT = "Cred Hub Lead Event"
@@ -129,8 +131,25 @@ def get_chat_connection():
 	_only_managers()
 	doc, token = _connection()
 	if not doc:
-		return {"connected": False, "account_id": None, "account_name": None, "error": None, "inboxes": []}
-	result = {"connected": True, "account_id": doc.account_id, "account_name": doc.account_name, "error": None, "inboxes": []}
+		return {
+			"connected": False,
+			"account_id": None,
+			"account_name": None,
+			"error": None,
+			"inboxes": [],
+			"panel_installed": False,
+			"panel_error": None,
+		}
+	result = {
+		"connected": True,
+		"account_id": doc.account_id,
+		"account_name": doc.account_name,
+		"error": None,
+		"inboxes": [],
+		# Painel do Cred Hub na conversa (credtech#45), instalado pela mesma conexão
+		"panel_installed": bool(doc.panel_app_id),
+		"panel_error": doc.panel_error,
+	}
 	try:
 		result["inboxes"] = _inboxes(doc.account_id, token)
 	except ChatError as e:
@@ -163,15 +182,20 @@ def connect_chat(account_id, access_token):
 			"connected_on": now_datetime(),
 		}
 	)
+	chat_panel.install(doc, access_token)
 	doc.save(ignore_permissions=True)
 	return get_chat_connection()
 
 
 @frappe.whitelist(methods=["POST"])
 def disconnect_chat():
-	"""Apaga a chave e desliga as boas-vindas de todas as origens (sem conexão, nada sairia)."""
+	"""Apaga a chave, tira o painel do Cred Chat e desliga as boas-vindas de todas as origens (sem conexão, nada
+	sairia)."""
 	_only_managers()
-	doc = frappe.get_single(CONNECTION)
+	doc, token = _connection()
+	if doc:
+		chat_panel.uninstall(doc, token)
+	doc = doc or frappe.get_single(CONNECTION)
 	doc.update({"account_id": None, "account_name": None, "access_token": None, "connected_by": None, "connected_on": None})
 	doc.save(ignore_permissions=True)
 	frappe.db.set_value(WELCOME, {"enabled": 1}, "enabled", 0)

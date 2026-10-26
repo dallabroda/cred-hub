@@ -5,6 +5,7 @@ import json
 import frappe
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
+from cred_hub.chat_panel import install_pending as install_chat_panel
 from cred_hub.cnpj.fields import CHECKED_DATE_FIELDS, DETAILS_ADDRESS_FIELDS, DOCTYPES, SIDE_PANEL_FIELDS, custom_fields
 from cred_hub.cnpj.sectors import SECTORS
 from cred_hub.company.fields import COMPANY_SECTION, COMPANY_SECTION_LABEL, COMPANY_SIDE_PANEL_FIELDS, company_custom_fields
@@ -65,6 +66,11 @@ def after_install():
 		for kind in ("Side Panel", "Quick Entry", "Data Fields"):
 			remove_from_layout(f"{doctype}-{kind}", HIDDEN_FIELDS)
 	add_quick_entry_cnpj("CRM Organization", after="organization_name")
+	# Conexão do Cred Chat feita antes do painel na conversa (credtech#45): instala em segundo plano
+	try:
+		install_chat_panel()
+	except Exception:
+		frappe.log_error(title="Cred Hub: instalação do painel no Cred Chat falhou")
 	frappe.db.commit()
 
 

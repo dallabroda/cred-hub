@@ -51,6 +51,16 @@ Meta Lead Ads (conectar com Facebook pelo site central, webhook `leadgen`, token
 
 Lead novo de anúncio/formulário recebe um template aprovado pela Meta pelo Cred Chat da empresa (conta + chave de acesso de um administrador, criptografada; caixa e template por origem; desligado por padrão). Envio na fila depois do commit do card, sem repetição automática; resultado em "Últimos leads". Variável opcional: `CREDHUB_CHAT_URL` (padrão `https://chat.credtechdigital.com.br`).
 
+### Painel do Cred Hub na conversa do Cred Chat (`chat_panel`, página `/chat-panel`)
+
+Na conversa do Cred Chat, uma aba "Cred Hub" (Dashboard App) mostra os cards do contato e permite mudar **etapa** e **valor** sem sair do chat (credtech#45). Decisões do dono (26/10/2026):
+
+- **Login:** usa a sessão do Cred Hub no mesmo navegador e as permissões do próprio usuário (só vê e altera os cards que já pode abrir). Cred Chat e Cred Hub são o mesmo site (`credtechdigital.com.br`), então o cookie vale dentro do iframe. Sem login, o painel mostra "Entrar no Cred Hub" (abre em nova aba; o login do Google não abre dentro de iframe).
+- **Instalação automática:** ao conectar o Cred Chat (mesma conexão da boas-vindas), o app cria o Dashboard App na conta, ou reaproveita o que já aponta para cá; ao desconectar, tira. A chave precisa ser de um **administrador** do Cred Chat; com chave de agente a conexão funciona e o painel fica com o aviso em `panel_error`. Conexões anteriores ao painel são instaladas em segundo plano no `migrate`; `cred_hub.chat_panel.install_chat_panel` tenta de novo.
+- **Sem card:** só avisa ("Nenhum card para este contato"); criar lead pela conversa é a credtech#43 (congelada).
+
+Busca pelo telefone com a mesma regra da entrada de leads (número nacional, sem o 55 quando há mais de 11 dígitos; (48) e (38) com os mesmos 9 dígitos são pessoas diferentes) ou pelo e-mail, no próprio card ou num contato ligado a ele; abertos primeiro, até 20. A página só aceita ser posta em iframe pelo Cred Chat (`frame-ancestors`) e só ouve mensagens vindas dele. Etapa com campos obrigatórios ou motivo de perda mostra o erro do Cred Hub e volta à etapa anterior.
+
 ## Instalação
 
 ```sh
