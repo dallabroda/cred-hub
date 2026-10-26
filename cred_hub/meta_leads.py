@@ -47,6 +47,7 @@ EVENT = "Cred Hub Lead Event"
 ROUTE = "Cred Hub Meta Route"
 STATE_SECONDS = 15 * 60
 MANAGERS = ("System Manager", "Sales Manager")
+PLATFORMS = {"fb": "Facebook", "ig": "Instagram", "an": "Audience Network", "msg": "Messenger"}
 
 
 class MetaError(Exception):
@@ -416,6 +417,11 @@ def get_lead_source_activity(source=None, limit=50):
 	names = dict(
 		frappe.get_all("CRM Lead", {"name": ("in", [e.lead for e in events if e.lead] or [""])}, ["name", "lead_name"], as_list=True)
 	)
+	labels = dict(
+		frappe.get_all(
+			"Cred Hub Lead Source", {"name": ("in", [e.source for e in events] or [""])}, ["name", "label"], as_list=True
+		)
+	)
 	pipelines = dict(
 		frappe.get_all(
 			"CRM Pipeline", {"name": ("in", [e.pipeline for e in events if e.pipeline] or [""])}, ["name", "pipeline_name"], as_list=True
@@ -425,7 +431,7 @@ def get_lead_source_activity(source=None, limit=50):
 		{
 			"time": e.received_on,
 			"source": e.source,
-			"source_label": e.source,
+			"source_label": labels.get(e.source, e.source),
 			"status": e.status,
 			"lead": e.lead,
 			"lead_name": names.get(e.lead),
@@ -581,18 +587,17 @@ def _ingest_lead(leadgen_id, page_id, form_id, lead):
 
 
 def _lead_doc(lead, source, form_id, form_name):
-	mapping = {
-		q.key: q.mapped_to_crm_field
-		for q in frappe.get_all(
-			"Facebook Lead Form Question",
-			filters={"parent": form_id, "parenttype": "Facebook Lead Form"},
-			fields=["key", "mapped_to_crm_field"],
-		)
-		if q.mapped_to_crm_field
-	}
+	questions = frappe.get_all(
+		"Facebook Lead Form Question",
+		filters={"parent": form_id, "parenttype": "Facebook Lead Form"},
+		fields=["key", "label", "mapped_to_crm_field"],
+	)
+	mapping = {q.key: q.mapped_to_crm_field for q in questions if q.mapped_to_crm_field}
+	labels = {q.key: q.label or q.key for q in questions}
 	answers = {item["name"]: item["values"][0] for item in lead.get("field_data") or [] if item.get("values")}
 	values = {mapping[k]: v for k, v in answers.items() if k in mapping}
-	unmapped = {k: v for k, v in answers.items() if k not in mapping}
+	# Na anotação vai o texto da pergunta, não a chave técnica ("Cidade", não "cidade")
+	unmapped = {labels.get(k, k): v for k, v in answers.items() if k not in mapping}
 	captured = lead.get("created_time")
 	values.update(
 		{
@@ -600,7 +605,7 @@ def _lead_doc(lead, source, form_id, form_name):
 			"facebook_lead_id": lead["id"],
 			"facebook_form_id": form_id,
 			"pipeline": source.pipeline,
-			"ad_platform": (lead.get("platform") or "facebook").title(),
+			"ad_platform": PLATFORMS.get(lead.get("platform") or "fb", str(lead.get("platform")).title()),
 			"ad_campaign_id": lead.get("campaign_id"),
 			"ad_campaign_name": lead.get("campaign_name"),
 			"ad_adset_id": lead.get("adset_id"),

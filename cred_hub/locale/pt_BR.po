@@ -863,3 +863,27 @@ msgstr "Página de entrada"
 
 msgid "The Facebook Page is not connected."
 msgstr "A página do Facebook não está conectada."
+
+msgid "Unknown lead source type."
+msgstr "Tipo de origem de leads desconhecido."
+
+msgid "Invalid JSON."
+msgstr "JSON inválido."
+
+msgid "This lead source is not connected to a pipeline."
+msgstr "Esta origem de leads não está ligada a um funil."
+
+msgid "Google Ads test lead (no card created)."
+msgstr "Lead de teste do Google Ads (nenhum card criado)."
+
+msgid "Website lead"
+msgstr "Lead do site"
+
+msgid "Label"
+msgstr "Nome"
+
+msgid "Allowed Sites"
+msgstr "Sites permitidos"
+
+msgid "Key (last 4)"
+msgstr "Chave (4 últimos)"

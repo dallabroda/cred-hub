@@ -106,6 +106,8 @@ class TestMetaLeads(IntegrationTestCase):
 		self.assertEqual((card.ad_campaign_name, card.ad_name), ("Home Equity Outubro", "Vídeo casa"))
 		note = frappe.get_all("FCRM Note", {"reference_docname": card.name}, pluck="content")
 		self.assertIn("500 mil", note[0])  # resposta sem campo mapeado vai para a anotação
+		self.assertIn("Valor", note[0])  # com o texto da pergunta
+		self.assertEqual(card.ad_platform, "Facebook")
 		activity = meta_leads.get_lead_source_activity()
 		self.assertEqual((activity[0]["status"], activity[0]["card"]["name"]), ("Created", card.name))
 		with patch.object(meta_leads, "_graph", return_value=LEAD) as again:
