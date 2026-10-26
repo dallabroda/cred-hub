@@ -166,3 +166,10 @@ class TestSignup(IntegrationTestCase):
 		with self.assertRaises(frappe.DoesNotExistError):
 			signup.signup_status.__wrapped__(first)  # o link antigo deixa de valer
 		self.assertEqual(signup.signup_status.__wrapped__(second)["status"], "Pending Confirmation")
+
+	def test_resends_are_capped(self):
+		for _n in range(signup.MAX_LINKS):
+			self.request()
+		self.assertEqual(frappe.db.get_value("Cred Hub Signup", {"subdomain": "acme-teste"}, "links_sent"), signup.MAX_LINKS)
+		with self.assertRaises(frappe.RateLimitExceededError):
+			self.request()

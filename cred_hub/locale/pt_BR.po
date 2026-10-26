@@ -561,3 +561,6 @@ msgstr "Só cadastros que falharam podem ser tentados de novo."
 
 msgid "Accept the Terms of Use to create your company."
 msgstr "Aceite os Termos de uso para criar sua empresa."
+
+msgid "Too many links sent for this signup. Please try again tomorrow."
+msgstr "Muitos links enviados para este cadastro. Tente de novo amanhã."

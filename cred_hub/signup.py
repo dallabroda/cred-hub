@@ -31,6 +31,8 @@ from frappe.utils import add_to_date, get_bench_path, get_url, now_datetime
 
 DEFAULT_DOMAIN = "credtechdigital.com.br"
 LINK_HOURS = 24
+# Reenvios do link por pedido: sem limite, alguém poderia lotar a caixa de e-mail de outra pessoa
+MAX_LINKS = 5
 PROVISION_QUEUE = "credhub_provision"
 DB_PREFIX = "chsite"
 # Versão dos Termos de uso aceita no cadastro (data da Parte C, Cred Hub, em credtechdigital.com.br/termos)
@@ -186,7 +188,9 @@ def request_signup(company_name: str, subdomain: str, full_name: str, email: str
 	pending = _pending(subdomain, email)
 	if pending:
 		# O e-mail não chegou ou se perdeu: link novo para o mesmo pedido (o anterior deixa de valer)
-		pending.db_set(link)
+		if (pending.links_sent or 1) >= MAX_LINKS:
+			frappe.throw(_("Too many links sent for this signup. Please try again tomorrow."), frappe.RateLimitExceededError)
+		pending.db_set({**link, "links_sent": (pending.links_sent or 1) + 1})
 		_send_confirmation(pending, token)
 		return {"ok": True}
 
@@ -200,7 +204,14 @@ def request_signup(company_name: str, subdomain: str, full_name: str, email: str
 		frappe.throw(_("Too many signups with this e-mail today. Please try again tomorrow."), frappe.RateLimitExceededError)
 
 	doc = frappe.get_doc(
-		{"doctype": "Cred Hub Signup", "subdomain": subdomain, "email": email, "status": "Pending Confirmation", **link}
+		{
+			"doctype": "Cred Hub Signup",
+			"subdomain": subdomain,
+			"email": email,
+			"status": "Pending Confirmation",
+			"links_sent": 1,
+			**link,
+		}
 	).insert(ignore_permissions=True)
 	_send_confirmation(doc, token)
 	return {"ok": True}

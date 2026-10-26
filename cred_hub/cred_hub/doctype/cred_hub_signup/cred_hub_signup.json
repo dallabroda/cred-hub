@@ -23,6 +23,7 @@
   "confirmation_section",
   "token_hash",
   "expires_on",
+  "links_sent",
   "column_break_confirmation",
   "confirmed_on",
   "active_on"
@@ -134,6 +135,13 @@
    "read_only": 1
   },
   {
+   "default": "0",
+   "fieldname": "links_sent",
+   "fieldtype": "Int",
+   "label": "Links Sent",
+   "read_only": 1
+  },
+  {
    "fieldname": "column_break_confirmation",
    "fieldtype": "Column Break"
   },
@@ -152,7 +160,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-10-25 20:00:00.000000",
+ "modified": "2026-10-26 12:30:00.000000",
  "modified_by": "Administrator",
  "module": "Cred Hub",
  "name": "Cred Hub Signup",
