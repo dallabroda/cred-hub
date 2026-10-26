@@ -60,6 +60,8 @@ class FakeAsaas:
 class TestBilling(IntegrationTestCase):
 	def setUp(self):
 		frappe.flags.credhub_enforce_user_limit = True
+		frappe.local.conf.credhub_billing = 1
+		self.addCleanup(lambda: frappe.local.conf.pop("credhub_billing", None))
 		# apply_asaas_event grava (commit) no fim: no teste tudo fica na transação que o tearDown desfaz
 		commit = patch.object(frappe.db, "commit")
 		commit.start()
@@ -109,6 +111,23 @@ class TestBilling(IntegrationTestCase):
 				"roles": [{"role": "Sales User"}],
 			}
 		).insert(ignore_permissions=True)
+
+	def test_switched_off_billing_has_no_limit_and_no_screen(self):
+		frappe.local.conf.credhub_billing = 0
+		for n in range(1, 5):
+			self.user(n)  # sem limite
+		self.assertEqual(billing.get_plan(), {"enabled": False})
+		with patch.object(billing, "_asaas") as asaas:
+			with self.assertRaises(frappe.ValidationError):
+				billing.request_extra_users(1, PAYER)
+			billing.daily_check()
+			frappe.local.conf.credhub_signup = 1
+			try:
+				with patch.dict("os.environ", {"ASAAS_API_KEY": "x"}):
+					self.assertEqual(billing.ensure_asaas_webhook(), "webhook do Asaas: pulado")
+			finally:
+				frappe.local.conf.pop("credhub_signup", None)
+		asaas.assert_not_called()
 
 	def test_two_free_users_then_blocked(self):
 		self.user(1)
