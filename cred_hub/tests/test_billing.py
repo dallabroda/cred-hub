@@ -234,6 +234,18 @@ class TestBilling(IntegrationTestCase):
 			billing.daily_check()
 		self.assertEqual(billing.active_users(), old)
 
+	def test_tiny_difference_is_not_charged_and_goes_to_next_invoice(self):
+		self.active_plan(1)
+		frappe.db.set_single_value(billing.PLAN, "next_due_date", frappe.utils.add_days(frappe.utils.getdate(), 1))
+		fake = FakeAsaas()
+		with patch.object(billing, "_asaas", fake):
+			result = billing.request_extra_users(2)  # 1 extra por 1 dia: ~R$ 2, abaixo do mínimo
+		self.assertEqual((result["invoice_url"], result["amount"]), (None, 0))
+		self.assertFalse([c for c in fake.calls if c[0] == "POST" and c[1] == "/payments"])
+		update = next(body for method, path, body in fake.calls if method == "PUT")
+		self.assertEqual((update["value"], update["updatePendingPayments"]), (2 * billing.PRICE_PER_USER, True))
+		self.assertEqual(billing.user_limit(), 4)
+
 	def test_second_increase_cancels_the_first_charge(self):
 		self.active_plan(1)
 		fake = FakeAsaas(upgrade_status="PENDING")

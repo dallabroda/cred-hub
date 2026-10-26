@@ -35,7 +35,7 @@ FREE_USERS = 2
 PRICE_PER_USER = 60
 PLAN = "Cred Hub Plan"
 UNLIMITED = 1_000_000
-# Menor cobrança avulsa aceita pelo Asaas no cartão
+# Menor cobrança avulsa aceita pelo Asaas no cartão; diferença menor não é cobrada (entra na próxima fatura)
 MIN_CHARGE = 5
 # Prazo para pagar a diferença de um aumento (os usuários novos já entram na hora)
 UPGRADE_DUE_DAYS = 3
@@ -317,6 +317,16 @@ def _change_active_plan(plan, quantity):
 		return {"ok": True, "invoice_url": None, "status": "Active", "scheduled_from": plan.next_due_date}
 
 	amount = _prorated(quantity - paid, plan.next_due_date)
+	if amount < MIN_CHARGE:
+		# Diferença abaixo do mínimo do Asaas: não cobra avulso; libera e o valor novo entra na próxima fatura
+		_asaas(
+			"PUT",
+			f"/subscriptions/{plan.asaas_subscription_id}",
+			{"value": PRICE_PER_USER * quantity, "description": _description(quantity), "updatePendingPayments": True},
+		)
+		_save_plan(plan, extra_users=quantity, monthly_amount=PRICE_PER_USER * quantity)
+		restore_paused()
+		return {"ok": True, "invoice_url": None, "status": "Active", "amount": 0}
 	due = add_days(getdate(), UPGRADE_DUE_DAYS)
 	payment = _asaas(
 		"POST",
@@ -398,8 +408,7 @@ def _prorated(extra, next_due_date):
 	cycle_start = getdate(add_months(due, -1))
 	days_in_cycle = max(date_diff(due, cycle_start), 1)
 	days_left = min(max(date_diff(due, today), 0), days_in_cycle)
-	amount = round(PRICE_PER_USER * extra * days_left / days_in_cycle, 2)
-	return max(amount, MIN_CHARGE)
+	return round(PRICE_PER_USER * extra * days_left / days_in_cycle, 2)
 
 
 def _create_customer(payer):
