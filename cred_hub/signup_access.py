@@ -11,19 +11,22 @@ do site central (hub), para criar a própria empresa:
 
 import frappe
 
-from cred_hub.signup import _domain
+from cred_hub.signup import _domain, signup_open
 
 PREFILL_KEY = "credhub_signup_prefill:{}"
 PREFILL_SECONDS = 30 * 60
 
 
 def login_signup_url():
-	if frappe.conf.get("credhub_signup"):
+	if signup_open():
 		return "/cadastro"
 	return None
 
 
 def oauth_without_account(email, data):
+	# Cadastro fechado: o frappe mostra "Conta não encontrada, peça um convite ao administrador"
+	if not frappe.conf.get("credhub_signup_open"):
+		return None
 	if not frappe.conf.get("credhub_signup"):
 		return f"https://hub.{_domain()}/cadastro?sem_conta=1"
 
