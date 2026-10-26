@@ -752,3 +752,12 @@ msgstr "Enviar o link de novo"
 #: cred_hub/www/cadastro/index.py
 msgid "We sent a new link. Use the newest e-mail."
 msgstr "Enviamos um link novo. Use o e-mail mais recente."
+
+msgid "This e-mail has already created a company on Cred Hub. We sent its address to this e-mail."
+msgstr "Este e-mail já criou uma empresa no Cred Hub. Enviamos o endereço dela para este e-mail."
+
+msgid "Your company on Cred Hub"
+msgstr "Sua empresa no Cred Hub"
+
+msgid "<p>Hi, {0}!</p><p>This e-mail has already created <b>{1}</b> on Cred Hub. Each person creates one company; you can create as many funnels as you want inside it.</p><p><a href=\"{2}\">Open {1}</a></p><p>CredTech team</p>"
+msgstr "<p>Olá, {0}!</p><p>Este e-mail já criou <b>{1}</b> no Cred Hub. Cada pessoa cria uma empresa; dentro dela você pode criar quantos funis quiser.</p><p><a href=\"{2}\">Abrir {1}</a></p><p>Equipe CredTech</p>"
