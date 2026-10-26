@@ -41,11 +41,12 @@ class TestLeadIntake(IntegrationTestCase):
 
 	def post(self, source, body, headers=None):
 		raw = json.dumps(body).encode()
-		request = MagicMock(headers=headers or {})
+		# Como no envio real: a origem vem só na query string (com corpo JSON o Frappe não a repassa)
+		request = MagicMock(headers=headers or {}, args={"source": source.name})
 		request.get_data.return_value = raw
 		with patch.object(frappe, "request", request):
 			frappe.local.request_ip = "203.0.113.9"
-			return lead_intake.receive(source.name)
+			return lead_intake.receive()
 
 	def card(self):
 		return frappe.get_doc("CRM Deal", {"pipeline": self.pipeline})
