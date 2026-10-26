@@ -761,3 +761,30 @@ msgstr "Sua empresa no Cred Hub"
 
 msgid "<p>Hi, {0}!</p><p>This e-mail has already created <b>{1}</b> on Cred Hub. Each person creates one company; you can create as many funnels as you want inside it.</p><p><a href=\"{2}\">Open {1}</a></p><p>CredTech team</p>"
 msgstr "<p>Olá, {0}!</p><p>Este e-mail já criou <b>{1}</b> no Cred Hub. Cada pessoa cria uma empresa; dentro dela você pode criar quantos funis quiser.</p><p><a href=\"{2}\">Abrir {1}</a></p><p>Equipe CredTech</p>"
+
+msgid "Your plan allows {0} users. Contract extra users in Users and Plan."
+msgstr "Seu plano permite {0} usuários. Contrate usuários extras em Usuários e plano."
+
+msgid "Enter the name of who pays."
+msgstr "Informe o nome de quem paga."
+
+msgid "Enter a valid CPF or CNPJ."
+msgstr "Informe um CPF ou CNPJ válido."
+
+msgid "Enter a phone number with area code."
+msgstr "Informe um telefone com DDD."
+
+msgid "Enter a valid CEP."
+msgstr "Informe um CEP válido."
+
+msgid "Choose between 0 and 500 extra users."
+msgstr "Escolha entre 0 e 500 usuários extras."
+
+msgid "Deactivate {0} users before reducing the plan."
+msgstr "Desative {0} usuários antes de diminuir o plano."
+
+msgid "Billing is not available right now. Please try again later."
+msgstr "A cobrança não está disponível agora. Tente de novo mais tarde."
+
+msgid "The payment service refused the request: {0}"
+msgstr "O serviço de pagamento recusou o pedido: {0}"

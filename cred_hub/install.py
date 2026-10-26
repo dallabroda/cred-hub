@@ -17,6 +17,21 @@ TERRITORY_DOCTYPES = ("CRM Lead", "CRM Deal", "CRM Organization")
 
 
 def after_install():
+	# Usuário pausado pelo plano (atraso ou cancelamento): volta sozinho quando a assinatura é regularizada
+	create_custom_fields(
+		{
+			"User": [
+				{
+					"fieldname": "credhub_paused",
+					"fieldtype": "Check",
+					"label": "Paused by the plan",
+					"insert_after": "enabled",
+					"read_only": 1,
+				}
+			]
+		},
+		update=True,
+	)
 	create_custom_fields({dt: custom_fields(insert_after="facebook") + _missing(dt, company_custom_fields(insert_after="cnpj_checked_on")) for dt in DOCTYPES}, update=True)
 	migrate_checked_dates()
 	add_industries()
