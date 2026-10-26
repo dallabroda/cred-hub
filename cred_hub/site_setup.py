@@ -108,6 +108,11 @@ def apply(email=None, auth0=None, commit=True):
 		from cred_hub.meta_leads import ensure_meta_webhook
 
 		done.append(ensure_meta_webhook())
+	# Site central com a chave do Asaas: cadastra o webhook da cobrança de usuários extras
+	if frappe.conf.get("credhub_signup") and os.environ.get("ASAAS_API_KEY"):
+		from cred_hub.billing import ensure_asaas_webhook
+
+		done.append(ensure_asaas_webhook())
 	if commit:
 		frappe.db.commit()
 		frappe.clear_cache()

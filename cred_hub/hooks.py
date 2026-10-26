@@ -13,7 +13,8 @@ after_migrate = "cred_hub.install.after_install"
 
 # Tempo de mercado (anos) muda com o tempo: recalculado todo dia
 scheduler_events = {
-	"daily": ["cred_hub.cnpj.enrich.update_years_in_business"],
+	# Cobrança: diminuição na virada, tolerância vencida e aumento sem pagamento (credtech#25)
+	"daily": ["cred_hub.cnpj.enrich.update_years_in_business", "cred_hub.billing.daily_check"],
 	# Rede de segurança dos leads da Meta: o que o webhook não trouxe (credtech#51)
 	"cron": {"*/10 * * * *": ["cred_hub.meta_leads.catch_up"]},
 }
@@ -23,6 +24,9 @@ oauth_without_account = "cred_hub.signup_access.oauth_without_account"
 login_signup_url = "cred_hub.signup_access.login_signup_url"
 
 doc_events = {
+	# Limite de usuários do plano (2 grátis + extras pagos pelo Asaas, credtech#25)
+	"User": {"validate": "cred_hub.billing.validate_user"},
+	"CRM Invitation": {"before_insert": "cred_hub.billing.validate_invitation"},
 	"CRM Organization": {
 		"validate": "cred_hub.cnpj.events.validate",
 		"on_update": ["cred_hub.cnpj.events.on_update", "cred_hub.company.events.on_update"],

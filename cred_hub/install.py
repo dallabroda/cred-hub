@@ -58,6 +58,21 @@ def _ad_fields():
 
 def after_install():
 	create_custom_fields({dt: _ad_fields() for dt in ("CRM Lead", "CRM Deal")}, update=True)
+	# Usuário pausado pelo plano (atraso ou cancelamento): volta sozinho quando a assinatura é regularizada
+	create_custom_fields(
+		{
+			"User": [
+				{
+					"fieldname": "credhub_paused",
+					"fieldtype": "Check",
+					"label": "Paused by the plan",
+					"insert_after": "enabled",
+					"read_only": 1,
+				}
+			]
+		},
+		update=True,
+	)
 	create_custom_fields({dt: custom_fields(insert_after="facebook") + _missing(dt, company_custom_fields(insert_after="cnpj_checked_on")) for dt in DOCTYPES}, update=True)
 	migrate_checked_dates()
 	add_industries()

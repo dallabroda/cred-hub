@@ -1,0 +1,167 @@
+{
+ "actions": [],
+ "creation": "2026-10-26 15:00:00.000000",
+ "description": "The company's user plan (credtech#25): free users plus paid extra users through Asaas.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "status",
+  "extra_users",
+  "pending_extra_users",
+  "column_break_plan",
+  "monthly_amount",
+  "next_due_date",
+  "invoice_url",
+  "upgrade_payment_id",
+  "applied_upgrade_payment_id",
+  "upgrade_base_users",
+  "upgrade_due_date",
+  "scheduled_extra_users",
+  "scheduled_from",
+  "grace_until",
+  "asaas_section",
+  "asaas_customer_id",
+  "asaas_subscription_id",
+  "payer_name",
+  "payer_email"
+ ],
+ "fields": [
+  {
+   "default": "Free",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Free\nAwaiting Payment\nActive\nPast Due\nCanceled",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "Extra users paid and released (on top of the free ones).",
+   "fieldname": "extra_users",
+   "fieldtype": "Int",
+   "label": "Extra Users",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "Extra users requested and waiting for the payment to be confirmed.",
+   "fieldname": "pending_extra_users",
+   "fieldtype": "Int",
+   "label": "Pending Extra Users",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_plan",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "monthly_amount",
+   "fieldtype": "Currency",
+   "label": "Monthly Amount",
+   "read_only": 1
+  },
+  {
+   "fieldname": "next_due_date",
+   "fieldtype": "Date",
+   "label": "Next Due Date",
+   "read_only": 1
+  },
+  {
+   "fieldname": "invoice_url",
+   "fieldtype": "Data",
+   "label": "Open Invoice",
+   "options": "URL",
+   "read_only": 1
+  },
+  {
+   "fieldname": "upgrade_payment_id",
+   "fieldtype": "Data",
+   "label": "Upgrade Payment",
+   "read_only": 1
+  },
+  {
+   "fieldname": "applied_upgrade_payment_id",
+   "fieldtype": "Data",
+   "label": "Last Applied Upgrade Payment",
+   "read_only": 1
+  },
+  {
+   "fieldname": "upgrade_base_users",
+   "fieldtype": "Int",
+   "label": "Paid Extra Users Before Upgrade",
+   "read_only": 1
+  },
+  {
+   "fieldname": "upgrade_due_date",
+   "fieldtype": "Date",
+   "label": "Upgrade Due Date",
+   "read_only": 1
+  },
+  {
+   "fieldname": "scheduled_extra_users",
+   "fieldtype": "Int",
+   "label": "Extra Users From Next Due Date",
+   "read_only": 1
+  },
+  {
+   "fieldname": "scheduled_from",
+   "fieldtype": "Date",
+   "label": "Scheduled From",
+   "read_only": 1
+  },
+  {
+   "fieldname": "grace_until",
+   "fieldtype": "Date",
+   "label": "Grace Until",
+   "read_only": 1
+  },
+  {
+   "collapsible": 1,
+   "fieldname": "asaas_section",
+   "fieldtype": "Section Break",
+   "label": "Asaas"
+  },
+  {
+   "fieldname": "asaas_customer_id",
+   "fieldtype": "Data",
+   "label": "Asaas Customer",
+   "read_only": 1
+  },
+  {
+   "fieldname": "asaas_subscription_id",
+   "fieldtype": "Data",
+   "label": "Asaas Subscription",
+   "read_only": 1
+  },
+  {
+   "fieldname": "payer_name",
+   "fieldtype": "Data",
+   "label": "Payer Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "payer_email",
+   "fieldtype": "Data",
+   "label": "Payer Email",
+   "options": "Email",
+   "read_only": 1
+  }
+ ],
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-10-26 23:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Cred Hub",
+ "name": "Cred Hub Plan",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "read": 1,
+   "role": "System Manager"
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}
