@@ -47,6 +47,10 @@ Só no site central (`credhub_signup: 1` no site_config). O pedido só vira empr
 
 Meta Lead Ads (conectar com Facebook pelo site central, webhook `leadgen`, tokens de página criptografados, rede de segurança a cada 10 min) e entrada por webhook para Google Ads, site (`public/js/lead-form.js`), Typeform e outros sistemas. Cada lead vira card no funil da origem, distribuído e sem duplicar (no crm). Variáveis: `FB_APP_ID`, `FB_APP_SECRET`, `CREDHUB_META_VERIFY_TOKEN`, `META_LOGIN_CONFIG_ID` (opcional).
 
+### Boas-vindas pelo WhatsApp (`welcome`)
+
+Lead novo de anúncio/formulário recebe um template aprovado pela Meta pelo Cred Chat da empresa (conta + chave de acesso de um administrador, criptografada; caixa e template por origem; desligado por padrão). Envio na fila depois do commit do card, sem repetição automática; resultado em "Últimos leads". Variável opcional: `CREDHUB_CHAT_URL` (padrão `https://chat.credtechdigital.com.br`).
+
 ## Instalação
 
 ```sh
