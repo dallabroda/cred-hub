@@ -1,0 +1,44 @@
+{
+ "actions": [],
+ "creation": "2026-10-26 17:00:00.000000",
+ "description": "Central site only: which company sites receive the webhooks of each Facebook Page (a Page can be shared by several companies, e.g. an agency).",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "page_id",
+  "site"
+ ],
+ "fields": [
+  {
+   "fieldname": "page_id",
+   "fieldtype": "Data",
+   "label": "Page ID",
+   "reqd": 1,
+   "in_list_view": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "site",
+   "fieldtype": "Data",
+   "label": "Company Site",
+   "reqd": 1,
+   "in_list_view": 1
+  }
+ ],
+ "links": [],
+ "modified": "2026-10-26 18:30:00.000000",
+ "modified_by": "Administrator",
+ "module": "Cred Hub",
+ "name": "Cred Hub Meta Route",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "read": 1,
+   "role": "System Manager"
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "autoname": "hash"
+}

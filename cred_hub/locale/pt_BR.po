@@ -761,3 +761,105 @@ msgstr "Sua empresa no Cred Hub"
 
 msgid "<p>Hi, {0}!</p><p>This e-mail has already created <b>{1}</b> on Cred Hub. Each person creates one company; you can create as many funnels as you want inside it.</p><p><a href=\"{2}\">Open {1}</a></p><p>CredTech team</p>"
 msgstr "<p>Olá, {0}!</p><p>Este e-mail já criou <b>{1}</b> no Cred Hub. Cada pessoa cria uma empresa; dentro dela você pode criar quantos funis quiser.</p><p><a href=\"{2}\">Abrir {1}</a></p><p>Equipe CredTech</p>"
+
+msgid "The Facebook connection is not available right now."
+msgstr "A conexão com o Facebook não está disponível agora."
+
+msgid "Facebook"
+msgstr "Facebook"
+
+msgid "This link expired. Start the connection again."
+msgstr "Este link expirou. Comece a conexão de novo."
+
+msgid "The connection was cancelled."
+msgstr "A conexão foi cancelada."
+
+msgid "Facebook refused the connection: {0}"
+msgstr "O Facebook recusou a conexão: {0}"
+
+msgid "We could not finish the connection. Please try again."
+msgstr "Não conseguimos terminar a conexão. Tente de novo."
+
+msgid "Facebook connected"
+msgstr "Facebook conectado"
+
+msgid "Facebook connected. You can close this window."
+msgstr "Facebook conectado. Pode fechar esta janela."
+
+msgid "This connection request expired. Start it again."
+msgstr "Este pedido de conexão expirou. Comece de novo."
+
+msgid "Unknown field: {0}"
+msgstr "Campo desconhecido: {0}"
+
+msgid "This form is not connected to a pipeline."
+msgstr "Este formulário não está ligado a um funil."
+
+msgid "Facebook lead"
+msgstr "Lead do Facebook"
+
+msgid "Lead form answers"
+msgstr "Respostas do formulário"
+
+msgid "The Facebook connection stopped working. Open Settings › Lead Sources and connect again."
+msgstr "A conexão com o Facebook parou de funcionar. Abra Configurações › Origens de leads e conecte de novo."
+
+msgid "Ad Origin"
+msgstr "Origem do anúncio"
+
+msgid "Ad Platform"
+msgstr "Plataforma"
+
+msgid "Campaign"
+msgstr "Campanha"
+
+msgid "Ad Set"
+msgstr "Conjunto de anúncios"
+
+msgid "Ad"
+msgstr "Anúncio"
+
+msgid "Lead Form"
+msgstr "Formulário"
+
+msgid "Campaign ID"
+msgstr "ID da campanha"
+
+msgid "Ad Set ID"
+msgstr "ID do conjunto"
+
+msgid "Ad ID"
+msgstr "ID do anúncio"
+
+msgid "Captured At"
+msgstr "Captado em"
+
+msgid "UTM Source"
+msgstr "UTM Origem"
+
+msgid "UTM Medium"
+msgstr "UTM Mídia"
+
+msgid "UTM Campaign"
+msgstr "UTM Campanha"
+
+msgid "UTM Content"
+msgstr "UTM Conteúdo"
+
+msgid "UTM Term"
+msgstr "UTM Termo"
+
+msgid "Google Click ID"
+msgstr "ID de clique do Google"
+
+msgid "Facebook Click ID"
+msgstr "ID de clique do Facebook"
+
+msgid "LinkedIn Click ID"
+msgstr "ID de clique do LinkedIn"
+
+msgid "Landing Page"
+msgstr "Página de entrada"
+
+msgid "The Facebook Page is not connected."
+msgstr "A página do Facebook não está conectada."
