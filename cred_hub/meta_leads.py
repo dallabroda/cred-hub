@@ -37,6 +37,8 @@ import requests
 from frappe import _
 from frappe.utils import add_to_date, convert_utc_to_system_timezone, get_datetime, now_datetime
 
+from cred_hub import welcome
+
 GRAPH = "https://graph.facebook.com/v23.0"
 DIALOG = "https://www.facebook.com/v23.0/dialog/oauth"
 SCOPES = "pages_show_list,pages_read_engagement,pages_manage_metadata,leads_retrieval,ads_read,business_management"
@@ -410,7 +412,10 @@ def get_lead_source_activity(source=None, limit=50):
 	events = frappe.get_all(
 		EVENT,
 		filters={"source": source} if source else {},
-		fields=["source", "received_on", "status", "lead", "form_name", "pipeline", "assigned_to", "error", "card_doctype", "card_name"],
+		fields=[
+			"source", "form_id", "received_on", "status", "lead", "form_name", "pipeline", "assigned_to", "error",
+			"card_doctype", "card_name", "welcome", "welcome_error", "welcome_conversation",
+		],
 		order_by="received_on desc",
 		limit=min(frappe.utils.cint(limit) or 50, 200),
 	)
@@ -440,6 +445,10 @@ def get_lead_source_activity(source=None, limit=50):
 			"assigned_to": e.assigned_to,
 			"error": e.error,
 			"card": {"doctype": e.card_doctype, "name": e.card_name} if e.card_name else None,
+			# Boas-vindas pelo WhatsApp (credtech#53): Queued, Sent, Failed ou nada (desligada)
+			"welcome": e.welcome or None,
+			"welcome_error": e.welcome_error,
+			"welcome_url": welcome.conversation_url(e),
 		}
 		for e in events
 	]
@@ -505,7 +514,7 @@ def dispatch_lead(site, leadgen_id, page_id, form_id):
 
 
 def _record(status, leadgen_id, form_id, **values):
-	frappe.get_doc(
+	return frappe.get_doc(
 		{
 			"doctype": EVENT,
 			"source": "Facebook",
@@ -562,7 +571,7 @@ def _ingest_lead(leadgen_id, page_id, form_id, lead):
 		card = duplicate or frappe.db.get_value("CRM Deal", {"lead": doc.name})
 		if card and unmapped and not duplicate:
 			_note_answers(card, unmapped)
-		_record(
+		event = _record(
 			"Duplicate" if duplicate else "Created",
 			leadgen_id,
 			form_id,
@@ -573,6 +582,8 @@ def _ingest_lead(leadgen_id, page_id, form_id, lead):
 			card_name=card,
 			assigned_to=frappe.db.get_value("CRM Deal", card, "deal_owner") if card else None,
 		)
+		if card and not duplicate:
+			welcome.queue(event)
 		frappe.db.commit()
 	except MetaTokenError as e:
 		frappe.db.rollback(save_point=savepoint)

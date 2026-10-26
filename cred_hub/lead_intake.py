@@ -26,6 +26,8 @@ import frappe
 from frappe import _
 from frappe.utils import cint, get_url, now_datetime
 
+from cred_hub import welcome
+
 SOURCE = "Cred Hub Lead Source"
 EVENT = "Cred Hub Lead Event"
 TYPES = ("google_ads", "website", "typeform", "webhook")
@@ -129,6 +131,7 @@ def regenerate_webhook_key(name: str):
 def delete_webhook_source(name: str):
 	_only_managers()
 	frappe.delete_doc(SOURCE, name, ignore_permissions=True)
+	frappe.db.delete(welcome.WELCOME, {"source": name})
 	return {"ok": True}
 
 
@@ -268,7 +271,7 @@ def _parse_typeform(body):
 
 
 def _record(source, status, external_id, **values):
-	frappe.get_doc(
+	return frappe.get_doc(
 		{
 			"doctype": EVENT,
 			"source": source.name,
@@ -322,7 +325,7 @@ def _ingest(source, values, answers, external_id):
 		card = duplicate or frappe.db.get_value("CRM Deal", {"lead": lead.name})
 		if card and answers and not duplicate:
 			_note_answers(card, answers)
-		_record(
+		event = _record(
 			source,
 			"Duplicate" if duplicate else "Created",
 			external_id,
@@ -332,6 +335,8 @@ def _ingest(source, values, answers, external_id):
 			card_name=card,
 			assigned_to=frappe.db.get_value("CRM Deal", card, "deal_owner") if card else None,
 		)
+		if card and not duplicate:
+			welcome.queue(event)
 		frappe.db.commit()
 		return {"ok": True}
 	except Exception as e:

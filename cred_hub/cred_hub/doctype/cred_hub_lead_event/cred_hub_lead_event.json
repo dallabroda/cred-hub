@@ -16,7 +16,10 @@
   "card_name",
   "assigned_to",
   "received_on",
-  "error"
+  "error",
+  "welcome",
+  "welcome_error",
+  "welcome_conversation"
  ],
  "fields": [
   {
@@ -88,10 +91,26 @@
    "fieldname": "error",
    "fieldtype": "Small Text",
    "label": "Error"
+  },
+  {
+   "fieldname": "welcome",
+   "fieldtype": "Select",
+   "label": "Welcome Message",
+   "options": "\nQueued\nSent\nFailed"
+  },
+  {
+   "fieldname": "welcome_error",
+   "fieldtype": "Small Text",
+   "label": "Welcome Error"
+  },
+  {
+   "fieldname": "welcome_conversation",
+   "fieldtype": "Data",
+   "label": "Welcome Conversation"
   }
  ],
  "links": [],
- "modified": "2026-10-26 19:30:00.000000",
+ "modified": "2026-10-26 20:00:00.000000",
  "modified_by": "Administrator",
  "module": "Cred Hub",
  "name": "Cred Hub Lead Event",

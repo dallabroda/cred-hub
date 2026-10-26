@@ -887,3 +887,93 @@ msgstr "Sites permitidos"
 
 msgid "Key (last 4)"
 msgstr "Chave (4 últimos)"
+
+msgid "Cred Chat did not answer. Try again in a few minutes."
+msgstr "O Cred Chat não respondeu. Tente de novo em alguns minutos."
+
+msgid "The Cred Chat access key is not valid."
+msgstr "A chave de acesso do Cred Chat não é válida."
+
+msgid "This access key has no access to that Cred Chat account."
+msgstr "Esta chave de acesso não tem acesso a essa conta do Cred Chat."
+
+msgid "Cred Chat refused the request: {0}"
+msgstr "O Cred Chat recusou o pedido: {0}"
+
+msgid "Inform the Cred Chat account number and access key."
+msgstr "Informe o número da conta e a chave de acesso do Cred Chat."
+
+msgid "Lead source not found."
+msgstr "Origem de leads não encontrada."
+
+msgid "Connect the Cred Chat before turning on the welcome message."
+msgstr "Conecte o Cred Chat antes de ligar a mensagem de boas-vindas."
+
+msgid "Choose the WhatsApp number and the message template."
+msgstr "Escolha o número de WhatsApp e o modelo de mensagem."
+
+msgid "This WhatsApp number is not in the connected Cred Chat account."
+msgstr "Este número de WhatsApp não está na conta conectada do Cred Chat."
+
+msgid "This template is not approved for this WhatsApp number."
+msgstr "Este modelo não está aprovado para este número de WhatsApp."
+
+msgid "Choose a lead field for each variable of the template."
+msgstr "Escolha um campo do lead para cada variável do modelo."
+
+msgid "The welcome message was turned off or the Cred Chat was disconnected."
+msgstr "A mensagem de boas-vindas foi desligada ou o Cred Chat foi desconectado."
+
+msgid "The lead has no valid mobile number."
+msgstr "O lead não tem celular válido."
+
+msgid "The template is no longer approved for this WhatsApp number."
+msgstr "O modelo não está mais aprovado para este número de WhatsApp."
+
+msgid "The lead has no value for {0}."
+msgstr "O lead não tem {0} preenchido."
+
+msgid "Cred Hub Chat Connection"
+msgstr "Conexão com o Cred Chat"
+
+msgid "Cred Hub Welcome"
+msgstr "Mensagem de boas-vindas"
+
+msgid "Account ID"
+msgstr "Número da conta"
+
+msgid "Access Key"
+msgstr "Chave de acesso"
+
+msgid "Connected By"
+msgstr "Conectado por"
+
+msgid "Inbox"
+msgstr "Caixa de entrada"
+
+msgid "Template"
+msgstr "Modelo"
+
+msgid "Template Language"
+msgstr "Idioma do modelo"
+
+msgid "Template Category"
+msgstr "Categoria do modelo"
+
+msgid "Variables"
+msgstr "Variáveis"
+
+msgid "Welcome Message"
+msgstr "Mensagem de boas-vindas"
+
+msgid "Welcome Error"
+msgstr "Erro da boas-vindas"
+
+msgid "Welcome Conversation"
+msgstr "Conversa de boas-vindas"
+
+msgid "Queued"
+msgstr "Na fila"
+
+msgid "Sent"
+msgstr "Enviada"
