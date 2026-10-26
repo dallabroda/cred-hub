@@ -10,6 +10,9 @@ tolerância antes de pausar, e pausar começa pelo usuário mais recente, sem ap
   sem pagamento, só os usuários novos são pausados até pagar. Diminuir: as vagas pagas valem até o próximo
   vencimento; a fatura seguinte vem com o valor menor e, na virada, quem passar do limite é pausado.
 - Mensalidade vencida: 3 dias de tolerância; depois, pausa acima dos 2 grátis até pagar.
+- Interruptor `credhub_billing` (common_site_config), desligado por padrão: desligado, não há limite, a tela
+  "Usuários e plano" some, o Asaas não é chamado e o webhook dele não é cadastrado. Liga quando a tela estiver
+  pronta e o dono mandar.
 - A empresa da própria CredTech não tem limite (`credhub_unlimited_users` no site_config, gravado pelo deploy).
 - Todo usuário de sistema conta, inclusive os de integração (decisão do dono).
 - O cartão é digitado na página da fatura do Asaas (invoice_url), nunca no Cred Hub.
@@ -65,8 +68,12 @@ def _plan():
 	return frappe.get_single(PLAN)
 
 
+def billing_enabled():
+	return bool(cint(frappe.conf.get("credhub_billing")))
+
+
 def user_limit(plan=None):
-	if frappe.conf.get("credhub_unlimited_users"):
+	if not billing_enabled() or frappe.conf.get("credhub_unlimited_users"):
 		return UNLIMITED
 	plan = plan or _plan()
 	# Extras valem com a assinatura em dia e, vencida, durante a tolerância
@@ -120,6 +127,9 @@ def validate_invitation(doc, method=None):
 @frappe.whitelist(methods=["GET"])
 def get_plan():
 	frappe.only_for("System Manager")
+	if not billing_enabled():
+		# Cobrança desligada: a tela não aparece
+		return {"enabled": False}
 	plan = _plan()
 	paused = frappe.get_all(
 		"User", filters={"credhub_paused": 1}, fields=["name", "full_name"], order_by="creation asc"
@@ -154,6 +164,7 @@ def get_plan():
 		"invoice_url": plan.invoice_url,
 		"paused_users": paused,
 		"can_manage": True,
+		"enabled": True,
 		"unlimited": bool(frappe.conf.get("credhub_unlimited_users")),
 		# Sem cliente no Asaas a tela pede os dados de quem paga; depois disso, só mostra o resumo
 		"needs_payer": not plan.asaas_customer_id,
@@ -205,6 +216,8 @@ def _clean_payer(payer):
 def request_extra_users(quantity: int, payer=None):
 	"""Quantos usuários extras a empresa quer (0 = só os grátis). Devolve {ok, invoice_url, status} ou {ok: False, ...}."""
 	frappe.only_for("System Manager")
+	if not billing_enabled():
+		frappe.throw(_("Billing is not available right now. Please try again later."))
 	quantity = cint(quantity)
 	if quantity < 0 or quantity > 500:
 		return _field_error("quantity", _("Choose between 0 and 500 extra users."))
@@ -508,6 +521,8 @@ def asaas_webhook():
 	received = frappe.get_request_header("asaas-access-token") or ""
 	if not token or not hmac.compare_digest(token, received):
 		raise frappe.AuthenticationError
+	if not billing_enabled():
+		return {"ok": True}
 	payload = frappe.request.get_json(silent=True) or {}
 	event = payload.get("event") or ""
 	if event not in WEBHOOK_EVENTS:
@@ -650,7 +665,7 @@ def _upgrade_overdue(plan):
 def daily_check():
 	"""Agendador diário (cada empresa): diminuição que chega na virada, tolerância vencida e aumento sem pagamento
 	cujo aviso do Asaas não chegou."""
-	if frappe.conf.get("credhub_unlimited_users"):
+	if not billing_enabled() or frappe.conf.get("credhub_unlimited_users"):
 		return
 	plan = _plan()
 	today = getdate()
@@ -679,7 +694,7 @@ def daily_check():
 
 def ensure_asaas_webhook():
 	"""Site central (deploy): cadastra no Asaas o webhook do Cred Hub, se ainda não existir. Pode repetir."""
-	if not frappe.conf.get("credhub_signup") or not os.environ.get("ASAAS_API_KEY"):
+	if not billing_enabled() or not frappe.conf.get("credhub_signup") or not os.environ.get("ASAAS_API_KEY"):
 		return "webhook do Asaas: pulado"
 	url = frappe.utils.get_url("/api/method/cred_hub.billing.asaas_webhook")
 	# Recusa do Asaas não para o deploy (igual ao webhook da Meta): fica no resultado e no log de erros

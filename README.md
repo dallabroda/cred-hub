@@ -63,6 +63,10 @@ Na conversa do Cred Chat, uma aba "Cred Hub" (Dashboard App) mostra os cards do 
 
 Busca pelo telefone com a mesma regra da entrada de leads (número nacional, sem o 55 quando há mais de 11 dígitos; (48) e (38) com os mesmos 9 dígitos são pessoas diferentes) ou pelo e-mail, no próprio card ou num contato ligado a ele; abertos primeiro, até 20. A página só aceita ser posta em iframe pelo Cred Chat (`frame-ancestors`) e só ouve mensagens vindas dele. Etapa com campos obrigatórios ou motivo de perda mostra o erro do Cred Hub e volta à etapa anterior.
 
+### Limite de usuários e cobrança dos extras (`billing`)
+
+2 usuários grátis por empresa; extras a R$ 60/mês pelo Asaas, no padrão de mercado (aumento libera na hora e cobra a diferença por link com 3 dias; diminuição vale no próximo vencimento; 3 dias de tolerância antes de pausar). **Desligado por padrão:** só vale com `credhub_billing: 1` no common_site_config; desligado, não há limite, a tela some e o Asaas não é chamado. Variáveis: `ASAAS_API_KEY`, `ASAAS_ENVIRONMENT`, `CREDHUB_ASAAS_WEBHOOK_TOKEN`; `credhub_unlimited_users: 1` deixa uma empresa sem limite.
+
 ## Instalação
 
 ```sh
