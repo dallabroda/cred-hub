@@ -7,13 +7,16 @@ from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
 from cred_hub.cnpj.fields import CHECKED_DATE_FIELDS, DETAILS_ADDRESS_FIELDS, DOCTYPES, SIDE_PANEL_FIELDS, custom_fields
 from cred_hub.cnpj.sectors import SECTORS
-from cred_hub.company.fields import COMPANY_SECTION, COMPANY_SECTION_LABEL, COMPANY_SIDE_PANEL_FIELDS, company_custom_fields
+from cred_hub.company.fields import COMPANY_SECTION, company_custom_fields
 
 CNPJ_SECTION = "cred_hub_cnpj_section"
 CNPJ_SECTION_LABEL = "Company Registry (CNPJ)"
 # Território (região de vendas do Frappe CRM) sai das telas: a CredTech não usa (pedido do dono, 24/10/2026)
 HIDDEN_FIELDS = ("territory",)
 TERRITORY_DOCTYPES = ("CRM Lead", "CRM Deal", "CRM Organization")
+# Contato: saudação, sobrenome, gênero e endereço saem do painel por padrão (pedido do dono, 26/10/2026). Só uma
+# vez por site, para o admin poder recolocar algum pelo editor de layout sem o próximo migrate tirar de novo.
+CONTACT_HIDDEN_FIELDS = ("salutation", "last_name", "gender", "address")
 
 
 # Origem do anúncio no lead e no card (credtech#51): o lead vira card e os campos de mesmo nome vão junto
@@ -59,8 +62,10 @@ def after_install():
 	add_industries()
 	for doctype in DOCTYPES:
 		add_side_panel_section(doctype)
-		add_side_panel_section(doctype, COMPANY_SECTION, COMPANY_SECTION_LABEL, COMPANY_SIDE_PANEL_FIELDS)
+		remove_side_panel_section(doctype, COMPANY_SECTION)
 		add_address_to_details(doctype)
+		_once(f"cred_hub_linkedin_after_website:{doctype}", move_to_details, doctype, "linkedin", after="website")
+	_once("cred_hub_contact_panel_trimmed", remove_from_layout, "Contact-Side Panel", CONTACT_HIDDEN_FIELDS)
 	for doctype in TERRITORY_DOCTYPES:
 		for kind in ("Side Panel", "Quick Entry", "Data Fields"):
 			remove_from_layout(f"{doctype}-{kind}", HIDDEN_FIELDS)
@@ -112,10 +117,19 @@ def _strip_fields(node, names) -> bool:
 	return changed
 
 
+def _once(key, fn, *args, **kwargs):
+	"""Ajuste de layout aplicado uma única vez por site (marcado em `__global`): depois disso vale o que o admin
+	mudar. Só marca se o layout existia (`fn` devolve False quando não existe)."""
+	if frappe.db.get_global(key):
+		return
+	if fn(*args, **kwargs) is not False:
+		frappe.db.set_global(key, 1)
+
+
 def remove_from_layout(name, names):
 	doc, layout = _layout(name)
 	if doc is None:
-		return
+		return False
 	changed = _strip_fields(layout, set(names))
 	# Seção própria do campo (ex.: "territory_section" do cadastro rápido) que ficou vazia sai junto
 	empty = {f"{n}_section" for n in names}
@@ -123,6 +137,35 @@ def remove_from_layout(name, names):
 	if changed or len(kept) != len(layout):
 		doc.layout = json.dumps(kept)
 		doc.save(ignore_permissions=True)
+
+
+def remove_side_panel_section(doctype, name):
+	doc, layout = _layout(f"{doctype}-Side Panel")
+	if doc is None:
+		return
+	kept = [s for s in layout if s.get("name") != name]
+	if len(kept) != len(layout):
+		doc.layout = json.dumps(kept)
+		doc.save(ignore_permissions=True)
+
+
+def move_to_details(doctype, field, after):
+	"""`field` vai para a seção Detalhes do painel lateral logo depois de `after` (ex.: LinkedIn depois do Site)."""
+	doc, layout = _layout(f"{doctype}-Side Panel")
+	if doc is None:
+		return False
+	details = next((s for s in layout if s.get("name") == "details_section"), None)
+	if not details or not details.get("columns"):
+		return True
+	_strip_fields(layout, {field})
+	columns = details["columns"]
+	fields = next((c["fields"] for c in columns if after in (c.get("fields") or [])), None)
+	if fields is None:
+		fields = columns[0].setdefault("fields", [])
+	fields.insert(fields.index(after) + 1 if after in fields else len(fields), field)
+	doc.layout = json.dumps(layout)
+	doc.save(ignore_permissions=True)
+	return True
 
 
 def add_address_to_details(doctype):
@@ -164,8 +207,8 @@ def add_industries():
 
 
 def add_side_panel_section(doctype, name=CNPJ_SECTION, label=CNPJ_SECTION_LABEL, fields=SIDE_PANEL_FIELDS):
-	"""Seção no painel lateral do Lead/Organização: "Company Registry (CNPJ)" (pt-BR: Dados da Receita) ou
-	"Digital Presence". Mantém a lista de campos sempre igual à definida aqui (a v0.1 tinha nomes em português).
+	"""Seção no painel lateral do Lead/Organização: "Company Registry (CNPJ)" (pt-BR: Dados da Receita). Mantém
+	a lista de campos sempre igual à definida aqui (a v0.1 tinha nomes em português).
 	"""
 	doc, layout = _layout(f"{doctype}-Side Panel")
 	if doc is None:
