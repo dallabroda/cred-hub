@@ -35,6 +35,14 @@ Ao salvar um Lead ou uma Organização com nome de empresa, um job em segundo pl
 
 Para não trazer homônimo, o LinkedIn achado pela busca só é aceito se o endereço do perfil tiver todas as palavras do nome; o do próprio site ou do Wikidata vale sempre.
 
+### Padrões de cada site (`site_setup`)
+
+`bench --site <site> execute cred_hub.site_setup.apply_from_env`: idioma pt-BR e BRL, acesso só por convite, traduções de etapas, conta de e-mail (Brevo) com boas-vindas e login Google/Microsoft/GitHub (Auth0). Segredos por variável de ambiente (`SMTP_*`, `MAILER_SENDER_EMAIL`, `AUTH0_*`); grupo sem variável é pulado. Rodado pelo deploy em todo site e pelo cadastro em cada empresa nova.
+
+### Cadastro self-service de empresas (`signup`, páginas `/cadastro`)
+
+Só no site central (`credhub_signup: 1` no site_config). O pedido só vira empresa depois da confirmação do e-mail; a criação roda na fila `credhub_provision` (`cred_hub.provision_site`, banco com prefixo `chsite`, usuário de banco `CREDHUB_PROVISIONER_DB_*` por variável de ambiente). Pedidos no doctype **Cred Hub Signup**; falha avisa os System Managers e pode ser tentada de novo com `cred_hub.signup.retry_provision`.
+
 ## Instalação
 
 ```sh
