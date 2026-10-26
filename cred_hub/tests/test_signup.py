@@ -192,6 +192,10 @@ class TestSignup(IntegrationTestCase):
 		with patch.object(signup, "_send_existing_company") as reminder, self.assertRaises(signup.AlreadyHasCompanyError):
 			self.request(subdomain="acme-outra")
 		reminder.assert_called_once()  # o endereço vai por e-mail, não na resposta
+		with patch.object(signup, "_send_existing_company") as again, self.assertRaises(signup.AlreadyHasCompanyError):
+			self.request(subdomain="acme-outra")
+		again.assert_not_called()  # um lembrete por dia
+		frappe.cache.delete_value(f"credhub_signup_existing:{signup._hash('ana@example.com')}")
 
 	def test_new_address_replaces_unconfirmed_request(self):
 		first, first_token = self.request()

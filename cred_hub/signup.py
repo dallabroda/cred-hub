@@ -207,7 +207,11 @@ def request_signup(company_name: str, subdomain: str, full_name: str, email: str
 		as_dict=True,
 	)
 	if existing:
-		_send_existing_company(existing, email)
+		# No máximo um lembrete por e-mail a cada 24 h: o aviso não pode virar jeito de lotar a caixa de alguém
+		reminder_key = f"credhub_signup_existing:{_hash(email)}"
+		if not frappe.cache.get_value(reminder_key):
+			frappe.cache.set_value(reminder_key, 1, expires_in_sec=24 * 60 * 60)
+			_send_existing_company(existing, email)
 		frappe.throw(
 			_("This e-mail has already created a company on Cred Hub. We sent its address to this e-mail."),
 			AlreadyHasCompanyError,
