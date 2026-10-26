@@ -1019,3 +1019,30 @@ msgstr "Abrir o Cred Hub"
 
 msgid "Open card"
 msgstr "Abrir card"
+
+msgid "Your plan allows {0} users. Contract extra users in Users and Plan."
+msgstr "Seu plano permite {0} usuários. Contrate usuários extras em Usuários e plano."
+
+msgid "Enter the name of who pays."
+msgstr "Informe o nome de quem paga."
+
+msgid "Enter a valid CPF or CNPJ."
+msgstr "Informe um CPF ou CNPJ válido."
+
+msgid "Enter a phone number with area code."
+msgstr "Informe um telefone com DDD."
+
+msgid "Enter a valid CEP."
+msgstr "Informe um CEP válido."
+
+msgid "Choose between 0 and 500 extra users."
+msgstr "Escolha entre 0 e 500 usuários extras."
+
+msgid "Deactivate {0} users before reducing the plan."
+msgstr "Desative {0} usuários antes de diminuir o plano."
+
+msgid "Billing is not available right now. Please try again later."
+msgstr "A cobrança não está disponível agora. Tente de novo mais tarde."
+
+msgid "The payment service refused the request: {0}"
+msgstr "O serviço de pagamento recusou o pedido: {0}"

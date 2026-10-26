@@ -23,6 +23,9 @@ oauth_without_account = "cred_hub.signup_access.oauth_without_account"
 login_signup_url = "cred_hub.signup_access.login_signup_url"
 
 doc_events = {
+	# Limite de usuários do plano (2 grátis + extras pagos pelo Asaas, credtech#25)
+	"User": {"validate": "cred_hub.billing.validate_user"},
+	"CRM Invitation": {"before_insert": "cred_hub.billing.validate_invitation"},
 	"CRM Organization": {
 		"validate": "cred_hub.cnpj.events.validate",
 		"on_update": ["cred_hub.cnpj.events.on_update", "cred_hub.company.events.on_update"],
