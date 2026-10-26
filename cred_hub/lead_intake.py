@@ -32,6 +32,7 @@ TYPES = ("google_ads", "website", "typeform", "webhook")
 TYPE_LABELS = {"google_ads": "Google Ads", "website": "Site", "typeform": "Typeform", "webhook": "Webhook"}
 TRACKING = ("utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term", "gclid", "fbclid", "li_fat_id")
 LEAD_FIELDS = ("first_name", "last_name", "email", "mobile_no", "phone", "organization", "job_title", "website")
+FIELD_SIZES = {"mobile_no": 40, "phone": 40, "email": 140}
 WEBSITE_LIMIT = 10  # envios por visitante a cada 10 minutos
 GOOGLE_COLUMNS = {
 	"FULL_NAME": "full_name",
@@ -188,7 +189,7 @@ def receive(source=None):
 		return {"ok": False, "message": _("This lead source is not connected to a pipeline.")}
 	if doc.type == "google_ads" and body.get("is_test"):
 		# Botão "Enviar dados de teste" do Google Ads: confirma a ligação sem criar card
-		_record(doc, "Created", str(body.get("lead_id") or "teste"), error=_("Google Ads test lead (no card created)."))
+		_record(doc, "Test", str(body.get("lead_id") or "teste"), error=_("Google Ads test lead (no card created)."))
 		frappe.db.commit()
 		return {"ok": True}
 	values, answers, external_id = _parse(doc.type, body)
@@ -201,7 +202,10 @@ def _parse(kind, body):
 	if kind == "typeform":
 		return _parse_typeform(body)
 	fields = body.get("fields") or {}
-	values = {k: str(v).strip() for k, v in fields.items() if k in LEAD_FIELDS and v not in (None, "")}
+	# Tamanhos dos campos do lead: texto maior que o campo viraria falha
+	values = {
+		k: str(v).strip()[: FIELD_SIZES.get(k, 140)] for k, v in fields.items() if k in LEAD_FIELDS and v not in (None, "")
+	}
 	values.update({k: str(body[k])[:140] for k in TRACKING if body.get(k)})
 	page = body.get("landing_page") or body.get("page")
 	if page:
@@ -278,7 +282,19 @@ def _record(source, status, external_id, **values):
 
 
 def ingest(source, values, answers, external_id=None):
-	"""Cria o lead com o funil da origem; o Cred Hub faz o card, distribui e trata repetido."""
+	"""Cria o lead com o funil da origem; o Cred Hub faz o card, distribui e trata repetido.
+	Google e Typeform reenviam: a trava por origem + id vai até depois do commit."""
+	lock = f"credhub_intake:{source.name}:{external_id}"[:64] if external_id else None
+	if lock and not frappe.db.sql("SELECT GET_LOCK(%s, 30)", lock)[0][0]:
+		return {"ok": True}
+	try:
+		return _ingest(source, values, answers, external_id)
+	finally:
+		if lock:
+			frappe.db.sql("SELECT RELEASE_LOCK(%s)", lock)
+
+
+def _ingest(source, values, answers, external_id):
 	if external_id and frappe.db.exists(
 		EVENT, {"source": source.name, "leadgen_id": external_id, "status": ("in", ("Created", "Duplicate"))}
 	):

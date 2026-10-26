@@ -143,3 +143,9 @@ class TestLeadIntake(IntegrationTestCase):
 		self.post(source, {"fields": {"first_name": "Ana"}}, {"X-CredHub-Key": key})
 		activity = get_lead_source_activity()
 		self.assertEqual(activity[0]["source_label"], "Teste webhook")
+
+	def test_google_test_lead_is_marked_test(self):
+		source, key = self.source("google_ads")
+		self.post(source, {"lead_id": "t-1", "google_key": key, "is_test": True})
+		self.assertFalse(frappe.db.exists("CRM Deal", {"pipeline": self.pipeline}))
+		self.assertEqual(frappe.db.get_value(lead_intake.EVENT, {"source": source.name}, "status"), "Test")
