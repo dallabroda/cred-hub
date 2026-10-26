@@ -93,11 +93,11 @@ class TestWelcome(IntegrationTestCase):
 		)
 
 	def post(self, body):
-		request = MagicMock(headers={"X-CredHub-Key": self.key})
+		request = MagicMock(headers={"X-CredHub-Key": self.key}, args={"source": self.source.name})
 		request.get_data.return_value = json.dumps(body).encode()
 		with patch.object(frappe, "request", request), patch.object(frappe, "enqueue") as enqueue:
 			frappe.local.request_ip = "203.0.113.9"
-			lead_intake.receive(self.source.name)
+			lead_intake.receive()
 		# Só os envios de boas-vindas (o Cred Hub enfileira outras coisas ao criar o card)
 		return [c for c in enqueue.call_args_list if c.args and c.args[0] == "cred_hub.welcome.send"]
 
