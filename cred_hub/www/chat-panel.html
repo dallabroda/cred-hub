@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="{{ lang }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cred Hub</title>
+<style>
+	:root {
+		--bg: #ffffff; --fg: #1f2328; --muted: #6b7280; --line: #e5e7eb; --card: #f9fafb;
+		--accent: #6d28d9; --accent-fg: #ffffff; --ok: #15803d; --err: #b91c1c;
+	}
+	body.dark {
+		--bg: #1b1b1f; --fg: #e5e7eb; --muted: #9ca3af; --line: #2f2f36; --card: #232329;
+		--accent: #a78bfa; --accent-fg: #111111; --ok: #4ade80; --err: #f87171;
+	}
+	* { box-sizing: border-box; }
+	body { margin: 0; padding: 12px; background: var(--bg); color: var(--fg);
+		font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif; }
+	.muted { color: var(--muted); }
+	.center { text-align: center; padding: 24px 8px; }
+	.btn { display: inline-block; border: 0; border-radius: 6px; padding: 7px 12px; cursor: pointer; font: inherit;
+		background: var(--accent); color: var(--accent-fg); text-decoration: none; }
+	.btn:disabled { opacity: .6; cursor: default; }
+	.link { color: var(--accent); text-decoration: none; }
+	.card { border: 1px solid var(--line); background: var(--card); border-radius: 8px; padding: 12px; margin-bottom: 10px; }
+	.card h3 { margin: 0 0 2px; font-size: 15px; }
+	.row { margin-top: 10px; }
+	.row label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 3px; }
+	select, input { width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px;
+		background: var(--bg); color: var(--fg); font: inherit; }
+	.value { display: flex; gap: 6px; }
+	.value input { flex: 1; }
+	.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--muted); }
+	.status { font-size: 12px; min-height: 16px; margin-top: 6px; }
+	.status.ok { color: var(--ok); }
+	.status.err { color: var(--err); }
+	.foot { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; font-size: 13px; }
+</style>
+</head>
+<body>
+<div id="app" class="center muted">{{ messages.loading }}</div>
+<script>
+(function () {
+	var M = {{ messages | tojson }};
+	var CHAT_ORIGIN = {{ chat_origin | tojson }};
+	var LOGGED_IN = {{ logged_in | tojson }};
+	var CSRF = {{ csrf_token | tojson }};
+	var LOGIN_URL = {{ login_url | tojson }};
+	var LANG = {{ lang | tojson }};
+	var app = document.getElementById("app");
+	var lastKey = null;
+
+	function el(tag, attrs, children) {
+		var node = document.createElement(tag);
+		Object.keys(attrs || {}).forEach(function (k) {
+			if (k === "text") node.textContent = attrs[k];
+			else if (k === "className") node.className = attrs[k];
+			else node.setAttribute(k, attrs[k]);
+		});
+		(children || []).forEach(function (c) { if (c) node.appendChild(c); });
+		return node;
+	}
+
+	function show(nodes, centered) {
+		app.className = centered ? "center muted" : "";
+		app.replaceChildren.apply(app, nodes);
+	}
+
+	function message(text) { show([el("p", { text: text })], true); }
+
+	function showLogin() {
+		var button = el("a", { className: "btn", href: LOGIN_URL, target: "_blank", rel: "noopener", text: M.login });
+		show([el("p", { text: M.login_title }), button, el("p", { className: "muted", text: M.login_hint })], true);
+		// Volta da aba de login: recarrega para pegar a sessão nova
+		window.addEventListener("focus", function () { location.reload(); }, { once: true });
+	}
+
+	function serverError(body) {
+		try {
+			var messages = JSON.parse(body._server_messages || "[]").map(function (m) {
+				var parsed = JSON.parse(m);
+				return parsed.message || parsed;
+			});
+			if (messages.length) {
+				// DOMParser não executa nada (innerHTML num div solto ainda dispara <img onerror>); só o texto sai
+				return new DOMParser().parseFromString(messages.join(" "), "text/html").body.textContent;
+			}
+		} catch (e) { /* cai no texto genérico */ }
+		return M.error;
+	}
+
+	function api(method, path, params) {
+		var url = "/api/method/" + path;
+		var options = { method: method, credentials: "same-origin", headers: { Accept: "application/json" } };
+		if (method === "GET") {
+			url += "?" + new URLSearchParams(params).toString();
+		} else {
+			options.headers["Content-Type"] = "application/json";
+			options.headers["X-Frappe-CSRF-Token"] = CSRF;
+			options.body = JSON.stringify(params);
+		}
+		return fetch(url, options).then(function (response) {
+			return response.json().catch(function () { return {}; }).then(function (body) {
+				if (response.ok) return body.message;
+				if (response.status !== 401 && response.status !== 403) throw new Error(serverError(body));
+				// 403 é sessão expirada ou falta de permissão no card: só a sessão leva ao botão de entrar
+				return sessionAlive().then(function (alive) {
+					if (!alive) {
+						showLogin();
+						throw null;
+					}
+					throw new Error(serverError(body));
+				});
+			});
+		});
+	}
+
+	function sessionAlive() {
+		return fetch("/api/method/frappe.auth.get_logged_user", { credentials: "same-origin", headers: { Accept: "application/json" } })
+			.then(function (response) { return response.ok; })
+			.catch(function () { return true; });
+	}
+
+	function money(value, currency) {
+		try {
+			return new Intl.NumberFormat(LANG, { style: "currency", currency: currency || "BRL" }).format(value || 0);
+		} catch (e) { return String(value || 0); }
+	}
+
+	function renderCard(card) {
+		var status = el("div", { className: "status" });
+		function setStatus(text, kind) { status.textContent = text || ""; status.className = "status" + (kind ? " " + kind : ""); }
+
+		function save(changes, control) {
+			control.disabled = true;
+			setStatus(M.saving);
+			api("POST", "cred_hub.chat_panel.update_card", Object.assign({ name: card.name }, changes))
+				.then(function (fresh) {
+					if (fresh) card = fresh;
+					var replacement = renderCard(card);
+					node.replaceWith(replacement);
+					replacement.querySelector(".status").textContent = M.saved;
+					replacement.querySelector(".status").className = "status ok";
+				})
+				.catch(function (e) {
+					control.disabled = false;
+					if (e) setStatus(e.message, "err");
+					stage && (stage.value = card.status);
+				});
+		}
+
+		var stage = null;
+		var stageRow;
+		if (card.can_write) {
+			stage = el("select", { "aria-label": M.stage }, card.stages.map(function (s) {
+				var option = el("option", { value: s.value, text: s.label });
+				if (s.value === card.status) option.selected = true;
+				return option;
+			}));
+			stage.addEventListener("change", function () { save({ status: stage.value }, stage); });
+			stageRow = el("div", { className: "row" }, [el("label", { text: M.stage }), stage]);
+		} else {
+			stageRow = el("div", { className: "row" }, [el("label", { text: M.stage }), el("div", { text: card.status_label })]);
+		}
+
+		var valueRow;
+		// Card com produtos: o valor é o total deles, o Cred Hub regrava ao salvar
+		if (card.can_write && !card.value_from_products) {
+			var input = el("input", { type: "number", step: "0.01", min: "0", inputmode: "decimal", "aria-label": M.value });
+			input.value = card.deal_value || "";
+			var button = el("button", { className: "btn", type: "button", text: M.save });
+			button.addEventListener("click", function () { save({ deal_value: input.value || 0 }, button); });
+			valueRow = el("div", { className: "row" }, [el("label", { text: M.value }), el("div", { className: "value" }, [input, button])]);
+		} else {
+			valueRow = el("div", { className: "row" }, [el("label", { text: M.value }), el("div", { text: money(card.deal_value, card.currency) })]);
+		}
+
+		var dot = el("span", { className: "dot" });
+		if (card.status_color) dot.style.background = card.status_color;
+		var node = el("div", { className: "card" }, [
+			el("h3", { text: card.title }),
+			el("div", { className: "muted" }, [dot, document.createTextNode(card.pipeline_name + " · " + card.status_label)]),
+			stageRow,
+			valueRow,
+			status,
+			el("div", { className: "foot" }, [
+				el("span", { className: "muted", text: card.owner ? M.owner + ": " + card.owner : "" }),
+				el("a", { className: "link", href: card.url, target: "_blank", rel: "noopener", text: M.open_card }),
+			]),
+		]);
+		return node;
+	}
+
+	function load(contact) {
+		var phone = (contact && contact.phone_number) || "";
+		var email = (contact && contact.email) || "";
+		var key = phone + "|" + email;
+		if (key === lastKey) return;
+		lastKey = key;
+		if (!phone && !email) return message(M.no_contact);
+		message(M.loading);
+		api("GET", "cred_hub.chat_panel.find_cards", { phone: phone, email: email })
+			.then(function (cards) {
+				if (key !== lastKey) return;
+				if (!cards || !cards.length) {
+					return show([
+						el("p", { text: M.no_cards }),
+						el("a", { className: "link", href: "/crm/deals", target: "_blank", rel: "noopener", text: M.open_hub }),
+					], true);
+				}
+				show(cards.map(renderCard));
+			})
+			.catch(function (e) { if (e) message(e.message); });
+	}
+
+	if (!LOGGED_IN) return showLogin();
+	if (window.parent === window) return message(M.outside_chat);
+
+	window.addEventListener("message", function (event) {
+		if (event.origin !== CHAT_ORIGIN || typeof event.data !== "string") return;
+		var payload;
+		try { payload = JSON.parse(event.data); } catch (e) { return; }
+		if (!payload || payload.event !== "appContext" || !payload.data) return;
+		document.body.classList.toggle("dark", payload.data.theme === "dark");
+		load(payload.data.contact);
+	});
+	window.parent.postMessage("chatwoot-dashboard-app:fetch-info", CHAT_ORIGIN);
+})();
+</script>
+</body>
+</html>

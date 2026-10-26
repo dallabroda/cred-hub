@@ -977,3 +977,45 @@ msgstr "Na fila"
 
 msgid "Sent"
 msgstr "Enviada"
+
+msgid "Cred Chat account of this company, used to send the welcome message to new ad and form leads (credtech#53) and to show the Cred Hub panel in conversations (credtech#45)."
+msgstr "Conta do Cred Chat desta empresa, usada para mandar a boas-vindas aos leads novos de anúncio e formulário (credtech#53) e para mostrar o painel do Cred Hub nas conversas (credtech#45)."
+
+msgid "Panel App ID"
+msgstr "ID do painel no Cred Chat"
+
+msgid "Dashboard App that shows the Cred Hub panel in Cred Chat conversations."
+msgstr "Dashboard App que mostra o painel do Cred Hub nas conversas do Cred Chat."
+
+msgid "Panel Error"
+msgstr "Erro do painel"
+
+msgid "To show the Cred Hub panel in conversations, the access key must belong to a Cred Chat administrator."
+msgstr "Para mostrar o painel do Cred Hub nas conversas, a chave de acesso precisa ser de um administrador do Cred Chat."
+
+msgid "Connect Cred Chat first."
+msgstr "Conecte o Cred Chat primeiro."
+
+msgid "Sign in to Cred Hub to see this contact's cards."
+msgstr "Entre no Cred Hub para ver os cards deste contato."
+
+msgid "Sign in to Cred Hub"
+msgstr "Entrar no Cred Hub"
+
+msgid "After signing in, come back to this conversation."
+msgstr "Depois de entrar, volte para esta conversa."
+
+msgid "Open this panel from a conversation in Cred Chat."
+msgstr "Abra este painel por uma conversa no Cred Chat."
+
+msgid "This conversation has no phone number or e-mail to look for."
+msgstr "Esta conversa não tem telefone nem e-mail para buscar."
+
+msgid "No card for this contact."
+msgstr "Nenhum card para este contato."
+
+msgid "Open Cred Hub"
+msgstr "Abrir o Cred Hub"
+
+msgid "Open card"
+msgstr "Abrir card"

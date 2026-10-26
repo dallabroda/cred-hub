@@ -1,7 +1,7 @@
 {
  "actions": [],
  "creation": "2026-10-26 20:00:00.000000",
- "description": "Cred Chat account of this company, used to send the welcome message to new ad and form leads (credtech#53).",
+ "description": "Cred Chat account of this company, used to send the welcome message to new ad and form leads (credtech#53) and to show the Cred Hub panel in conversations (credtech#45).",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
@@ -9,7 +9,9 @@
   "account_name",
   "access_token",
   "connected_by",
-  "connected_on"
+  "connected_on",
+  "panel_app_id",
+  "panel_error"
  ],
  "fields": [
   {
@@ -41,10 +43,23 @@
    "fieldtype": "Datetime",
    "label": "Connected On",
    "read_only": 1
+  },
+  {
+   "description": "Dashboard App that shows the Cred Hub panel in Cred Chat conversations.",
+   "fieldname": "panel_app_id",
+   "fieldtype": "Int",
+   "label": "Panel App ID",
+   "read_only": 1
+  },
+  {
+   "fieldname": "panel_error",
+   "fieldtype": "Small Text",
+   "label": "Panel Error",
+   "read_only": 1
   }
  ],
  "links": [],
- "modified": "2026-10-26 20:00:00.000000",
+ "modified": "2026-10-26 22:00:00.000000",
  "modified_by": "Administrator",
  "module": "Cred Hub",
  "name": "Cred Hub Chat Connection",
