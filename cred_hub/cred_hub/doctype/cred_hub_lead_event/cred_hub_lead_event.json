@@ -1,0 +1,113 @@
+{
+ "actions": [],
+ "creation": "2026-10-26 17:00:00.000000",
+ "description": "Each lead received from an ad platform: created card, duplicate or failure (credtech#51).",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "source",
+  "status",
+  "leadgen_id",
+  "form_id",
+  "form_name",
+  "pipeline",
+  "lead",
+  "card_doctype",
+  "card_name",
+  "assigned_to",
+  "received_on",
+  "error"
+ ],
+ "fields": [
+  {
+   "fieldname": "source",
+   "fieldtype": "Data",
+   "label": "Source",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Created\nDuplicate\nFailed",
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "leadgen_id",
+   "fieldtype": "Data",
+   "label": "Platform Lead ID",
+   "search_index": 1
+  },
+  {
+   "fieldname": "form_id",
+   "fieldtype": "Data",
+   "label": "Form ID"
+  },
+  {
+   "fieldname": "form_name",
+   "fieldtype": "Data",
+   "label": "Form"
+  },
+  {
+   "fieldname": "pipeline",
+   "fieldtype": "Link",
+   "label": "Pipeline",
+   "options": "CRM Pipeline"
+  },
+  {
+   "fieldname": "lead",
+   "fieldtype": "Link",
+   "label": "Lead",
+   "options": "CRM Lead"
+  },
+  {
+   "fieldname": "card_doctype",
+   "fieldtype": "Link",
+   "label": "Card DocType",
+   "options": "DocType"
+  },
+  {
+   "fieldname": "card_name",
+   "fieldtype": "Dynamic Link",
+   "label": "Card",
+   "options": "card_doctype"
+  },
+  {
+   "fieldname": "assigned_to",
+   "fieldtype": "Link",
+   "label": "Assigned To",
+   "options": "User"
+  },
+  {
+   "fieldname": "received_on",
+   "fieldtype": "Datetime",
+   "label": "Received On"
+  },
+  {
+   "fieldname": "error",
+   "fieldtype": "Small Text",
+   "label": "Error"
+  }
+ ],
+ "links": [],
+ "modified": "2026-10-26 17:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Cred Hub",
+ "name": "Cred Hub Lead Event",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "read": 1,
+   "role": "System Manager"
+  },
+  {
+   "read": 1,
+   "role": "Sales Manager"
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "autoname": "hash"
+}

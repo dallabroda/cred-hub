@@ -12,7 +12,11 @@ after_install = "cred_hub.install.after_install"
 after_migrate = "cred_hub.install.after_install"
 
 # Tempo de mercado (anos) muda com o tempo: recalculado todo dia
-scheduler_events = {"daily": ["cred_hub.cnpj.enrich.update_years_in_business"]}
+scheduler_events = {
+	"daily": ["cred_hub.cnpj.enrich.update_years_in_business"],
+	# Rede de segurança dos leads da Meta: o que o webhook não trouxe (credtech#51)
+	"cron": {"*/10 * * * *": ["cred_hub.meta_leads.catch_up"]},
+}
 
 # Quem chega sem conta vai para o cadastro de empresa nova (credtech#25)
 oauth_without_account = "cred_hub.signup_access.oauth_without_account"

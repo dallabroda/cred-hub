@@ -16,7 +16,44 @@ HIDDEN_FIELDS = ("territory",)
 TERRITORY_DOCTYPES = ("CRM Lead", "CRM Deal", "CRM Organization")
 
 
+# Origem do anúncio no lead e no card (credtech#51): o lead vira card e os campos de mesmo nome vão junto
+AD_FIELDS = [
+	{"fieldname": "ad_section", "fieldtype": "Section Break", "label": "Ad Origin", "collapsible": 1},
+	{"fieldname": "ad_platform", "fieldtype": "Data", "label": "Ad Platform", "read_only": 1},
+	{"fieldname": "ad_campaign_name", "fieldtype": "Data", "label": "Campaign", "read_only": 1},
+	{"fieldname": "ad_adset_name", "fieldtype": "Data", "label": "Ad Set", "read_only": 1},
+	{"fieldname": "ad_name", "fieldtype": "Data", "label": "Ad", "read_only": 1},
+	{"fieldname": "ad_form_name", "fieldtype": "Data", "label": "Lead Form", "read_only": 1},
+	{"fieldname": "ad_column", "fieldtype": "Column Break"},
+	{"fieldname": "ad_campaign_id", "fieldtype": "Data", "label": "Campaign ID", "read_only": 1},
+	{"fieldname": "ad_adset_id", "fieldtype": "Data", "label": "Ad Set ID", "read_only": 1},
+	{"fieldname": "ad_id", "fieldtype": "Data", "label": "Ad ID", "read_only": 1},
+	{"fieldname": "lead_captured_at", "fieldtype": "Datetime", "label": "Captured At", "read_only": 1},
+	# Origem por link (formulário do site, Google Ads, Typeform, webhook): UTMs e IDs de clique
+	{"fieldname": "utm_section", "fieldtype": "Section Break", "label": "UTM", "collapsible": 1},
+	{"fieldname": "utm_source", "fieldtype": "Data", "label": "UTM Source", "read_only": 1},
+	{"fieldname": "utm_medium", "fieldtype": "Data", "label": "UTM Medium", "read_only": 1},
+	{"fieldname": "utm_campaign", "fieldtype": "Data", "label": "UTM Campaign", "read_only": 1},
+	{"fieldname": "utm_content", "fieldtype": "Data", "label": "UTM Content", "read_only": 1},
+	{"fieldname": "utm_term", "fieldtype": "Data", "label": "UTM Term", "read_only": 1},
+	{"fieldname": "utm_column", "fieldtype": "Column Break"},
+	{"fieldname": "gclid", "fieldtype": "Data", "label": "Google Click ID", "read_only": 1},
+	{"fieldname": "fbclid", "fieldtype": "Data", "label": "Facebook Click ID", "read_only": 1},
+	{"fieldname": "li_fat_id", "fieldtype": "Data", "label": "LinkedIn Click ID", "read_only": 1},
+	{"fieldname": "landing_page", "fieldtype": "Small Text", "label": "Landing Page", "read_only": 1},
+]
+
+
+def _ad_fields():
+	fields, previous = [], None
+	for field in AD_FIELDS:
+		fields.append({**field, "insert_after": previous} if previous else dict(field))
+		previous = field["fieldname"]
+	return fields
+
+
 def after_install():
+	create_custom_fields({dt: _ad_fields() for dt in ("CRM Lead", "CRM Deal")}, update=True)
 	create_custom_fields({dt: custom_fields(insert_after="facebook") + _missing(dt, company_custom_fields(insert_after="cnpj_checked_on")) for dt in DOCTYPES}, update=True)
 	migrate_checked_dates()
 	add_industries()

@@ -103,6 +103,11 @@ def apply(email=None, auth0=None, commit=True):
 		done.append(email_setup(email))
 	if auth0:
 		done.append(social_login(auth0))
+	# Site central com o app da Meta: assina o webhook dos leads de anúncios (credtech#51)
+	if frappe.conf.get("credhub_signup") and os.environ.get("FB_APP_ID"):
+		from cred_hub.meta_leads import ensure_meta_webhook
+
+		done.append(ensure_meta_webhook())
 	if commit:
 		frappe.db.commit()
 		frappe.clear_cache()
