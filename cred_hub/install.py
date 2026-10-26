@@ -154,9 +154,11 @@ def move_to_details(doctype, field, after):
 	doc, layout = _layout(f"{doctype}-Side Panel")
 	if doc is None:
 		return False
-	details = next((s for s in layout if s.get("name") == "details_section"), None)
-	if not details or not details.get("columns"):
-		return True
+	# Sem "Detalhes" (layout mexido pelo admin), cai na primeira seção com colunas para o campo não sumir
+	sections = [s for s in layout if s.get("columns")]
+	details = next((s for s in sections if s.get("name") == "details_section"), sections[0] if sections else None)
+	if details is None:
+		return False
 	_strip_fields(layout, {field})
 	columns = details["columns"]
 	fields = next((c["fields"] for c in columns if after in (c.get("fields") or [])), None)
