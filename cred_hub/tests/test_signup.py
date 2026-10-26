@@ -185,3 +185,17 @@ class TestSignup(IntegrationTestCase):
 		self.assertIsNone(signup_access.login_signup_url())
 		# Sem cadastro aberto, login social sem conta fica na mensagem "peça um convite" do frappe
 		self.assertIsNone(signup_access.oauth_without_account("x@example.com", {}))
+
+	def test_one_company_per_email(self):
+		doc, token = self.request()
+		doc.db_set({"status": "Active", "site_name": "acme-teste.credtechdigital.com.br"})
+		with patch.object(signup, "_send_existing_company") as reminder, self.assertRaises(signup.AlreadyHasCompanyError):
+			self.request(subdomain="acme-outra")
+		reminder.assert_called_once()  # o endereço vai por e-mail, não na resposta
+
+	def test_new_address_replaces_unconfirmed_request(self):
+		first, first_token = self.request()
+		second, second_token = self.request(subdomain="acme-nova")
+		self.assertEqual(frappe.db.get_value("Cred Hub Signup", first.name, "status"), "Expired")
+		self.assertEqual(signup.availability("acme-teste"), (True, None))
+		self.assertEqual(signup.signup_status.__wrapped__(second_token)["status"], "Pending Confirmation")

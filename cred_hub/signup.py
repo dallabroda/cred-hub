@@ -55,6 +55,10 @@ LEGAL_SUFFIXES = ("ltda", "me", "mei", "epp", "eireli", "sa", "ss", "slu")
 OPEN_STATUSES = ("Pending Confirmation", "Confirmed", "Provisioning", "Active", "Failed")
 
 
+class AlreadyHasCompanyError(frappe.ValidationError):
+	"""O e-mail já criou uma empresa (exc_type na resposta da API, para a tela)."""
+
+
 def signup_open():
 	"""Cadastro aberto: este é o site central (`credhub_signup` no site_config) e a CredTech abriu o cadastro para
 	todos (`credhub_signup_open` no common_site_config; decisão do dono, 26/10/2026: fechado até a cobrança de
@@ -193,6 +197,22 @@ def request_signup(company_name: str, subdomain: str, full_name: str, email: str
 		"terms_accepted_on": now_datetime(),
 		"terms_version": TERMS_VERSION,
 	}
+	# Regra do dono (26/10/2026): cada pessoa (e-mail) cria no máximo uma empresa; funis são ilimitados.
+	# A resposta não diz qual é a empresa (qualquer um poderia digitar o e-mail de outra pessoa): o endereço vai
+	# por e-mail para o dono do e-mail.
+	existing = frappe.db.get_value(
+		"Cred Hub Signup",
+		{"email": email, "status": ("in", ("Confirmed", "Provisioning", "Active"))},
+		["name", "site_name", "company_name", "full_name", "subdomain"],
+		as_dict=True,
+	)
+	if existing:
+		_send_existing_company(existing, email)
+		frappe.throw(
+			_("This e-mail has already created a company on Cred Hub. We sent its address to this e-mail."),
+			AlreadyHasCompanyError,
+		)
+
 	pending = _pending(subdomain, email)
 	if pending:
 		# O e-mail não chegou ou se perdeu: link novo para o mesmo pedido (o anterior deixa de valer)
@@ -211,6 +231,13 @@ def request_signup(company_name: str, subdomain: str, full_name: str, email: str
 	if recent >= 3:
 		frappe.throw(_("Too many signups with this e-mail today. Please try again tomorrow."), frappe.RateLimitExceededError)
 
+	# Pedido anterior ainda sem confirmação, para outro endereço: o novo substitui (o link antigo deixa de valer)
+	frappe.db.set_value(
+		"Cred Hub Signup",
+		{"email": email, "status": "Pending Confirmation", "subdomain": ("!=", subdomain)},
+		"status",
+		"Expired",
+	)
 	doc = frappe.get_doc(
 		{
 			"doctype": "Cred Hub Signup",
@@ -255,6 +282,24 @@ def _send_confirmation(doc, token):
 			_site_name(doc.subdomain),
 			link,
 			LINK_HOURS,
+		),
+		now=True,
+	)
+
+
+def _send_existing_company(existing, email):
+	address = f"https://{existing.site_name or _site_name(existing.subdomain)}"
+	frappe.sendmail(
+		recipients=[email],
+		subject=_("Your company on Cred Hub"),
+		message=_(
+			"<p>Hi, {0}!</p><p>This e-mail has already created <b>{1}</b> on Cred Hub. Each person creates one "
+			'company; you can create as many funnels as you want inside it.</p><p><a href="{2}">Open {1}</a></p>'
+			"<p>CredTech team</p>"
+		).format(
+			frappe.utils.escape_html(existing.full_name or ""),
+			frappe.utils.escape_html(existing.company_name),
+			address,
 		),
 		now=True,
 	)
