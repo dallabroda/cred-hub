@@ -860,3 +860,6 @@ msgstr "ID de clique do LinkedIn"
 
 msgid "Landing Page"
 msgstr "Página de entrada"
+
+msgid "The Facebook Page is not connected."
+msgstr "A página do Facebook não está conectada."

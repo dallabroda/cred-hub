@@ -535,9 +535,14 @@ def _ingest_lead(leadgen_id, page_id, form_id, lead):
 		return
 	source = _source_of(form_id) if form_id else None
 	# Empresa que conectou a página mas não usa este formulário (página compartilhada): não é com ela
-	if not source or not source.enabled or not source.pipeline or not frappe.db.exists(PAGE, page_id or source.facebook_page):
+	if not source or not source.enabled or not source.pipeline:
 		return
 	form_name = frappe.db.get_value("Facebook Lead Form", form_id, "form_name")
+	if not frappe.db.exists(PAGE, page_id or source.facebook_page):
+		# Formulário ligado, mas a página foi desconectada: o admin precisa ver
+		_record("Failed", leadgen_id, form_id, form_name=form_name, pipeline=source.pipeline, error=_("The Facebook Page is not connected."))
+		frappe.db.commit()
+		return
 	page_id = page_id or source.facebook_page
 	# Falha desfaz só o que este lead fez (não o resto da transação de quem chamou)
 	savepoint = "credhub_meta_lead"
