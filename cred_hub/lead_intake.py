@@ -173,7 +173,9 @@ def _authorized(source, raw, body):
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def receive(source=None):
-	name = source or frappe.form_dict.get("source")
+	# Com corpo JSON (Google, Typeform, webhook) o Frappe monta os argumentos só com o corpo e descarta a
+	# query string, então a origem vem do endereço
+	name = frappe.request.args.get("source") or source
 	doc = frappe.get_doc(SOURCE, name) if name and frappe.db.exists(SOURCE, name) else None
 	if not doc:
 		raise frappe.DoesNotExistError
