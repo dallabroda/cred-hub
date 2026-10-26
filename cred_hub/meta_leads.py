@@ -16,6 +16,9 @@ Como funciona
   com o funil; o Cred Hub o transforma em card, distribui e trata repetidos (crm, credtech#51).
 - Rede de segurança: a cada 10 min cada empresa busca os leads recentes dos formulários ligados (com paginação)
   e cria os que o webhook não trouxe.
+- Página compartilhada (agência, sócio de cliente): a rota página → empresa admite várias empresas; cada lead vai a
+  todas e só cria card onde o formulário está ligado; desconectar numa empresa não tira a página do app.
+- Custo: cada lead roda um `bench execute` no site da empresa (~2 s de CPU); uma rajada de muitos leads enfileira.
 - Token inválido (senha trocada, permissão removida): a conexão mostra o erro e os admins são avisados.
 Variáveis de ambiente: FB_APP_ID, FB_APP_SECRET (app "CredTech Digital"), CREDHUB_META_VERIFY_TOKEN e, se a
 Meta exigir o Login for Business, META_LOGIN_CONFIG_ID.
@@ -232,9 +235,8 @@ def oauth_callback(code=None, state=None, error=None, error_description=None, **
 
 
 def _route_page(page_id, site):
-	if frappe.db.exists(ROUTE, page_id):
-		frappe.db.set_value(ROUTE, page_id, "site", site)
-	else:
+	# Uma página pode servir a várias empresas (agência, sócio de cliente): cada uma ganha a sua rota
+	if not frappe.db.exists(ROUTE, {"page_id": page_id, "site": site}):
 		frappe.get_doc({"doctype": ROUTE, "page_id": page_id, "site": site}).insert(ignore_permissions=True)
 
 
@@ -387,14 +389,10 @@ def save_facebook_form(form_id: str, pipeline=None, enabled=None, mapping=None):
 
 @frappe.whitelist(methods=["POST"])
 def disconnect_facebook():
-	"""Tira o app das páginas, apaga os tokens (política de privacidade) e desliga os formulários."""
+	"""Apaga os tokens (política de privacidade) e desliga os formulários. A página continua assinada no app:
+	outra empresa pode usar a mesma página (agência); sem token aqui, os leads dela não entram nesta empresa."""
 	_only_managers()
 	for page in frappe.get_all(PAGE, pluck="name"):
-		doc = frappe.get_doc(PAGE, page)
-		try:
-			_graph("DELETE", f"/{doc.page_id}/subscribed_apps", doc.get_password("access_token", False))
-		except MetaError:
-			pass
 		frappe.delete_doc(PAGE, page, ignore_permissions=True, force=True)
 	for name in frappe.get_all("Lead Sync Source", {"type": "Facebook", "enabled": 1}, pluck="name"):
 		frappe.db.set_value("Lead Sync Source", name, "enabled", 0)
@@ -467,17 +465,17 @@ def meta_webhook():
 			value = change.get("value") or {}
 			if change.get("field") != "leadgen" or not value.get("leadgen_id"):
 				continue
-			site = frappe.db.get_value(ROUTE, str(value.get("page_id") or entry.get("id")), "site")
-			if not site:
-				continue
-			frappe.enqueue(
-				"cred_hub.meta_leads.dispatch_lead",
-				queue="short",
-				site=site,
-				leadgen_id=str(value["leadgen_id"]),
-				page_id=str(value.get("page_id") or entry.get("id")),
-				form_id=str(value.get("form_id") or ""),
-			)
+			page_id = str(value.get("page_id") or entry.get("id"))
+			# Cada empresa que conectou a página recebe; só cria o card quem tem o formulário ligado
+			for site in frappe.get_all(ROUTE, {"page_id": page_id}, pluck="site"):
+				frappe.enqueue(
+					"cred_hub.meta_leads.dispatch_lead",
+					queue="short",
+					site=site,
+					leadgen_id=str(value["leadgen_id"]),
+					page_id=page_id,
+					form_id=str(value.get("form_id") or ""),
+				)
 	return {"ok": True}
 
 
@@ -521,15 +519,25 @@ def _already_seen(leadgen_id):
 
 
 def ingest_lead(leadgen_id, page_id=None, form_id=None, lead=None):
-	"""Site da empresa: busca o lead (se não veio) e o põe no funil do formulário."""
+	"""Site da empresa: busca o lead (se não veio) e o põe no funil do formulário.
+	Webhook e rede de segurança podem chegar juntos: a trava por lead vai até depois do commit."""
+	lock = f"credhub_meta_lead:{leadgen_id}"[:64]
+	if not frappe.db.sql("SELECT GET_LOCK(%s, 30)", lock)[0][0]:
+		return
+	try:
+		_ingest_lead(leadgen_id, page_id, form_id, lead)
+	finally:
+		frappe.db.sql("SELECT RELEASE_LOCK(%s)", lock)
+
+
+def _ingest_lead(leadgen_id, page_id, form_id, lead):
 	if _already_seen(leadgen_id):
 		return
 	source = _source_of(form_id) if form_id else None
-	form_name = frappe.db.get_value("Facebook Lead Form", form_id, "form_name") if form_id else None
-	if not source or not source.enabled or not source.pipeline:
-		_record("Failed", leadgen_id, form_id, form_name=form_name, error=_("This form is not connected to a pipeline."))
-		frappe.db.commit()
+	# Empresa que conectou a página mas não usa este formulário (página compartilhada): não é com ela
+	if not source or not source.enabled or not source.pipeline or not frappe.db.exists(PAGE, page_id or source.facebook_page):
 		return
+	form_name = frappe.db.get_value("Facebook Lead Form", form_id, "form_name")
 	page_id = page_id or source.facebook_page
 	# Falha desfaz só o que este lead fez (não o resto da transação de quem chamou)
 	savepoint = "credhub_meta_lead"

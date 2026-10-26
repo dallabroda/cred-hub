@@ -112,10 +112,13 @@ class TestMetaLeads(IntegrationTestCase):
 			meta_leads.ingest_lead("lead-1", PAGE_ID, FORM_ID)  # o mesmo lead de novo: ignorado
 		again.assert_not_called()
 
-	def test_form_without_pipeline_is_logged(self):
+	def test_form_not_used_here_is_ignored(self):
+		# Página compartilhada: esta empresa não ligou o formulário, outra pode ter ligado
 		self.connect()
-		meta_leads.ingest_lead("lead-x", PAGE_ID, FORM_ID)
-		self.assertEqual(meta_leads.get_lead_source_activity()[0]["status"], "Failed")
+		with patch.object(meta_leads, "_graph") as graph:
+			meta_leads.ingest_lead("lead-x", PAGE_ID, FORM_ID)
+		graph.assert_not_called()
+		self.assertFalse(meta_leads.get_lead_source_activity())
 
 	def test_revoked_token_shows_error_and_alerts(self):
 		self.connect()
@@ -129,7 +132,8 @@ class TestMetaLeads(IntegrationTestCase):
 	def test_webhook_checks_signature_and_routes_by_page(self):
 		frappe.local.conf.credhub_signup = 1
 		self.addCleanup(lambda: frappe.local.conf.pop("credhub_signup", None))
-		frappe.get_doc({"doctype": meta_leads.ROUTE, "page_id": PAGE_ID, "site": "acme.test"}).insert(ignore_permissions=True)
+		for site in ("acme.test", "agencia.test"):
+			frappe.get_doc({"doctype": meta_leads.ROUTE, "page_id": PAGE_ID, "site": site}).insert(ignore_permissions=True)
 		body = json.dumps(
 			{"entry": [{"id": PAGE_ID, "changes": [{"field": "leadgen", "value": {"leadgen_id": "L9", "page_id": PAGE_ID, "form_id": FORM_ID}}]}]}
 		).encode()
@@ -145,7 +149,8 @@ class TestMetaLeads(IntegrationTestCase):
 				meta_leads.meta_webhook()
 		with patch.object(frappe, "request", request(good)), patch.object(frappe, "enqueue") as enqueue:
 			meta_leads.meta_webhook()
-		self.assertEqual(enqueue.call_args.kwargs["site"], "acme.test")
+		# página compartilhada: as duas empresas recebem; só cria card quem ligou o formulário
+		self.assertEqual(sorted(c.kwargs["site"] for c in enqueue.call_args_list), ["acme.test", "agencia.test"])
 		self.assertEqual(enqueue.call_args.kwargs["leadgen_id"], "L9")
 
 	def test_disconnect_deletes_tokens(self):
