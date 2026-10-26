@@ -12,9 +12,12 @@
   "monthly_amount",
   "next_due_date",
   "invoice_url",
+  "upgrade_payment_id",
   "asaas_section",
   "asaas_customer_id",
-  "asaas_subscription_id"
+  "asaas_subscription_id",
+  "payer_name",
+  "payer_email"
  ],
  "fields": [
   {
@@ -65,6 +68,12 @@
    "read_only": 1
   },
   {
+   "fieldname": "upgrade_payment_id",
+   "fieldtype": "Data",
+   "label": "Upgrade Payment",
+   "read_only": 1
+  },
+  {
    "collapsible": 1,
    "fieldname": "asaas_section",
    "fieldtype": "Section Break",
@@ -81,11 +90,24 @@
    "fieldtype": "Data",
    "label": "Asaas Subscription",
    "read_only": 1
+  },
+  {
+   "fieldname": "payer_name",
+   "fieldtype": "Data",
+   "label": "Payer Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "payer_email",
+   "fieldtype": "Data",
+   "label": "Payer Email",
+   "options": "Email",
+   "read_only": 1
   }
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-10-26 15:00:00.000000",
+ "modified": "2026-10-26 16:00:00.000000",
  "modified_by": "Administrator",
  "module": "Cred Hub",
  "name": "Cred Hub Plan",
