@@ -520,9 +520,18 @@ def ensure_asaas_webhook():
 	if not frappe.conf.get("credhub_signup") or not os.environ.get("ASAAS_API_KEY"):
 		return "webhook do Asaas: pulado"
 	url = frappe.utils.get_url("/api/method/cred_hub.billing.asaas_webhook")
-	existing = _asaas("GET", "/webhooks").get("data") or []
-	if any(hook.get("url") == url for hook in existing):
-		return "webhook do Asaas: já cadastrado"
+	# Recusa do Asaas não para o deploy (igual ao webhook da Meta): fica no resultado e no log de erros
+	try:
+		existing = _asaas("GET", "/webhooks").get("data") or []
+		if any(hook.get("url") == url for hook in existing):
+			return "webhook do Asaas: já cadastrado"
+		_register_asaas_webhook(url)
+	except (frappe.ValidationError, requests.RequestException) as e:
+		return f"webhook do Asaas: FALHOU ({e})"
+	return f"webhook do Asaas: cadastrado ({now_datetime():%Y-%m-%d %H:%M})"
+
+
+def _register_asaas_webhook(url):
 	_asaas(
 		"POST",
 		"/webhooks",
@@ -538,4 +547,3 @@ def ensure_asaas_webhook():
 			"events": WEBHOOK_EVENTS,
 		},
 	)
-	return f"webhook do Asaas: cadastrado ({now_datetime():%Y-%m-%d %H:%M})"
