@@ -31,10 +31,19 @@ class FakeAsaas:
 			return {"id": "cus_1"}
 		if method == "POST" and path == "/subscriptions":
 			return {"id": "sub_1", "nextDueDate": "2026-10-26"}
+		if method == "POST" and path == "/payments":
+			return {"id": "pay_up", "invoiceUrl": "https://asaas.test/i/pay_up"}
 		if path.endswith("/payments"):
 			return {"data": [{"id": "pay_1", "invoiceUrl": "https://asaas.test/i/pay_1"}]}
+		if path == "/payments/pay_up":
+			return {"id": "pay_up", "status": self.payment_status}
 		if path.startswith("/payments/"):
-			return {"id": "pay_1", "status": self.payment_status, "invoiceUrl": "https://asaas.test/i/pay_1"}
+			return {
+				"id": "pay_1",
+				"status": self.payment_status,
+				"subscription": "sub_1",
+				"invoiceUrl": "https://asaas.test/i/pay_1",
+			}
 		if method == "GET" and path.startswith("/subscriptions/"):
 			return {"id": "sub_1", "status": self.subscription_status, "nextDueDate": "2026-11-26"}
 		return {}
@@ -57,7 +66,19 @@ class TestBilling(IntegrationTestCase):
 			frappe.db.set_value("User", name, "enabled", 0, update_modified=False)
 		frappe.db.delete("CRM Invitation", {"status": "Pending"})
 		plan = frappe.get_single(billing.PLAN)
-		plan.update({"status": "Free", "extra_users": 0, "pending_extra_users": 0, "asaas_subscription_id": None})
+		plan.update(
+			{
+				"status": "Free",
+				"extra_users": 0,
+				"pending_extra_users": 0,
+				"asaas_subscription_id": None,
+				"asaas_customer_id": None,
+				"upgrade_payment_id": None,
+				"payer_name": None,
+				"payer_email": None,
+				"next_due_date": None,
+			}
+		)
 		plan.save(ignore_permissions=True)
 
 	def tearDown(self):
@@ -150,3 +171,56 @@ class TestBilling(IntegrationTestCase):
 					billing.asaas_webhook()
 		finally:
 			frappe.local.conf.pop("credhub_signup", None)
+
+	def active_plan(self, extras=1):
+		with patch.object(billing, "_asaas", FakeAsaas()):
+			billing.request_extra_users(extras, PAYER)
+			billing.apply_asaas_event("PAYMENT_CONFIRMED", "pay_1", "sub_1")
+
+	def test_increase_charges_prorated_difference_before_releasing(self):
+		self.active_plan(1)
+		frappe.db.set_single_value(billing.PLAN, "next_due_date", frappe.utils.add_days(frappe.utils.getdate(), 15))
+		fake = FakeAsaas()
+		with patch.object(billing, "_asaas", fake):
+			result = billing.request_extra_users(3)  # sem dados de pagador: o cliente já existe
+			self.assertEqual(result["invoice_url"], "https://asaas.test/i/pay_up")
+			self.assertEqual(billing.user_limit(), 3)  # ainda não pagou a diferença
+			billing.apply_asaas_event("PAYMENT_CONFIRMED", "pay_up", None)
+		self.assertEqual(billing.user_limit(), 5)
+		charge = next(body for method, path, body in fake.calls if method == "POST" and path == "/payments")
+		self.assertTrue(billing.MIN_CHARGE <= charge["value"] < 2 * billing.PRICE_PER_USER)  # 2 extras, ~metade do mês
+		raise_value = next(body for method, path, body in fake.calls if method == "PUT")
+		self.assertEqual(raise_value["value"], 3 * billing.PRICE_PER_USER)
+
+	def test_decrease_changes_price_from_next_charge(self):
+		self.active_plan(2)
+		fake = FakeAsaas()
+		with patch.object(billing, "_asaas", fake):
+			billing.request_extra_users(1)
+		update = next(body for method, path, body in fake.calls if method == "PUT")
+		self.assertEqual((update["value"], update["updatePendingPayments"]), (billing.PRICE_PER_USER, False))
+		self.assertEqual(billing.user_limit(), 3)
+
+	def test_payment_of_another_subscription_is_ignored(self):
+		with patch.object(billing, "_asaas", FakeAsaas()):
+			billing.request_extra_users(1, PAYER)
+		other = FakeAsaas()
+		with patch.object(billing, "_asaas", lambda *a, **k: {**other(*a, **k), "subscription": "sub_outra"}):
+			billing.apply_asaas_event("PAYMENT_CONFIRMED", "pay_9", "sub_1")
+		self.assertEqual(frappe.get_single(billing.PLAN).status, "Awaiting Payment")
+
+	def test_credtech_site_has_no_limit(self):
+		frappe.local.conf.credhub_unlimited_users = 1
+		try:
+			for n in range(1, 5):
+				self.user(n)
+			self.assertTrue(billing.get_plan()["unlimited"])
+		finally:
+			frappe.local.conf.pop("credhub_unlimited_users", None)
+
+	def test_payer_asked_only_once(self):
+		self.assertTrue(billing.get_plan()["needs_payer"])
+		self.active_plan(1)
+		plan = billing.get_plan()
+		self.assertFalse(plan["needs_payer"])
+		self.assertEqual(plan["payer"]["email"], PAYER["email"])

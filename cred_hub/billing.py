@@ -6,6 +6,11 @@ os usuários acima do limite, começando pelos mais recentes, sem apagar nada; e
 regularizada.
 
 - O plano fica no doctype único "Cred Hub Plan" de cada empresa. Só administradores (System Manager) veem e mudam.
+- Aumentar com a assinatura ativa: cobra na hora a diferença proporcional aos dias que faltam no ciclo; os usuários
+  novos só liberam depois do pagamento e daí em diante a mensalidade já vem com o valor novo. Diminuir: o valor
+  menor vale a partir da próxima cobrança (sem reembolso do mês corrente). Decisões do dono, 26/10/2026.
+- A empresa da própria CredTech não tem limite (`credhub_unlimited_users` no site_config, gravado pelo deploy).
+- Todo usuário de sistema conta, inclusive os de integração (decisão do dono).
 - O cartão é digitado na página da fatura do Asaas (invoice_url), nunca no Cred Hub.
 - O Asaas avisa por webhook no site central (asaas_webhook); o site central descobre de qual empresa é a assinatura
   (externalReference = endereço do site) e aplica o evento no site dela (apply_asaas_event), que confere o estado
@@ -28,6 +33,9 @@ from cred_hub.cnpj.mapping import is_valid_cnpj, only_digits
 FREE_USERS = 2
 PRICE_PER_USER = 60
 PLAN = "Cred Hub Plan"
+UNLIMITED = 1_000_000
+# Menor cobrança avulsa aceita pelo Asaas no cartão
+MIN_CHARGE = 5
 HIDDEN_USERS = ("Administrator", "Guest")
 CONFIRMED = ("CONFIRMED", "RECEIVED", "RECEIVED_IN_CASH")
 WEBHOOK_EVENTS = [
@@ -53,6 +61,8 @@ def _plan():
 
 
 def user_limit(plan=None):
+	if frappe.conf.get("credhub_unlimited_users"):
+		return UNLIMITED
 	plan = plan or _plan()
 	# Extras só valem com a assinatura em dia; trocar de quantidade não tira os já pagos até o pagamento novo
 	extras = cint(plan.extra_users) if plan.status == "Active" else 0
@@ -123,6 +133,10 @@ def get_plan():
 		"invoice_url": plan.invoice_url,
 		"paused_users": paused,
 		"can_manage": True,
+		"unlimited": bool(frappe.conf.get("credhub_unlimited_users")),
+		# Sem cliente no Asaas a tela pede os dados de quem paga; depois disso, só mostra o resumo
+		"needs_payer": not plan.asaas_customer_id,
+		"payer": {"name": plan.payer_name, "email": plan.payer_email} if plan.asaas_customer_id else None,
 	}
 
 
@@ -185,7 +199,7 @@ def request_extra_users(quantity: int, payer=None):
 
 	if quantity == 0:
 		if plan.asaas_subscription_id:
-			_asaas("DELETE", f"/subscriptions/{plan.asaas_subscription_id}")
+			_asaas("DELETE", f"/subscriptions/{plan.asaas_subscription_id}", allow_missing=True)
 		_save_plan(
 			plan,
 			status="Free",
@@ -195,25 +209,50 @@ def request_extra_users(quantity: int, payer=None):
 			asaas_subscription_id=None,
 			invoice_url=None,
 			next_due_date=None,
+			upgrade_payment_id=None,
 		)
 		return {"ok": True, "invoice_url": None, "status": "Free"}
 
 	value = PRICE_PER_USER * quantity
 	description = f"Cred Hub - {quantity} usuário(s) a mais - {frappe.local.site}"
 	if plan.status == "Active" and plan.asaas_subscription_id:
-		# Cartão já cadastrado: o valor novo vale a partir da próxima cobrança e os extras já valem agora
-		_asaas(
-			"PUT",
-			f"/subscriptions/{plan.asaas_subscription_id}",
-			{"value": value, "description": description, "updatePendingPayments": True},
+		current = cint(plan.extra_users)
+		if quantity <= current:
+			# Diminuir: o valor menor vale a partir da próxima cobrança (a fatura já gerada fica como está)
+			_asaas(
+				"PUT",
+				f"/subscriptions/{plan.asaas_subscription_id}",
+				{"value": value, "description": description, "updatePendingPayments": False},
+			)
+			_save_plan(plan, extra_users=quantity, pending_extra_users=0, monthly_amount=value, invoice_url=None)
+			return {"ok": True, "invoice_url": None, "status": "Active"}
+		# Aumentar: cobra agora a diferença proporcional; os novos só liberam com o pagamento
+		amount = _prorated(quantity - current, plan.next_due_date)
+		payment = _asaas(
+			"POST",
+			"/payments",
+			{
+				"customer": plan.asaas_customer_id,
+				"billingType": "CREDIT_CARD",
+				"value": amount,
+				"dueDate": str(getdate()),
+				"description": f"Cred Hub - {quantity - current} usuário(s) a mais até o próximo vencimento - {frappe.local.site}",
+				"externalReference": frappe.local.site,
+			},
 		)
-		_save_plan(plan, extra_users=quantity, pending_extra_users=0, monthly_amount=value)
-		restore_paused()
-		return {"ok": True, "invoice_url": None, "status": "Active"}
+		_save_plan(
+			plan,
+			pending_extra_users=quantity,
+			upgrade_payment_id=payment["id"],
+			invoice_url=payment.get("invoiceUrl"),
+		)
+		return {"ok": True, "invoice_url": payment.get("invoiceUrl"), "status": "Active", "amount": amount}
 
-	clean, error = _clean_payer(payer)
-	if error:
-		return error
+	clean = None
+	if not plan.asaas_customer_id:
+		clean, error = _clean_payer(payer)
+		if error:
+			return error
 	if plan.asaas_subscription_id:
 		# Assinatura antiga sem pagamento (aguardando, em atraso ou cancelada): começa de novo
 		_asaas("DELETE", f"/subscriptions/{plan.asaas_subscription_id}", allow_missing=True)
@@ -239,11 +278,27 @@ def request_extra_users(quantity: int, payer=None):
 		pending_extra_users=quantity,
 		monthly_amount=value,
 		asaas_customer_id=customer,
+		payer_name=clean["name"] if clean else plan.payer_name,
+		payer_email=clean["email"] if clean else plan.payer_email,
+		upgrade_payment_id=None,
 		asaas_subscription_id=subscription["id"],
 		invoice_url=invoice_url,
 		next_due_date=subscription.get("nextDueDate"),
 	)
 	return {"ok": True, "invoice_url": invoice_url, "status": "Awaiting Payment"}
+
+
+def _prorated(extra, next_due_date):
+	"""Diferença proporcional aos dias que faltam até o próximo vencimento (ciclo mensal)."""
+	from frappe.utils import add_months, date_diff
+
+	today = getdate()
+	due = getdate(next_due_date) if next_due_date else add_months(today, 1)
+	cycle_start = getdate(add_months(due, -1))
+	days_in_cycle = max(date_diff(due, cycle_start), 1)
+	days_left = min(max(date_diff(due, today), 0), days_in_cycle)
+	amount = round(PRICE_PER_USER * extra * days_left / days_in_cycle, 2)
+	return max(amount, MIN_CHARGE)
 
 
 def _create_customer(payer):
@@ -349,7 +404,7 @@ def asaas_webhook():
 		return {"ok": True}
 	payment = payload.get("payment") or {}
 	subscription_id = payment.get("subscription") or (payload.get("subscription") or {}).get("id")
-	if not subscription_id:
+	if not subscription_id and not payment.get("id"):
 		return {"ok": True}
 	frappe.enqueue(
 		"cred_hub.billing.dispatch_event",
@@ -366,8 +421,12 @@ def dispatch_event(event, payment_id, subscription_id):
 	Assinaturas que não são do Cred Hub (ex.: do Cred Chat, na mesma conta do Asaas) são ignoradas."""
 	from cred_hub.signup import _bench, _site_exists
 
-	subscription = _asaas("GET", f"/subscriptions/{subscription_id}", allow_missing=True)
-	site = (subscription or {}).get("externalReference") or ""
+	if subscription_id:
+		source = _asaas("GET", f"/subscriptions/{subscription_id}", allow_missing=True)
+	else:
+		# Cobrança avulsa (diferença de um aumento): a referência está no próprio pagamento
+		source = _asaas("GET", f"/payments/{payment_id}", allow_missing=True)
+	site = (source or {}).get("externalReference") or ""
 	if not re.fullmatch(r"[a-z0-9.-]+", site) or not _site_exists(site):
 		return
 	kwargs = {"event": event, "payment_id": payment_id, "subscription_id": subscription_id}
@@ -380,11 +439,15 @@ def dispatch_event(event, payment_id, subscription_id):
 def apply_asaas_event(event, payment_id=None, subscription_id=None):
 	"""No site da empresa. Não confia no conteúdo do webhook: confere pagamento e assinatura na API do Asaas."""
 	plan = _plan()
-	if not subscription_id or plan.asaas_subscription_id != subscription_id:
+	if not subscription_id:
+		_apply_upgrade_payment(plan, event, payment_id)
+		return
+	if plan.asaas_subscription_id != subscription_id:
 		return
 	if event in ("PAYMENT_CONFIRMED", "PAYMENT_RECEIVED"):
 		payment = _asaas("GET", f"/payments/{payment_id}")
-		if payment.get("status") not in CONFIRMED:
+		# Só um pagamento confirmado desta assinatura muda o plano
+		if payment.get("status") not in CONFIRMED or payment.get("subscription") != subscription_id:
 			return
 		subscription = _asaas("GET", f"/subscriptions/{subscription_id}")
 		_save_plan(
@@ -398,7 +461,7 @@ def apply_asaas_event(event, payment_id=None, subscription_id=None):
 		restore_paused()
 	elif event == "PAYMENT_OVERDUE":
 		payment = _asaas("GET", f"/payments/{payment_id}")
-		if payment.get("status") != "OVERDUE":
+		if payment.get("status") != "OVERDUE" or payment.get("subscription") != subscription_id:
 			return
 		_save_plan(plan, status="Past Due", invoice_url=payment.get("invoiceUrl"))
 		pause_over_limit()
@@ -417,6 +480,38 @@ def apply_asaas_event(event, payment_id=None, subscription_id=None):
 			next_due_date=None,
 		)
 		pause_over_limit()
+	frappe.db.commit()
+
+
+def _apply_upgrade_payment(plan, event, payment_id):
+	"""Cobrança avulsa da diferença de um aumento: confirmada, libera os extras e sobe a mensalidade."""
+	if event not in ("PAYMENT_CONFIRMED", "PAYMENT_RECEIVED") or not payment_id:
+		return
+	if plan.upgrade_payment_id != payment_id or plan.status != "Active":
+		return
+	payment = _asaas("GET", f"/payments/{payment_id}")
+	if payment.get("status") not in CONFIRMED:
+		return
+	quantity = cint(plan.pending_extra_users)
+	value = PRICE_PER_USER * quantity
+	_asaas(
+		"PUT",
+		f"/subscriptions/{plan.asaas_subscription_id}",
+		{
+			"value": value,
+			"description": f"Cred Hub - {quantity} usuário(s) a mais - {frappe.local.site}",
+			"updatePendingPayments": True,
+		},
+	)
+	_save_plan(
+		plan,
+		extra_users=quantity,
+		pending_extra_users=0,
+		monthly_amount=value,
+		upgrade_payment_id=None,
+		invoice_url=None,
+	)
+	restore_paused()
 	frappe.db.commit()
 
 
