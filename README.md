@@ -28,10 +28,12 @@ Regras:
 ### Telas
 
 - **Território** (região de vendas do Frappe CRM) não aparece em Lead, Negócio e Organização (painel, cadastro rápido e campos): a CredTech não usa (pedido do dono, 24/10/2026). O dado continua no banco.
+- **Contato:** saudação, sobrenome, gênero e endereço saem do painel lateral por padrão (pedido do dono, 26/10/2026). Aplicado uma vez por site: se o admin recolocar algum pelo editor de layout, o próximo `migrate` não tira de novo.
+- **Presença digital** não tem mais seção própria no painel (era redundante, 26/10/2026): o **LinkedIn** fica em Detalhes logo depois do Site (uma vez por site) e os funcionários aparecem só pela faixa padrão do CRM (`no_of_employees`).
 
 ### Presença digital (site, LinkedIn, funcionários)
 
-Ao salvar um Lead ou uma Organização com nome de empresa, um job em segundo plano (fila longa, uma vez por registro; com CNPJ válido, espera a Receita) busca o **site oficial**, o **LinkedIn** e o **nº de funcionários**: Wikidata → busca na web (DuckDuckGo, `ddgs`) → link do LinkedIn no próprio site → contagem pública (Wikidata/web, porte grande) → **piso SEBRAE** pelo porte e CNAE da Receita. **Funcionários pelo LinkedIn desligados** por decisão do dono (24/10/2026): o LinkedIn bloqueia acesso automático e os termos de uso não permitem; só o endereço do perfil é guardado (`USE_LINKEDIN_EMPLOYEES` em `company/discover.py`). Preenche a seção **Presença digital** e o `no_of_employees` do CRM (o "1-10" padrão do CRM conta como vazio); não sobrescreve site, LinkedIn ou nº de funcionários que o usuário preencheu. Qualquer falha só vai para o log: nunca impede salvar.
+Ao salvar um Lead ou uma Organização com nome de empresa, um job em segundo plano (fila longa, uma vez por registro; com CNPJ válido, espera a Receita) busca o **site oficial**, o **LinkedIn** e o **nº de funcionários**: Wikidata → busca na web (DuckDuckGo, `ddgs`) → link do LinkedIn no próprio site → contagem pública (Wikidata/web, porte grande) → **piso SEBRAE** pelo porte e CNAE da Receita. **Funcionários pelo LinkedIn desligados** por decisão do dono (24/10/2026): o LinkedIn bloqueia acesso automático e os termos de uso não permitem; só o endereço do perfil é guardado (`USE_LINKEDIN_EMPLOYEES` em `company/discover.py`). Preenche o LinkedIn, os campos de funcionários (`employee_*`, fora do painel) e o `no_of_employees` do CRM (o "1-10" padrão do CRM conta como vazio); não sobrescreve site, LinkedIn ou nº de funcionários que o usuário preencheu. Qualquer falha só vai para o log: nunca impede salvar.
 
 Para não trazer homônimo, o LinkedIn achado pela busca só é aceito se o endereço do perfil tiver todas as palavras do nome; o do próprio site ou do Wikidata vale sempre.
 

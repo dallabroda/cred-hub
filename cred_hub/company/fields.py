@@ -4,6 +4,8 @@
 Nomes internos e rótulos em inglês (regra de idioma do dono); pt-BR em locale/pt_BR.po.
 """
 
+# Seção "Digital Presence" do painel lateral: saiu (redundante, pedido do dono 26/10/2026); o nome fica para removê-la
+# dos sites que já a têm. Os campos continuam no doctype e são preenchidos pelo enriquecimento.
 COMPANY_SECTION = "cred_hub_company_section"
 COMPANY_SECTION_LABEL = "Digital Presence"
 
@@ -23,11 +25,3 @@ def company_custom_fields(insert_after: str) -> list[dict]:
 		previous = field["fieldname"]
 	return fields
 
-
-COMPANY_SIDE_PANEL_FIELDS = [
-	"linkedin",
-	"employee_count",
-	"employee_range",
-	"employee_source",
-	"company_checked_on",
-]
