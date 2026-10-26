@@ -4,7 +4,8 @@ Fluxo (decisões do dono, 25/10/2026): qualquer pessoa cria a própria empresa, 
 confirmar o e-mail. Cada empresa ganha um site próprio, `<endereço>.credtechdigital.com.br`, com o responsável
 como administrador. O cadastro nunca entra numa empresa existente (acesso a uma empresa é só por convite).
 
-API pública (site central, `hub.credtechdigital.com.br`, com `credhub_signup: 1` no site_config):
+API pública (site central, `hub.credtechdigital.com.br`, com `credhub_signup: 1` no site_config e `credhub_signup_open: 1`
+no common_site_config):
 - check_subdomain(subdomain) -> {"available", "reason", "address"}
 - suggest_subdomain(company_name) -> {"subdomain", "available", "reason", "address"}
 - request_signup(company_name, subdomain, full_name, email) -> {"ok": True}; manda o link de confirmação
@@ -54,8 +55,15 @@ LEGAL_SUFFIXES = ("ltda", "me", "mei", "epp", "eireli", "sa", "ss", "slu")
 OPEN_STATUSES = ("Pending Confirmation", "Confirmed", "Provisioning", "Active", "Failed")
 
 
+def signup_open():
+	"""Cadastro aberto: este é o site central (`credhub_signup` no site_config) e a CredTech abriu o cadastro para
+	todos (`credhub_signup_open` no common_site_config; decisão do dono, 26/10/2026: fechado até a cobrança de
+	usuários extras ficar pronta)."""
+	return bool(frappe.conf.get("credhub_signup") and frappe.conf.get("credhub_signup_open"))
+
+
 def _require_central_site():
-	if not frappe.conf.get("credhub_signup"):
+	if not signup_open():
 		frappe.throw(_("Company signup is not available here."), frappe.PermissionError)
 
 

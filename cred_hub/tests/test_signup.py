@@ -11,6 +11,7 @@ from cred_hub import signup
 class TestSignup(IntegrationTestCase):
 	def setUp(self):
 		frappe.local.conf.credhub_signup = 1
+		frappe.local.conf.credhub_signup_open = 1
 		self.domain = frappe.local.conf.pop("credhub_signup_domain", None)
 		frappe.local.request_ip = "203.0.113.7"
 		self.sent = []
@@ -20,6 +21,7 @@ class TestSignup(IntegrationTestCase):
 
 	def tearDown(self):
 		frappe.local.conf.pop("credhub_signup", None)
+		frappe.local.conf.pop("credhub_signup_open", None)
 		if self.domain:
 			frappe.local.conf.credhub_signup_domain = self.domain
 		frappe.db.rollback()
@@ -173,3 +175,13 @@ class TestSignup(IntegrationTestCase):
 		self.assertEqual(frappe.db.get_value("Cred Hub Signup", {"subdomain": "acme-teste"}, "links_sent"), signup.MAX_LINKS)
 		with self.assertRaises(frappe.RateLimitExceededError):
 			self.request()
+
+	def test_signup_closed_until_opened(self):
+		from cred_hub import signup_access
+
+		frappe.local.conf.pop("credhub_signup_open", None)
+		with self.assertRaises(frappe.PermissionError):
+			signup.check_subdomain.__wrapped__("acme")
+		self.assertIsNone(signup_access.login_signup_url())
+		# Sem cadastro aberto, login social sem conta fica na mensagem "peça um convite" do frappe
+		self.assertIsNone(signup_access.oauth_without_account("x@example.com", {}))

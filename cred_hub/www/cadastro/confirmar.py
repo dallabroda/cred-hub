@@ -5,13 +5,15 @@ import frappe
 from frappe import _
 from frappe.core.doctype.navbar_settings.navbar_settings import get_app_logo
 
+from cred_hub.signup import signup_open
+
 no_cache = 1
 
 SUPPORT_WHATSAPP = "https://wa.me/5548988692538"
 
 
 def get_context(context):
-	if not frappe.conf.get("credhub_signup"):
+	if not signup_open():
 		frappe.local.flags.redirect_location = "/login"
 		raise frappe.Redirect
 	context.title = f"{_('Create your company')} · Cred Hub"

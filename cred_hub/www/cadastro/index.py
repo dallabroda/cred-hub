@@ -4,7 +4,7 @@ import frappe
 from frappe import _
 from frappe.core.doctype.navbar_settings.navbar_settings import get_app_logo
 
-from cred_hub.signup import _domain
+from cred_hub.signup import _domain, signup_open
 from cred_hub.signup_access import get_prefill
 
 no_cache = 1
@@ -14,7 +14,7 @@ PRIVACY_URL = "https://credtechdigital.com.br/privacidade/"
 
 
 def get_context(context):
-	if not frappe.conf.get("credhub_signup"):
+	if not signup_open():
 		frappe.local.flags.redirect_location = "/login"
 		raise frappe.Redirect
 	context.title = f"{_('Create your company')} · Cred Hub"
