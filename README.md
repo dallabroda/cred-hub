@@ -43,6 +43,10 @@ Para não trazer homônimo, o LinkedIn achado pela busca só é aceito se o ende
 
 Só no site central (`credhub_signup: 1` no site_config). O pedido só vira empresa depois da confirmação do e-mail; a criação roda na fila `credhub_provision` (`cred_hub.provision_site`, banco com prefixo `chsite`, usuário de banco `CREDHUB_PROVISIONER_DB_*` por variável de ambiente). Pedidos no doctype **Cred Hub Signup**; falha avisa os System Managers e pode ser tentada de novo com `cred_hub.signup.retry_provision`.
 
+### Leads de anúncios e formulários (`meta_leads`, `lead_intake`)
+
+Meta Lead Ads (conectar com Facebook pelo site central, webhook `leadgen`, tokens de página criptografados, rede de segurança a cada 10 min) e entrada por webhook para Google Ads, site (`public/js/lead-form.js`), Typeform e outros sistemas. Cada lead vira card no funil da origem, distribuído e sem duplicar (no crm). Variáveis: `FB_APP_ID`, `FB_APP_SECRET`, `CREDHUB_META_VERIFY_TOKEN`, `META_LOGIN_CONFIG_ID` (opcional).
+
 ## Instalação
 
 ```sh

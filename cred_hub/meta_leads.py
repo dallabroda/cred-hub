@@ -691,15 +691,20 @@ def ensure_meta_webhook():
 	if not _is_central() or not os.environ.get("FB_APP_ID") or not os.environ.get("CREDHUB_META_VERIFY_TOKEN"):
 		return "webhook da Meta: pulado"
 	app_id, secret = _app()
-	_graph(
-		"POST",
-		f"/{app_id}/subscriptions",
-		f"{app_id}|{secret}",
-		{
-			"object": "page",
-			"callback_url": _hub_url("/api/method/cred_hub.meta_leads.meta_webhook"),
-			"fields": "leadgen",
-			"verify_token": os.environ["CREDHUB_META_VERIFY_TOKEN"],
-		},
-	)
+	try:
+		_graph(
+			"POST",
+			f"/{app_id}/subscriptions",
+			f"{app_id}|{secret}",
+			{
+				"object": "page",
+				"callback_url": _hub_url("/api/method/cred_hub.meta_leads.meta_webhook"),
+				"fields": "leadgen",
+				"verify_token": os.environ["CREDHUB_META_VERIFY_TOKEN"],
+			},
+		)
+	except MetaError as e:
+		# Não derruba o deploy: os leads ainda entram pela rede de segurança; o erro fica no log do deploy
+		frappe.log_error(title="Meta: subscribe app webhook", message=str(e))
+		return f"webhook da Meta: FALHOU ({e})"
 	return "webhook da Meta: assinado (leadgen)"
