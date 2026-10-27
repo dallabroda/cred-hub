@@ -1074,3 +1074,120 @@ msgstr "A partir de"
 
 msgid "Grace Until"
 msgstr "Tolerância até"
+
+msgid "This API key is not allowed to do that."
+msgstr "Esta chave da API não tem permissão para isso."
+
+msgid "Too many requests for this API key. Wait a minute and try again."
+msgstr "Muitas chamadas com esta chave da API. Espere um minuto e tente de novo."
+
+msgid "API: {0}"
+msgstr "API: {0}"
+
+msgid "Pipeline {0} does not exist."
+msgstr "O funil {0} não existe."
+
+msgid "Unknown scope: {0}"
+msgstr "Permissão desconhecida: {0}"
+
+msgid "Choose at least one permission for the key."
+msgstr "Escolha pelo menos uma permissão para a chave."
+
+msgid "Choose at least one pipeline for the cards."
+msgstr "Escolha pelo menos um funil para os cards."
+
+msgid "Give the key a name."
+msgstr "Dê um nome à chave."
+
+msgid "This company already has {0} active API keys. Revoke one to create another."
+msgstr "Esta empresa já tem {0} chaves da API ativas. Revogue uma para criar outra."
+
+msgid "This key was revoked."
+msgstr "Esta chave foi revogada."
+
+msgid "{0} is not a valid IP address or range."
+msgstr "{0} não é um endereço IP ou faixa válida."
+
+msgid "Only an API key can create its technical user."
+msgstr "Só uma chave da API pode criar o seu usuário técnico."
+
+msgid "The technical user of an API key cannot become a regular user. Revoke the key instead."
+msgstr "O usuário técnico de uma chave da API não pode virar usuário comum. Revogue a chave."
+
+msgid "The technical user of an API key cannot get other roles: {0}"
+msgstr "O usuário técnico de uma chave da API não pode receber outros papéis: {0}"
+
+msgid "This user belongs to an API key and cannot sign in."
+msgstr "Este usuário pertence a uma chave da API e não pode entrar."
+
+msgid "Cards: read"
+msgstr "Cards: leitura"
+
+msgid "Cards: write"
+msgstr "Cards: escrita"
+
+msgid "Contacts: read"
+msgstr "Contatos: leitura"
+
+msgid "Contacts: write"
+msgstr "Contatos: escrita"
+
+msgid "Organizations: read"
+msgstr "Empresas: leitura"
+
+msgid "Organizations: write"
+msgstr "Empresas: escrita"
+
+msgid "Leads: create"
+msgstr "Leads: criar"
+
+msgid "Pipelines: read"
+msgstr "Funis: leitura"
+
+msgid "Fields and rules (admin)"
+msgstr "Campos e regras (admin)"
+
+msgid "Cred Hub API Key"
+msgstr "Chave da API"
+
+msgid "Cred Hub API Log"
+msgstr "Registro da API"
+
+msgid "Key ID"
+msgstr "ID da chave"
+
+msgid "Secret (last 4)"
+msgstr "Segredo (últimos 4)"
+
+msgid "Technical User"
+msgstr "Usuário técnico"
+
+msgid "Allowed IPs"
+msgstr "IPs permitidos"
+
+msgid "Optional: one IP address or range per line (e.g. 203.0.113.10 or 203.0.113.0/24)."
+msgstr "Opcional: um endereço IP ou faixa por linha (ex.: 203.0.113.10 ou 203.0.113.0/24)."
+
+msgid "Expires On"
+msgstr "Vale até"
+
+msgid "Last Used On"
+msgstr "Último uso"
+
+msgid "Last Used IP"
+msgstr "IP do último uso"
+
+msgid "Revoked"
+msgstr "Revogada"
+
+msgid "Called On"
+msgstr "Data da chamada"
+
+msgid "Route"
+msgstr "Rota"
+
+msgid "Status Code"
+msgstr "Código da resposta"
+
+msgid "API Key"
+msgstr "Chave da API"
