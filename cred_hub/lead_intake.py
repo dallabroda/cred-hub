@@ -325,7 +325,8 @@ def _ingest(source, values, answers, external_id):
 		).insert(ignore_permissions=True)
 		duplicate = lead.flags.duplicate_of
 		card = duplicate or frappe.db.get_value("CRM Deal", {"lead": lead.name})
-		if card and answers and not duplicate:
+		# Também no card que já existe: a mensagem de quem volta (ex.: os desafios do formulário do site) não se perde
+		if card and answers:
 			_note_answers(card, answers)
 		event = _record(
 			source,
