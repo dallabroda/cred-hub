@@ -122,3 +122,9 @@ class TestEmails(IntegrationTestCase):
 		self.assertTrue(frappe.db.exists("Notification", site_setup.WELCOME))
 		self.assertFalse(frappe.db.exists("Notification", site_setup.OLD_WELCOME))
 		self.assertTrue(account.name)
+
+	def test_system_account_names_match_the_hook(self):
+		# o crm esconde e protege a conta de envio pelo nome (hook crm_system_email_accounts)
+		names = frappe.get_hooks("crm_system_email_accounts")
+		self.assertIn(site_setup.EMAIL_ACCOUNT, names)
+		self.assertIn(site_setup.OLD_EMAIL_ACCOUNT, names)
