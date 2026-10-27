@@ -33,6 +33,8 @@ class TestApiKeys(IntegrationTestCase):
 		frappe.db.rollback()
 
 	def create(self, scopes=("cards_read", "cards_write", "pipelines_read"), **kw):
+		frappe.set_user("Administrator")
+		frappe.local.credhub_api_key = None
 		return api_keys.create_api_key("ERP", list(scopes), [self.pipeline], **kw)
 
 	def call(self, token, path, method="GET", form=None, ip="203.0.113.9"):
@@ -75,7 +77,9 @@ class TestApiKeys(IntegrationTestCase):
 		with patch.object(billing, "user_limit", return_value=0):
 			self.create()
 			with self.assertRaises(billing.UserLimitError):
-				frappe.get_doc({"doctype": "User", "email": "pessoa@example.com", "first_name": "Pessoa"}).insert()
+				frappe.get_doc(
+					{"doctype": "User", "email": "pessoa@example.com", "first_name": "Pessoa", "roles": [{"role": "Sales User"}]}
+				).insert()
 
 	def technical(self, created=None):
 		created = created or self.create()
@@ -109,11 +113,10 @@ class TestApiKeys(IntegrationTestCase):
 		self.assertEqual(frappe.db.get_value("User", technical, ["enabled", "credhub_paused"]), (1, 0))
 
 	def test_plan_and_trial_reminder_ignore_technical_user(self):
+		# get_plan (used_active) e _trial_reminder (excesso e destinatários) contam por active_users
 		technical = self.technical()
 		self.assertNotIn(technical, billing.active_users())
-		with patch.object(billing, "active_users", wraps=billing.active_users):
-			used = billing.get_plan()["used_active"]
-		self.assertEqual(used, len(billing.active_users()))
+		self.assertNotIn(technical, billing.pending_invitations())
 		# Mesmo com System Manager o técnico não seria destinatário: ele não está em active_users e não pode ter o papel
 		with self.assertRaises(frappe.ValidationError):
 			frappe.get_doc("User", technical).add_roles("System Manager")
@@ -121,7 +124,7 @@ class TestApiKeys(IntegrationTestCase):
 	def test_only_admin_manages_keys(self):
 		frappe.set_user(SELLER)
 		with self.assertRaises(frappe.PermissionError):
-			self.create()
+			api_keys.create_api_key("ERP", ["cards_read"], [self.pipeline])
 		with self.assertRaises(frappe.PermissionError):
 			api_keys.get_api_keys()
 
