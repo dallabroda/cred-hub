@@ -35,7 +35,8 @@ login_signup_url = "cred_hub.signup_access.login_signup_url"
 
 doc_events = {
 	# Limite de usuários do plano (2 grátis + extras pagos pelo Asaas, credtech#25)
-	"User": {"validate": "cred_hub.billing.validate_user"},
+	# O usuário técnico das chaves da API não vira humano nem ganha papéis (credtech#175)
+	"User": {"validate": ["cred_hub.api_keys.validate_user", "cred_hub.billing.validate_user"]},
 	"CRM Invitation": {"before_insert": "cred_hub.billing.validate_invitation"},
 	"CRM Organization": {
 		"validate": "cred_hub.cnpj.events.validate",

@@ -77,6 +77,47 @@ class TestApiKeys(IntegrationTestCase):
 			with self.assertRaises(billing.UserLimitError):
 				frappe.get_doc({"doctype": "User", "email": "pessoa@example.com", "first_name": "Pessoa"}).insert()
 
+	def technical(self, created=None):
+		created = created or self.create()
+		return frappe.db.get_value(api_keys.KEY, created["name"], "technical_user")
+
+	def test_technical_user_cannot_become_regular_or_get_roles(self):
+		user = frappe.get_doc("User", self.technical())
+		user.credhub_api_key = ""
+		with self.assertRaises(frappe.ValidationError):
+			user.save()
+		user.reload()
+		user.append("roles", {"role": "System Manager"})
+		with self.assertRaises(frappe.ValidationError):
+			user.save()
+
+	def test_regular_user_cannot_be_marked_by_hand(self):
+		human = frappe.get_doc({"doctype": "User", "email": "integra@example.com", "first_name": "Integra"})
+		human.credhub_api_key = "abc"
+		with self.assertRaises(frappe.ValidationError):
+			human.insert()
+
+	def test_regular_user_used_for_integration_still_counts(self):
+		before = len(billing.active_users())
+		frappe.get_doc({"doctype": "User", "email": "integra@example.com", "first_name": "Integra", "roles": [{"role": "Sales User"}]}).insert()
+		self.assertEqual(len(billing.active_users()), before + 1)
+
+	def test_pause_over_limit_never_pauses_technical_user(self):
+		technical = self.technical()
+		with patch.object(billing, "user_limit", return_value=0):
+			billing.pause_over_limit()
+		self.assertEqual(frappe.db.get_value("User", technical, ["enabled", "credhub_paused"]), (1, 0))
+
+	def test_plan_and_trial_reminder_ignore_technical_user(self):
+		technical = self.technical()
+		self.assertNotIn(technical, billing.active_users())
+		with patch.object(billing, "active_users", wraps=billing.active_users):
+			used = billing.get_plan()["used_active"]
+		self.assertEqual(used, len(billing.active_users()))
+		# Mesmo com System Manager o técnico não seria destinatário: ele não está em active_users e não pode ter o papel
+		with self.assertRaises(frappe.ValidationError):
+			frappe.get_doc("User", technical).add_roles("System Manager")
+
 	def test_only_admin_manages_keys(self):
 		frappe.set_user(SELLER)
 		with self.assertRaises(frappe.PermissionError):

@@ -286,6 +286,7 @@ def _create_technical_user(key_id: str, label: str) -> str:
 	)
 	user.flags.ignore_permissions = True
 	user.flags.no_welcome_mail = True
+	user.flags.credhub_api_key_flow = True
 	user.insert()
 	return user.name
 
@@ -473,6 +474,25 @@ def _check_ips(allowed_ips: str | None):
 			ipaddress.ip_network(line, strict=False)
 		except ValueError:
 			frappe.throw(_("{0} is not a valid IP address or range.").format(frappe.bold(line)))
+
+
+# Papéis que o Frappe põe sozinho em todo usuário de sistema
+AUTOMATIC_ROLES = ("All", "Guest", "Desk User")
+
+
+def validate_user(doc, method=None):
+	"""doc_event User.validate: a marca de usuário técnico só muda pelo fluxo das chaves (senão um usuário humano
+	ficaria sem ocupar vaga, ou o técnico passaria a contar sem a checagem de vaga), e o técnico não ganha papéis."""
+	if not doc.meta.has_field("credhub_api_key"):
+		return
+	if (doc.is_new() or doc.has_value_changed("credhub_api_key")) and doc.credhub_api_key and not doc.flags.credhub_api_key_flow:
+		frappe.throw(_("Only an API key can create its technical user."))
+	if not doc.is_new() and doc.has_value_changed("credhub_api_key") and not doc.credhub_api_key:
+		frappe.throw(_("The technical user of an API key cannot become a regular user. Revoke the key instead."))
+	if doc.credhub_api_key:
+		extra = {row.role for row in doc.roles} - set(TECHNICAL_ROLES) - set(AUTOMATIC_ROLES)
+		if extra:
+			frappe.throw(_("The technical user of an API key cannot get other roles: {0}").format(", ".join(sorted(extra))))
 
 
 def is_api_user(user: str | None) -> bool:
