@@ -10,7 +10,8 @@ Entrada: POST /api/method/cred_hub.lead_intake.receive?source=<origem>, cada tip
   - webhook: cabeçalho X-CredHub-Key;
   - website: a chave vai no corpo (`key`) e é pública (fica no HTML do site), então o envio só vale vindo do
     endereço cadastrado (Origin/Referer), com limite por visitante e o campo isca `website` vazio. O corpo vem como
-    text/plain com JSON (assim o navegador não faz preflight de CORS em cada site cliente).
+    text/plain com JSON (assim o navegador não faz preflight de CORS em cada site cliente). A resposta leva
+    Access-Control-Allow-Origin só para o endereço cadastrado, para o site saber se o lead chegou.
 - Formato do site e do webhook: {fields: {first_name, last_name, email, mobile_no, organization, ...},
   answers: {pergunta: resposta}, utm_source, utm_medium, utm_campaign, utm_content, utm_term, gclid, fbclid,
   li_fat_id, landing_page, page, website (isca)}.
@@ -150,6 +151,16 @@ def _origin_allowed(source):
 	return bool(allowed) and f"{parts.scheme}://{parts.netloc}".lower() in allowed
 
 
+def _let_site_read_answer(source):
+	"""Site: deixa a página cadastrada ler a resposta (CORS), para ela só agradecer quando o lead chegou de fato.
+	Só para o endereço cadastrado e sem cookies (sem Allow-Credentials); os outros tipos não vêm de navegador."""
+	origin = frappe.request.headers.get("Origin")
+	if source.type != "website" or not origin or not _origin_allowed(source):
+		return
+	frappe.local.response_headers.set("Access-Control-Allow-Origin", origin)
+	frappe.local.response_headers.set("Vary", "Origin")
+
+
 def _too_many(source):
 	key = f"credhub_intake:{source.name}:{frappe.local.request_ip}"
 	count = cint(frappe.cache.get_value(key)) + 1
@@ -179,6 +190,7 @@ def receive(source=None):
 	doc = frappe.get_doc(SOURCE, name) if name and frappe.db.exists(SOURCE, name) else None
 	if not doc:
 		raise frappe.DoesNotExistError
+	_let_site_read_answer(doc)
 	raw = frappe.request.get_data() or b""
 	try:
 		body = json.loads(raw or b"{}")

@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
+from werkzeug.datastructures import Headers
 
 from cred_hub import lead_intake
 
@@ -128,6 +129,29 @@ class TestLeadIntake(IntegrationTestCase):
 		self.assertFalse(frappe.db.exists("CRM Deal", {"pipeline": self.pipeline}))
 		self.post(source, body, {"Origin": "https://www.acme.test"})
 		self.assertTrue(frappe.db.exists("CRM Deal", {"pipeline": self.pipeline}))
+
+	def test_website_answer_readable_only_by_registered_site(self):
+		source, key = self.source("website", allowed_origins="https://www.acme.test")
+		body = {"key": key, "fields": {"first_name": "Leo", "email": "leo@example.com"}}
+		frappe.local.response_headers = Headers()
+		self.post(source, body, {"Origin": "https://www.acme.test"})
+		self.assertEqual(frappe.local.response_headers.get("Access-Control-Allow-Origin"), "https://www.acme.test")
+		self.assertIsNone(frappe.local.response_headers.get("Access-Control-Allow-Credentials"))
+
+		frappe.local.response_headers = Headers()
+		with self.assertRaises(frappe.AuthenticationError):
+			self.post(source, body, {"Origin": "https://outro.test"})
+		self.assertIsNone(frappe.local.response_headers.get("Access-Control-Allow-Origin"))
+
+		# Webhook não vem de navegador: nunca libera a leitura, mesmo com Origin
+		hook, hook_key = self.source("webhook")
+		frappe.local.response_headers = Headers()
+		self.post(
+			hook,
+			{"fields": {"first_name": "Ana", "email": "ana@example.com"}},
+			{"X-CredHub-Key": hook_key, "Origin": "https://www.acme.test"},
+		)
+		self.assertIsNone(frappe.local.response_headers.get("Access-Control-Allow-Origin"))
 
 	def test_website_rate_limit_per_visitor(self):
 		source, key = self.source("website", allowed_origins="https://www.acme.test")
