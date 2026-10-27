@@ -6,7 +6,7 @@
 	heading=_("You already have a company on HubTech CRM"),
 	greeting=_("Hi, {0}!").format(name | e) if name else _("Hi!"),
 	paragraphs=[
-		_("This e-mail already created {0} on HubTech CRM. Each person creates one company, and inside it you can create as many sales funnels as you want.").format("<b>" ~ (company | e) ~ "</b>"),
+		_("This e-mail already created {0} on HubTech CRM. Each person creates one company, and inside it you can create as many funnels as you want.").format("<b>" ~ (company | e) ~ "</b>"),
 	],
 	details=[(_("Company"), company | e), (_("Address"), address | e)],
 	action_text=_("Open {0}").format(company | e),

@@ -10,7 +10,7 @@
 {%- if doc.status == "Created" -%}
 	{%- set intro = _("A lead arrived from the site form {0} and is already in the funnel.").format(form) if source else _("A lead arrived from the site and is already in the funnel.") -%}
 {%- else -%}
-	{%- set intro = _("Someone who already has an open deal sent the form {0} again: the answers went to the card.").format(form) if source else _("Someone who already has an open deal sent a site form again: the answers went to the card.") -%}
+	{%- set intro = _("Someone who already has an open card sent the form {0} again: the answers went to the card.").format(form) if source else _("Someone who already has an open card sent a site form again: the answers went to the card.") -%}
 {%- endif -%}
 {{ card(
 	eyebrow=_("New lead") if doc.status == "Created" else _("Returning lead"),
@@ -23,7 +23,7 @@
 		(_("Job title"), (lead.job_title or "-") | e),
 		(_("Owner"), (owner or doc.assigned_to or "-") | e),
 	],
-	action_text=_("Open the deal on HubTech CRM"),
+	action_text=_("Open the card on HubTech CRM"),
 	action_url=frappe.utils.get_url("/crm/deals/" ~ doc.card_name),
 ) }}
 {%- if note %}
