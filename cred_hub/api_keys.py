@@ -211,7 +211,7 @@ def _check_save_pipeline(key_name: str):
 	data = frappe.local.form_dict.get("doc")
 	try:
 		data = frappe.parse_json(data) if isinstance(data, str) else data
-	except Exception:
+	except (TypeError, ValueError):
 		_deny()
 	if not isinstance(data, dict) or not data.get("name") or set(data) - SAVE_PIPELINE_KEYS:
 		_deny()
