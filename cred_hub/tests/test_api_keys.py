@@ -232,8 +232,16 @@ class TestApiKeys(IntegrationTestCase):
 
 	def test_fields_admin_off_by_default(self):
 		token = self.create()["token"]
+		doc = {"doc": frappe.as_json({"name": self.pipeline, "fields": []})}
 		with self.assertRaises(frappe.PermissionError):
-			self.call(token, "/api/method/crm.api.pipeline.create_field", "POST")
+			self.call(token, "/api/method/crm.api.pipeline.save_pipeline", "POST", doc)
+
+	def test_catalog_changes_stay_admin_only(self):
+		# create/update/disable_field exigem admin no crm: nem com "Campos e regras" a chave chega lá
+		token = self.create(scopes=("cards_read", "fields_admin"))["token"]
+		for method in ("create_field", "update_field", "disable_field"):
+			with self.subTest(method=method), self.assertRaises(frappe.PermissionError):
+				self.call(token, f"/api/method/crm.api.pipeline.{method}", "POST")
 
 	def test_rate_limit(self):
 		token = self.create()["token"]

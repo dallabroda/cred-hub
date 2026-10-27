@@ -65,16 +65,11 @@ METHODS = {
 	"crm.api.pipeline.get_field_catalog": "cards_read",
 	"crm.api.pipeline.move_card": "cards_write",
 	"crm.api.pipeline.change_pipeline": "cards_write",
+	# Campos e regras por etapa dos funis da chave (o usuário técnico é Dono deles). Criar, renomear e desativar
+	# campos do catálogo exige admin no crm (_assert_admin), então fica fora da chave por enquanto.
 	"crm.api.pipeline.save_pipeline": "fields_admin",
-	"crm.api.pipeline.create_field": "fields_admin",
-	"crm.api.pipeline.update_field": "fields_admin",
-	"crm.api.pipeline.disable_field": "fields_admin",
-	# Formulários dinâmicos (dev 3): o schema vai com a leitura de cada recurso; a configuração é de admin
+	# Formulários dinâmicos (dev 3): o schema vai com a leitura de cada recurso
 	"crm.api.forms.get_form_schema": "cards_read",
-	"crm.api.forms.create_field": "fields_admin",
-	"crm.api.forms.update_field": "fields_admin",
-	"crm.api.forms.disable_field": "fields_admin",
-	"crm.api.forms.save_form_config": "fields_admin",
 }
 WRITE_METHODS = {name for name, scope in METHODS.items() if scope.endswith("_write") or scope == "fields_admin"}
 # frappe.client.* só para leitura, com o doctype conferido contra RESOURCES
