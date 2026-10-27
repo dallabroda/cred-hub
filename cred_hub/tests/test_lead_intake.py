@@ -166,9 +166,14 @@ class TestLeadIntake(IntegrationTestCase):
 	def test_website_rate_limit_per_visitor(self):
 		source, key = self.source("website", allowed_origins="https://www.acme.test")
 		frappe.cache.delete_value(f"credhub_intake:{source.name}:203.0.113.9")
-		for n in range(lead_intake.WEBSITE_LIMIT + 2):
+		answers = [
 			self.post(source, {"key": key, "fields": {"first_name": f"P{n}", "email": f"p{n}@example.com"}}, {"Origin": "https://www.acme.test"})
+			for n in range(lead_intake.WEBSITE_LIMIT + 2)
+		]
 		self.assertEqual(frappe.db.count("CRM Deal", {"pipeline": self.pipeline}), lead_intake.WEBSITE_LIMIT)
+		# Acima do limite o site fica sabendo que não gravou (não agradece por engano)
+		self.assertTrue(all(a["ok"] for a in answers[: lead_intake.WEBSITE_LIMIT]))
+		self.assertFalse(any(a["ok"] for a in answers[lead_intake.WEBSITE_LIMIT :]))
 		frappe.cache.delete_value(f"credhub_intake:{source.name}:203.0.113.9")
 
 	def test_activity_lists_all_sources_with_label(self):

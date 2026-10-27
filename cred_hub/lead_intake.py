@@ -202,8 +202,12 @@ def receive(source=None):
 		raise frappe.AuthenticationError
 	if doc.type == "website":
 		# Isca: gente não preenche o campo escondido; robô preenche. Responde ok para o robô não insistir.
-		if str(body.get("website") or "").strip() or _too_many(doc):
+		if str(body.get("website") or "").strip():
 			return {"ok": True}
+		# Acima do limite pode ser gente de verdade: o site lê o "ok" (CORS), então responde que não gravou
+		# para a página não agradecer e oferecer outro caminho (o e-mail)
+		if _too_many(doc):
+			return {"ok": False, "message": _("Too many submissions. Please try again in a few minutes.")}
 	if not doc.enabled or not doc.pipeline:
 		return {"ok": False, "message": _("This lead source is not connected to a pipeline.")}
 	if doc.type == "google_ads" and body.get("is_test"):
