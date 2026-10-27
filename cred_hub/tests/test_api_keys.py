@@ -297,6 +297,10 @@ class TestApiKeys(IntegrationTestCase):
 	# ---------- Log ----------
 
 	def test_writes_logged_reads_only_touch_last_use(self):
+		# O registro engole erros para não derrubar a chamada; no teste, um erro ali tem que aparecer
+		log_error = patch.object(frappe, "log_error", side_effect=AssertionError("after_request failed"))
+		log_error.start()
+		self.addCleanup(log_error.stop)
 		created = self.create()
 		token = created["token"]
 		self.call(token, "/api/resource/CRM Deal")
