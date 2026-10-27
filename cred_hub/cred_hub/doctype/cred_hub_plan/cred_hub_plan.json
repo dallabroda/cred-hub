@@ -6,6 +6,9 @@
  "engine": "InnoDB",
  "field_order": [
   "status",
+  "trial_ends_on",
+  "trial_reminders_sent",
+  "contracted_in_trial",
   "extra_users",
   "pending_extra_users",
   "column_break_plan",
@@ -32,6 +35,28 @@
    "fieldtype": "Select",
    "label": "Status",
    "options": "Free\nAwaiting Payment\nActive\nPast Due\nCanceled",
+   "read_only": 1
+  },
+  {
+   "description": "Last day of the free trial with unlimited users (14 days from the company's creation, set once).",
+   "fieldname": "trial_ends_on",
+   "fieldtype": "Date",
+   "label": "Trial Ends On",
+   "read_only": 1
+  },
+  {
+   "description": "End-of-trial reminders already sent, in days before the last day (e.g. 3,0).",
+   "fieldname": "trial_reminders_sent",
+   "fieldtype": "Data",
+   "label": "Trial Reminders Sent",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "The current subscription was contracted during the free trial (its first invoice is due the day after the trial).",
+   "fieldname": "contracted_in_trial",
+   "fieldtype": "Check",
+   "label": "Contracted In Trial",
    "read_only": 1
   },
   {
@@ -149,7 +174,7 @@
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-10-26 23:00:00.000000",
+ "modified": "2026-10-27 22:00:00.000000",
  "modified_by": "Administrator",
  "module": "Cred Hub",
  "name": "Cred Hub Plan",

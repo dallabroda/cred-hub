@@ -36,7 +36,7 @@ class FakeAsaas:
 		if path == "/customers":
 			return {"id": "cus_1"}
 		if method == "POST" and path == "/subscriptions":
-			return {"id": "sub_1", "nextDueDate": "2026-10-26"}
+			return {"id": "sub_1", "nextDueDate": (body or {}).get("nextDueDate") or "2026-10-26"}
 		if method == "POST" and path == "/payments":
 			self.upgrades += 1
 			pay_id = "pay_up" if self.upgrades == 1 else f"pay_up{self.upgrades}"
@@ -68,7 +68,7 @@ class TestBilling(IntegrationTestCase):
 		self.addCleanup(commit.stop)
 		# Convite manda e-mail na hora; aqui não há conta de envio
 		mail = patch.object(frappe, "sendmail")
-		mail.start()
+		self.mail = mail.start()
 		self.addCleanup(mail.stop)
 		frappe.set_user("Administrator")
 		# Empresa vazia: só os usuários deste teste contam
@@ -93,9 +93,14 @@ class TestBilling(IntegrationTestCase):
 				"payer_name": None,
 				"payer_email": None,
 				"next_due_date": None,
+				# Teste grátis já acabou: os testes de cobrança valem para depois dele
+				"trial_ends_on": self.days(-1),
 			}
 		)
 		plan.save(ignore_permissions=True)
+
+	def days(self, n):
+		return frappe.utils.add_days(frappe.utils.getdate(), n)
 
 	def tearDown(self):
 		frappe.flags.credhub_enforce_user_limit = False
@@ -129,14 +134,12 @@ class TestBilling(IntegrationTestCase):
 				frappe.local.conf.pop("credhub_signup", None)
 		asaas.assert_not_called()
 
-	def test_two_free_users_then_blocked(self):
+	def test_one_free_user_then_blocked(self):
 		self.user(1)
-		self.user(2)
 		with self.assertRaises(billing.UserLimitError):
-			self.user(3)
+			self.user(2)
 
 	def test_pending_invitation_takes_a_seat(self):
-		self.user(1)
 		frappe.get_doc({"doctype": "CRM Invitation", "email": "convite@example.com", "role": "Sales User"}).insert(
 			ignore_permissions=True
 		)
@@ -155,9 +158,9 @@ class TestBilling(IntegrationTestCase):
 		with patch.object(billing, "_asaas", fake):
 			result = billing.request_extra_users(2, PAYER)
 			self.assertEqual(result["invoice_url"], "https://asaas.test/i/pay_1")
-			self.assertEqual(billing.user_limit(), 2)  # ainda não pagou
+			self.assertEqual(billing.user_limit(), 1)  # ainda não pagou
 			billing.apply_asaas_event("PAYMENT_CONFIRMED", "pay_1", "sub_1")
-		self.assertEqual(billing.user_limit(), 4)
+		self.assertEqual(billing.user_limit(), 3)
 		subscription = next(body for method, path, body in fake.calls if method == "POST" and path == "/subscriptions")
 		self.assertEqual(subscription["value"], 120)
 		self.assertEqual(subscription["billingType"], "CREDIT_CARD")
@@ -169,11 +172,11 @@ class TestBilling(IntegrationTestCase):
 			billing.apply_asaas_event("PAYMENT_CONFIRMED", "pay_1", "sub_1")  # a API diz que não foi pago
 			billing.apply_asaas_event("PAYMENT_CONFIRMED", "pay_1", "sub_outra")  # não é a assinatura desta empresa
 		self.assertEqual(frappe.get_single(billing.PLAN).status, "Awaiting Payment")
-		self.assertEqual(billing.user_limit(), 2)
+		self.assertEqual(billing.user_limit(), 1)
 
 	def test_overdue_has_grace_then_pauses_newest_and_payment_restores(self):
 		self.active_plan(2)
-		users = [self.user(n).name for n in range(1, 5)]
+		users = [self.user(n).name for n in range(1, 4)]
 		with patch.object(billing, "_asaas", FakeAsaas(payment_status="OVERDUE")):
 			billing.apply_asaas_event("PAYMENT_OVERDUE", "pay_1", "sub_1")
 			billing.daily_check()
@@ -181,8 +184,8 @@ class TestBilling(IntegrationTestCase):
 		frappe.db.set_single_value(billing.PLAN, "grace_until", frappe.utils.add_days(frappe.utils.getdate(), -1))
 		with patch.object(billing, "_asaas", FakeAsaas(payment_status="OVERDUE")):
 			billing.daily_check()
-		self.assertEqual(billing.active_users(), users[:2])  # os 2 mais antigos continuam
-		self.assertEqual(sorted(u.name for u in billing.get_plan()["paused_users"]), sorted(users[2:]))
+		self.assertEqual(billing.active_users(), users[:1])  # o mais antigo continua
+		self.assertEqual(sorted(u.name for u in billing.get_plan()["paused_users"]), sorted(users[1:]))
 		with patch.object(billing, "_asaas", FakeAsaas()):
 			billing.apply_asaas_event("PAYMENT_CONFIRMED", "pay_1", "sub_1")
 		self.assertEqual(billing.active_users(), users)
@@ -216,7 +219,7 @@ class TestBilling(IntegrationTestCase):
 		with patch.object(billing, "_asaas", fake):
 			result = billing.request_extra_users(3)  # sem dados de pagador: o cliente já existe
 		self.assertEqual(result["invoice_url"], "https://asaas.test/i/pay_up")
-		self.assertEqual(billing.user_limit(), 5)  # liberado na hora
+		self.assertEqual(billing.user_limit(), 4)  # liberado na hora
 		charge = next(body for method, path, body in fake.calls if method == "POST" and path == "/payments")
 		self.assertTrue(billing.MIN_CHARGE <= charge["value"] < 2 * billing.PRICE_PER_USER)  # 2 extras, ~metade do mês
 		self.assertEqual(charge["dueDate"], str(frappe.utils.add_days(frappe.utils.getdate(), 3)))
@@ -230,10 +233,10 @@ class TestBilling(IntegrationTestCase):
 
 	def test_unpaid_increase_pauses_only_the_new_users_until_paid(self):
 		self.active_plan(1)
-		old = [self.user(n).name for n in range(1, 4)]  # 2 grátis + 1 extra pago
+		old = [self.user(n).name for n in range(1, 3)]  # 1 grátis + 1 extra pago
 		with patch.object(billing, "_asaas", FakeAsaas(upgrade_status="PENDING")):
 			billing.request_extra_users(3)
-		new = [self.user(n).name for n in range(4, 6)]
+		new = [self.user(n).name for n in range(3, 5)]
 		with patch.object(billing, "_asaas", FakeAsaas(upgrade_status="OVERDUE")):
 			billing.apply_asaas_event("PAYMENT_OVERDUE", "pay_up", None)
 		self.assertEqual(billing.active_users(), old)
@@ -244,10 +247,10 @@ class TestBilling(IntegrationTestCase):
 
 	def test_daily_check_catches_an_unpaid_increase_without_webhook(self):
 		self.active_plan(1)
-		old = [self.user(n).name for n in range(1, 4)]
+		old = [self.user(n).name for n in range(1, 3)]
 		with patch.object(billing, "_asaas", FakeAsaas(upgrade_status="PENDING")):
 			billing.request_extra_users(2)
-		self.user(4)
+		self.user(3)
 		frappe.db.set_single_value(billing.PLAN, "upgrade_due_date", frappe.utils.add_days(frappe.utils.getdate(), -1))
 		with patch.object(billing, "_asaas", FakeAsaas(upgrade_status="OVERDUE")):
 			billing.daily_check()
@@ -263,7 +266,7 @@ class TestBilling(IntegrationTestCase):
 		self.assertFalse([c for c in fake.calls if c[0] == "POST" and c[1] == "/payments"])
 		update = next(body for method, path, body in fake.calls if method == "PUT")
 		self.assertEqual((update["value"], update["updatePendingPayments"]), (2 * billing.PRICE_PER_USER, True))
-		self.assertEqual(billing.user_limit(), 4)
+		self.assertEqual(billing.user_limit(), 3)
 
 	def test_second_increase_cancels_the_first_charge(self):
 		self.active_plan(1)
@@ -312,14 +315,14 @@ class TestBilling(IntegrationTestCase):
 
 	def test_decrease_keeps_paid_seats_until_next_due_date(self):
 		self.active_plan(3)
-		users = [self.user(n).name for n in range(1, 6)]  # 2 grátis + 3 pagos, todos em uso
+		users = [self.user(n).name for n in range(1, 5)]  # 1 grátis + 3 pagos, todos em uso
 		fake = FakeAsaas()
 		with patch.object(billing, "_asaas", fake):
 			result = billing.request_extra_users(1)  # sem pedir para desativar ninguém
 		self.assertTrue(result["ok"])
 		update = next(body for method, path, body in fake.calls if method == "PUT")
 		self.assertEqual((update["value"], update["updatePendingPayments"]), (billing.PRICE_PER_USER, True))
-		self.assertEqual(billing.user_limit(), 5)  # vagas pagas continuam
+		self.assertEqual(billing.user_limit(), 4)  # vagas pagas continuam
 		self.assertEqual(billing.get_plan()["scheduled_extras"], 1)
 		with patch.object(billing, "_asaas", FakeAsaas()):
 			billing.daily_check()  # antes da virada: nada muda
@@ -327,8 +330,8 @@ class TestBilling(IntegrationTestCase):
 		frappe.db.set_single_value(billing.PLAN, "scheduled_from", frappe.utils.getdate())
 		with patch.object(billing, "_asaas", FakeAsaas()):
 			billing.daily_check()
-		self.assertEqual(billing.user_limit(), 3)
-		self.assertEqual(billing.active_users(), users[:3])  # pausa os mais recentes
+		self.assertEqual(billing.user_limit(), 2)
+		self.assertEqual(billing.active_users(), users[:2])  # pausa os mais recentes
 		self.assertIsNone(billing.get_plan()["scheduled_extras"])
 
 	def test_cancel_keeps_paid_seats_and_deletes_subscription_on_the_eve(self):
@@ -337,16 +340,16 @@ class TestBilling(IntegrationTestCase):
 		with patch.object(billing, "_asaas", fake):
 			billing.request_extra_users(0)
 		self.assertNotIn(("DELETE", "/subscriptions/sub_1", None), fake.calls)
-		self.assertEqual(billing.user_limit(), 3)
+		self.assertEqual(billing.user_limit(), 2)
 		frappe.db.set_single_value(billing.PLAN, "scheduled_from", frappe.utils.add_days(frappe.utils.getdate(), 1))
 		with patch.object(billing, "_asaas", fake):
 			billing.daily_check()  # véspera: a assinatura sai, as vagas ficam até amanhã
 		self.assertIn(("DELETE", "/subscriptions/sub_1", None), fake.calls)
-		self.assertEqual(billing.user_limit(), 3)
+		self.assertEqual(billing.user_limit(), 2)
 		frappe.db.set_single_value(billing.PLAN, "scheduled_from", frappe.utils.getdate())
 		with patch.object(billing, "_asaas", fake):
 			billing.daily_check()
-		self.assertEqual((self.plan().status, billing.user_limit()), ("Free", 2))
+		self.assertEqual((self.plan().status, billing.user_limit()), ("Free", 1))
 
 	def test_increase_after_a_scheduled_decrease_cancels_the_schedule(self):
 		self.active_plan(2)
@@ -430,3 +433,136 @@ class TestBilling(IntegrationTestCase):
 		plan = billing.get_plan()
 		self.assertFalse(plan["needs_payer"])
 		self.assertEqual(plan["payer"]["email"], PAYER["email"])
+
+	# Teste grátis de 14 dias (regra do dono de 27/10/2026)
+
+	def set_trial(self, last_day):
+		frappe.db.set_single_value(billing.PLAN, "trial_ends_on", last_day)
+
+	def test_trial_has_no_user_limit(self):
+		self.set_trial(self.days(5))
+		for n in range(1, 5):
+			self.user(n)
+		frappe.get_doc({"doctype": "CRM Invitation", "email": "convite@example.com", "role": "Sales User"}).insert(
+			ignore_permissions=True
+		)
+		plan = billing.get_plan()
+		self.assertEqual((plan["in_trial"], plan["trial_days_left"], plan["free"]), (True, 6, 1))
+		self.assertEqual(plan["trial_ends_on"], self.days(5))
+
+	def test_trial_end_pauses_the_newest_and_keeps_the_creator(self):
+		self.set_trial(frappe.utils.getdate())
+		users = [self.user(n).name for n in range(1, 4)]
+		with patch.object(billing, "_asaas", FakeAsaas()):
+			billing.daily_check()  # último dia do teste: ninguém é pausado
+		self.assertEqual(billing.active_users(), users)
+		self.set_trial(self.days(-1))
+		with patch.object(billing, "_asaas", FakeAsaas()):
+			billing.daily_check()
+		self.assertEqual(billing.active_users(), users[:1])
+		self.assertEqual(sorted(u.name for u in billing.get_plan()["paused_users"]), sorted(users[1:]))
+		self.assertFalse(billing.get_plan()["in_trial"])
+
+	def test_extras_contracted_in_trial_are_billed_after_it_and_keep_seats(self):
+		self.set_trial(self.days(2))
+		users = [self.user(n).name for n in range(1, 4)]
+		fake = FakeAsaas(payment_status="PENDING")
+		with patch.object(billing, "_asaas", fake):
+			billing.request_extra_users(2, PAYER)
+		subscription = next(body for method, path, body in fake.calls if method == "POST" and path == "/subscriptions")
+		self.assertEqual(subscription["nextDueDate"], str(self.days(3)))  # nada cobrado durante o teste
+		# O teste acabou ontem e a 1ª fatura vence hoje: as vagas contratadas valem durante a tolerância
+		self.set_trial(self.days(-1))
+		frappe.db.set_single_value(billing.PLAN, "next_due_date", frappe.utils.getdate())
+		with patch.object(billing, "_asaas", fake):
+			billing.daily_check()
+		self.assertEqual(billing.user_limit(), 3)
+		self.assertEqual(billing.active_users(), users)
+		# A tolerância acabou sem pagamento: fica só o grátis; pagando, eles voltam
+		self.set_trial(self.days(-5))
+		frappe.db.set_single_value(billing.PLAN, "next_due_date", self.days(-4))
+		with patch.object(billing, "_asaas", fake):
+			billing.daily_check()
+		self.assertEqual(billing.active_users(), users[:1])
+		with patch.object(billing, "_asaas", FakeAsaas()):
+			billing.apply_asaas_event("PAYMENT_CONFIRMED", "pay_1", "sub_1")
+		self.assertEqual(billing.active_users(), users)
+
+	def test_trial_end_is_set_once(self):
+		frappe.db.set_single_value(billing.PLAN, "trial_ends_on", None)
+		billing.ensure_trial()
+		created = frappe.db.get_value("User", "Administrator", "creation")
+		self.assertEqual(frappe.utils.getdate(self.plan().trial_ends_on), frappe.utils.add_days(frappe.utils.getdate(created), 13))
+		self.set_trial(self.days(-30))
+		billing.ensure_trial()  # rodar de novo (deploy) não recomeça o teste
+		self.assertEqual(frappe.utils.getdate(self.plan().trial_ends_on), self.days(-30))
+
+	def check(self, last_day):
+		self.set_trial(last_day)
+		with patch.object(billing, "_asaas", FakeAsaas()):
+			billing.daily_check()
+
+	def test_trial_reminder_to_every_admin_3_days_before_and_on_the_last_day_once(self):
+		self.set_trial(self.days(5))
+		admins = [self.user(1), self.user(2)]
+		for admin in admins:
+			admin.add_roles("System Manager")
+		self.user(3)
+		self.check(self.days(5))  # fora dos marcos
+		self.mail.assert_not_called()
+		self.check(self.days(3))
+		self.assertEqual(sorted(self.mail.call_args.kwargs["recipients"]), sorted(a.name for a in admins))
+		self.assertIn(str(billing.PRICE_PER_USER), self.mail.call_args.kwargs["message"])
+		self.check(self.days(3))  # mesmo marco de novo (outra rodada do agendador): não repete
+		self.assertEqual(self.mail.call_count, 1)
+		self.check(frappe.utils.getdate())  # último dia
+		self.assertEqual(self.mail.call_count, 2)
+		self.assertEqual(self.plan().trial_reminders_sent, "0,3")
+
+	def test_no_trial_reminder_when_nobody_will_be_paused_or_when_switched_off(self):
+		self.set_trial(self.days(5))
+		self.user(1).add_roles("System Manager")
+		self.check(self.days(3))  # 1 usuário cabe no grátis
+		self.mail.assert_not_called()
+		self.user(2)
+		frappe.local.conf.credhub_trial_reminders = 0
+		self.addCleanup(lambda: frappe.local.conf.pop("credhub_trial_reminders", None))
+		self.check(frappe.utils.getdate())
+		self.mail.assert_not_called()
+		frappe.local.conf.credhub_trial_reminders = 1
+		with patch.object(billing, "_asaas", FakeAsaas(payment_status="PENDING")):
+			billing.request_extra_users(1, PAYER)  # assinatura cobre os 2 ativos
+		self.check(frappe.utils.getdate())
+		self.mail.assert_not_called()
+
+	def test_trial_end_expires_invitations_over_the_limit(self):
+		self.set_trial(self.days(1))
+		self.user(1)
+		for email in ("convite1@example.com", "convite2@example.com"):
+			frappe.get_doc({"doctype": "CRM Invitation", "email": email, "role": "Sales User"}).insert(
+				ignore_permissions=True
+			)
+		self.check(self.days(-1))
+		self.assertEqual(frappe.get_all("CRM Invitation", filters={"status": "Pending"}), [])
+		self.assertEqual(frappe.db.count("CRM Invitation", {"status": "Expired", "email": ("like", "convite%")}), 2)
+
+	def test_admin_swaps_who_stays_after_the_trial(self):
+		self.set_trial(self.days(-1))
+		frappe.local.conf.credhub_billing = 0  # usuários criados antes da cobrança ligar
+		users = [self.user(n) for n in range(1, 3)]
+		frappe.local.conf.credhub_billing = 1
+		with patch.object(billing, "_asaas", FakeAsaas()):
+			billing.daily_check()
+		paused = frappe.get_doc("User", users[1].name)
+		self.assertTrue(paused.credhub_paused)
+		with self.assertRaises(billing.UserLimitError):
+			paused.enabled = 1
+			paused.save(ignore_permissions=True)  # sem vaga
+		first = frappe.get_doc("User", users[0].name)
+		first.enabled = 0
+		first.save(ignore_permissions=True)
+		paused.reload()
+		paused.enabled = 1
+		paused.save(ignore_permissions=True)
+		self.assertEqual(billing.active_users(), [paused.name])
+		self.assertFalse(frappe.db.get_value("User", paused.name, "credhub_paused"))

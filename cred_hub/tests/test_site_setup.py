@@ -44,4 +44,4 @@ class TestSiteSetup(IntegrationTestCase):
 	def test_env_groups_are_optional(self):
 		for var in ("SMTP_ADDRESS", "SMTP_PASSWORD", "AUTH0_DOMAIN", "AUTH0_CLIENT_SECRET"):
 			self.assertNotIn(var, frappe.local.conf)
-		self.assertEqual(len(site_setup.apply_from_env(commit=False)), 3)  # sem segredos: só os padrões
+		self.assertEqual(len(site_setup.apply_from_env(commit=False)), 4)  # sem segredos: só os padrões (com o fim do teste grátis)

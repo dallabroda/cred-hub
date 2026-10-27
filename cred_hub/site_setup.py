@@ -98,7 +98,9 @@ def apply_from_env(commit=True):
 
 
 def apply(email=None, auth0=None, commit=True):
-	done = [brazil_defaults(), access_by_invite_only(), translations()]
+	from cred_hub.billing import ensure_trial
+
+	done = [brazil_defaults(), access_by_invite_only(), translations(), ensure_trial()]
 	if email:
 		done.append(email_setup(email))
 	if auth0:
