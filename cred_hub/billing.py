@@ -1,15 +1,18 @@
 """Limite de usuários e cobrança de usuários extras pelo Asaas (credtech#25).
 
-Regras do dono (25 e 26/10/2026): cada empresa tem 2 usuários grátis; do 3º em diante, R$ 60 por usuário a mais por
-mês, no cartão, pelo Asaas de produção (a mesma conta do Cred Chat). Padrão de mercado, e na dúvida não prejudicar
-o cliente: nunca cobrar duas vezes a mesma coisa, nunca tirar vaga já paga, toda falha de cobrança tem prazo de
+Regras do dono (25, 26 e 27/10/2026): cada empresa tem 14 dias de teste com usuários ilimitados, contados da criação
+da empresa e uma vez só; depois, 1 usuário grátis e, do 2º em diante, R$ 60 por usuário a mais por mês, no cartão,
+pelo Asaas de produção (a mesma conta do Cred Chat). Padrão de mercado, e na dúvida não prejudicar o cliente: nunca cobrar duas vezes a mesma coisa, nunca tirar vaga já paga, toda falha de cobrança tem prazo de
 tolerância antes de pausar, e pausar começa pelo usuário mais recente, sem apagar nada.
 
 - O plano fica no doctype único "Cred Hub Plan" de cada empresa. Só administradores (System Manager) veem e mudam.
 - Aumentar com a assinatura ativa: libera na hora e cobra a diferença proporcional por link, com 3 dias de prazo;
   sem pagamento, só os usuários novos são pausados até pagar. Diminuir: as vagas pagas valem até o próximo
   vencimento; a fatura seguinte vem com o valor menor e, na virada, quem passar do limite é pausado.
-- Mensalidade vencida: 3 dias de tolerância; depois, pausa acima dos 2 grátis até pagar.
+- Mensalidade vencida: 3 dias de tolerância; depois, pausa acima do grátis até pagar.
+- Fim do teste: quem passar do limite é pausado no dia seguinte (daily_check), do mais recente para o mais antigo.
+  Extras contratados durante o teste têm a 1ª fatura no dia seguinte ao fim do teste e valem até a tolerância dela.
+  Aviso por e-mail aos administradores 3 dias antes e no último dia do teste, só com `credhub_trial_reminders`.
 - Interruptor `credhub_billing` (common_site_config), desligado por padrão: desligado, não há limite, a tela
   "Usuários e plano" some, o Asaas não é chamado e o webhook dele não é cadastrado. Liga quando a tela estiver
   pronta e o dono mandar.
@@ -30,12 +33,16 @@ import re
 import frappe
 import requests
 from frappe import _
-from frappe.utils import add_days, cint, getdate, now_datetime
+from frappe.utils import add_days, cint, date_diff, format_date, getdate, now_datetime
 
 from cred_hub.cnpj.mapping import is_valid_cnpj, only_digits
 
-FREE_USERS = 2
+FREE_USERS = 1
 PRICE_PER_USER = 60
+# Teste grátis com usuários ilimitados, contado da criação da empresa (o dia da criação é o 1º)
+TRIAL_DAYS = 14
+# Avisos do fim do teste: dias antes do último dia (0 = no último dia)
+TRIAL_REMINDER_DAYS = (3, 0)
 PLAN = "Cred Hub Plan"
 UNLIMITED = 1_000_000
 # Menor cobrança avulsa aceita pelo Asaas no cartão; diferença menor não é cobrada (entra na próxima fatura)
@@ -72,13 +79,51 @@ def billing_enabled():
 	return bool(cint(frappe.conf.get("credhub_billing")))
 
 
+def trial_ends_on(plan=None):
+	"""Último dia do teste grátis. Gravado uma vez no plano (ensure_trial); antes disso, vem da criação do site."""
+	plan = plan or _plan()
+	if plan.trial_ends_on:
+		return getdate(plan.trial_ends_on)
+	return _trial_end_from_site_creation()
+
+
+def _trial_end_from_site_creation():
+	created = frappe.db.get_value("User", "Administrator", "creation") or now_datetime()
+	return add_days(getdate(created), TRIAL_DAYS - 1)
+
+
+def in_trial(plan=None):
+	return getdate() <= trial_ends_on(plan)
+
+
+def ensure_trial():
+	"""site_setup (deploy e cadastro de empresa nova): grava o fim do teste uma única vez; nunca recomeça."""
+	plan = _plan()
+	if not plan.trial_ends_on:
+		_save_plan(plan, trial_ends_on=_trial_end_from_site_creation())
+	return f"teste grátis até {plan.trial_ends_on}"
+
+
+def _trial_contract(plan):
+	"""Extras contratados durante o teste, com a 1ª fatura (no dia seguinte ao fim do teste) ainda não paga."""
+	return bool(cint(plan.contracted_in_trial) and plan.next_due_date and cint(plan.pending_extra_users))
+
+
 def user_limit(plan=None):
 	if not billing_enabled() or frappe.conf.get("credhub_unlimited_users"):
 		return UNLIMITED
 	plan = plan or _plan()
+	if in_trial(plan):
+		return UNLIMITED
 	# Extras valem com a assinatura em dia e, vencida, durante a tolerância
 	in_grace = plan.status == "Past Due" and plan.grace_until and getdate(plan.grace_until) >= getdate()
 	extras = cint(plan.extra_users) if plan.status == "Active" or in_grace else 0
+	if _trial_contract(plan) and (
+		in_grace
+		or (plan.status == "Awaiting Payment" and getdate() <= getdate(add_days(plan.next_due_date, GRACE_DAYS)))
+	):
+		# Contratados no teste: valem até a tolerância da 1ª fatura, para ninguém ser pausado na virada do teste
+		extras = cint(plan.pending_extra_users)
 	return FREE_USERS + extras
 
 
@@ -113,6 +158,8 @@ def validate_user(doc, method=None):
 	limit = user_limit()
 	if len(active_users(exclude=doc.name)) >= limit:
 		frappe.throw(_limit_message(limit), UserLimitError)
+	# O admin trocou quem fica (desativou outro e reativou este): deixa de constar como pausado
+	doc.credhub_paused = 0
 
 
 def validate_invitation(doc, method=None):
@@ -134,9 +181,14 @@ def get_plan():
 	paused = frappe.get_all(
 		"User", filters={"credhub_paused": 1}, fields=["name", "full_name"], order_by="creation asc"
 	)
+	trial_end = trial_ends_on(plan)
 	return {
 		"limit": user_limit(plan),
 		"free": FREE_USERS,
+		# Teste grátis com usuários ilimitados até trial_ends_on (inclusive)
+		"in_trial": in_trial(plan),
+		"trial_ends_on": trial_end,
+		"trial_days_left": max(date_diff(trial_end, getdate()) + 1, 0),
 		"extras": cint(plan.extra_users),
 		# 1ª assinatura: extras que entram quando o 1º pagamento for confirmado
 		"pending_extras": cint(plan.pending_extra_users) if plan.status == "Awaiting Payment" else 0,
@@ -248,7 +300,8 @@ def request_extra_users(quantity: int, payer=None):
 			"customer": customer,
 			"billingType": "CREDIT_CARD",
 			"value": value,
-			"nextDueDate": str(getdate()),
+			# Contratado no teste, nada é cobrado antes de ele acabar
+			"nextDueDate": str(add_days(trial_ends_on(plan), 1) if in_trial(plan) else getdate()),
 			"cycle": "MONTHLY",
 			"description": _description(quantity),
 			"externalReference": frappe.local.site,
@@ -259,6 +312,7 @@ def request_extra_users(quantity: int, payer=None):
 	_save_plan(
 		plan,
 		status="Awaiting Payment",
+		contracted_in_trial=in_trial(plan),
 		monthly_amount=value,
 		asaas_customer_id=customer,
 		payer_name=clean["name"] if clean else plan.payer_name,
@@ -456,6 +510,22 @@ def pause_over_limit():
 	excess = len(users) - user_limit()
 	for name in reversed(users[-excess:] if excess > 0 else []):
 		_set_user(name, enabled=0, paused=1)
+	_expire_invitations_over_limit()
+
+
+def _expire_invitations_over_limit():
+	"""Convites pendentes acima do limite deixam de valer (os mais recentes primeiro); o admin convida de novo depois."""
+	enabled = set(active_users())
+	pending = [
+		invitation.name
+		for invitation in frappe.get_all(
+			"CRM Invitation", filters={"status": "Pending"}, fields=["name", "email"], order_by="creation asc"
+		)
+		if invitation.email not in enabled
+	]
+	seats = max(user_limit() - len(enabled), 0)
+	for name in pending[seats:]:
+		frappe.db.set_value("CRM Invitation", name, "status", "Expired")
 
 
 def restore_paused():
@@ -669,6 +739,7 @@ def daily_check():
 		return
 	plan = _plan()
 	today = getdate()
+	_trial_reminder(plan, today)
 	if plan.scheduled_from:
 		turn = getdate(plan.scheduled_from)
 		if cint(plan.scheduled_extra_users) == 0 and plan.asaas_subscription_id and today >= add_days(turn, -1):
@@ -689,7 +760,36 @@ def daily_check():
 			_apply_upgrade_payment(plan, "PAYMENT_CONFIRMED", plan.upgrade_payment_id)
 		else:
 			_upgrade_overdue(plan)
+	if not in_trial(plan):
+		# Virada do teste e fim da tolerância da 1ª fatura contratada no teste; nos outros dias não há excesso
+		pause_over_limit()
 	frappe.db.commit()
+
+
+def _trial_reminder(plan, today):
+	"""Aviso aos administradores 3 dias antes e no último dia do teste (decisão do dono, 27/10/2026), uma vez por marco,
+	só quando alguém vai ser pausado. Desliga com `credhub_trial_reminders: 0`."""
+	if not cint(frappe.conf.get("credhub_trial_reminders", 1)) or not in_trial(plan):
+		return
+	end = trial_ends_on(plan)
+	mark = str(date_diff(end, today))
+	sent = set(filter(None, (plan.trial_reminders_sent or "").split(",")))
+	if cint(mark) not in TRIAL_REMINDER_DAYS or mark in sent:
+		return
+	# Vagas depois do teste: o grátis mais os extras contratados (pagos ou com a 1ª fatura em aberto)
+	seats = FREE_USERS + max(cint(plan.extra_users), cint(plan.pending_extra_users))
+	excess = len(active_users()) + len(pending_invitations()) - seats
+	admins = set(frappe.get_all("Has Role", filters={"role": "System Manager", "parenttype": "User"}, pluck="parent"))
+	recipients = [name for name in active_users() if name in admins]
+	if excess > 0 and recipients:
+		frappe.sendmail(
+			recipients=recipients,
+			subject=_("HubTech CRM: your free trial ends on {0}").format(format_date(end)),
+			message=_(
+				"Your HubTech CRM free trial with unlimited users ends on {0}. After that, the plan includes {1} free user plus the extra users you contract (R$ {2} per user per month). {3} active users or pending invitations are over that limit: from {4}, the newest users will be paused (nothing is deleted) and the pending invitations over the limit will no longer be valid. To avoid it, contract extra users in Settings > Users and plan, or choose who stays by deactivating the users you no longer need."
+			).format(format_date(end), FREE_USERS, PRICE_PER_USER, excess, format_date(add_days(end, 1))),
+		)
+	_save_plan(plan, trial_reminders_sent=",".join(sorted(sent | {mark})))
 
 
 def ensure_asaas_webhook():

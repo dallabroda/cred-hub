@@ -1041,6 +1041,12 @@ msgstr "Informe um CEP válido."
 msgid "Choose between 0 and 500 extra users."
 msgstr "Escolha entre 0 e 500 usuários extras."
 
+msgid "HubTech CRM: your free trial ends on {0}"
+msgstr "HubTech CRM: seu teste grátis termina em {0}"
+
+msgid "Your HubTech CRM free trial with unlimited users ends on {0}. After that, the plan includes {1} free user plus the extra users you contract (R$ {2} per user per month). {3} active users or pending invitations are over that limit: from {4}, the newest users will be paused (nothing is deleted) and the pending invitations over the limit will no longer be valid. To avoid it, contract extra users in Settings > Users and plan, or choose who stays by deactivating the users you no longer need."
+msgstr "Seu teste grátis do HubTech CRM, com usuários ilimitados, termina em {0}. Depois disso, o plano inclui {1} usuário grátis mais os usuários extras que você contratar (R$ {2} por usuário por mês). Hoje há {3} usuário(s) ativo(s) ou convite(s) pendente(s) acima desse limite: a partir de {4}, os usuários mais recentes serão pausados (nada é apagado) e os convites pendentes acima do limite deixarão de valer. Para evitar isso, contrate usuários extras em Configurações > Usuários e plano, ou escolha quem fica desativando os usuários de que você não precisa mais."
+
 
 msgid "Billing is not available right now. Please try again later."
 msgstr "A cobrança não está disponível agora. Tente de novo mais tarde."
