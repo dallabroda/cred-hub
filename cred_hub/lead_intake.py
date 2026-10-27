@@ -10,7 +10,8 @@ Entrada: POST /api/method/cred_hub.lead_intake.receive?source=<origem>, cada tip
   - webhook: cabeçalho X-CredHub-Key;
   - website: a chave vai no corpo (`key`) e é pública (fica no HTML do site), então o envio só vale vindo do
     endereço cadastrado (Origin/Referer), com limite por visitante e o campo isca `website` vazio. O corpo vem como
-    text/plain com JSON (assim o navegador não faz preflight de CORS em cada site cliente).
+    text/plain com JSON (assim o navegador não faz preflight de CORS em cada site cliente). A resposta leva
+    Access-Control-Allow-Origin só para o endereço cadastrado, para o site saber se o lead chegou.
 - Formato do site e do webhook: {fields: {first_name, last_name, email, mobile_no, organization, ...},
   answers: {pergunta: resposta}, utm_source, utm_medium, utm_campaign, utm_content, utm_term, gclid, fbclid,
   li_fat_id, landing_page, page, website (isca)}.
@@ -36,6 +37,8 @@ TRACKING = ("utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term
 LEAD_FIELDS = ("first_name", "last_name", "email", "mobile_no", "phone", "organization", "job_title", "website")
 FIELD_SIZES = {"mobile_no": 40, "phone": 40, "email": 140}
 WEBSITE_LIMIT = 10  # envios por visitante a cada 10 minutos
+# Respostas livres (a chave do site é pública): até 30 perguntas, 140 caracteres no nome e 5.000 na resposta
+ANSWERS_LIMIT, ANSWER_SIZE = 30, 5000
 GOOGLE_COLUMNS = {
 	"FULL_NAME": "full_name",
 	"FIRST_NAME": "first_name",
@@ -150,6 +153,16 @@ def _origin_allowed(source):
 	return bool(allowed) and f"{parts.scheme}://{parts.netloc}".lower() in allowed
 
 
+def _let_site_read_answer(source):
+	"""Site: deixa a página cadastrada ler a resposta (CORS), para ela só agradecer quando o lead chegou de fato.
+	Só para o endereço cadastrado e sem cookies (sem Allow-Credentials); os outros tipos não vêm de navegador."""
+	origin = frappe.request.headers.get("Origin")
+	if source.type != "website" or not origin or not _origin_allowed(source):
+		return
+	frappe.local.response_headers.set("Access-Control-Allow-Origin", origin)
+	frappe.local.response_headers.set("Vary", "Origin")
+
+
 def _too_many(source):
 	key = f"credhub_intake:{source.name}:{frappe.local.request_ip}"
 	count = cint(frappe.cache.get_value(key)) + 1
@@ -179,6 +192,7 @@ def receive(source=None):
 	doc = frappe.get_doc(SOURCE, name) if name and frappe.db.exists(SOURCE, name) else None
 	if not doc:
 		raise frappe.DoesNotExistError
+	_let_site_read_answer(doc)
 	raw = frappe.request.get_data() or b""
 	try:
 		body = json.loads(raw or b"{}")
@@ -188,8 +202,12 @@ def receive(source=None):
 		raise frappe.AuthenticationError
 	if doc.type == "website":
 		# Isca: gente não preenche o campo escondido; robô preenche. Responde ok para o robô não insistir.
-		if str(body.get("website") or "").strip() or _too_many(doc):
+		if str(body.get("website") or "").strip():
 			return {"ok": True}
+		# Acima do limite pode ser gente de verdade: o site lê o "ok" (CORS), então responde que não gravou
+		# para a página não agradecer e oferecer outro caminho (o e-mail)
+		if _too_many(doc):
+			return {"ok": False, "message": _("Too many submissions. Please try again in a few minutes.")}
 	if not doc.enabled or not doc.pipeline:
 		return {"ok": False, "message": _("This lead source is not connected to a pipeline.")}
 	if doc.type == "google_ads" and body.get("is_test"):
@@ -206,7 +224,8 @@ def _parse(kind, body):
 		return _parse_google(body)
 	if kind == "typeform":
 		return _parse_typeform(body)
-	fields = body.get("fields") or {}
+	fields = body.get("fields")
+	fields = fields if isinstance(fields, dict) else {}
 	# Tamanhos dos campos do lead: texto maior que o campo viraria falha
 	values = {
 		k: str(v).strip()[: FIELD_SIZES.get(k, 140)] for k, v in fields.items() if k in LEAD_FIELDS and v not in (None, "")
@@ -215,7 +234,9 @@ def _parse(kind, body):
 	page = body.get("landing_page") or body.get("page")
 	if page:
 		values["landing_page"] = str(page)[:1000]
-	answers = {str(k): str(v) for k, v in (body.get("answers") or {}).items() if v not in (None, "")}
+	given = body.get("answers")
+	given = list(given.items())[:ANSWERS_LIMIT] if isinstance(given, dict) else []
+	answers = {str(k)[:140]: str(v)[:ANSWER_SIZE] for k, v in given if v not in (None, "")}
 	return values, answers, str(body.get("id") or "") or None
 
 

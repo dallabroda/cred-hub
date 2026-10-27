@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
+from werkzeug.datastructures import Headers
 
 from cred_hub import lead_intake
 
@@ -129,12 +130,50 @@ class TestLeadIntake(IntegrationTestCase):
 		self.post(source, body, {"Origin": "https://www.acme.test"})
 		self.assertTrue(frappe.db.exists("CRM Deal", {"pipeline": self.pipeline}))
 
+	def test_website_answer_readable_only_by_registered_site(self):
+		source, key = self.source("website", allowed_origins="https://www.acme.test")
+		body = {"key": key, "fields": {"first_name": "Leo", "email": "leo@example.com"}}
+		frappe.local.response_headers = Headers()
+		self.post(source, body, {"Origin": "https://www.acme.test"})
+		self.assertEqual(frappe.local.response_headers.get("Access-Control-Allow-Origin"), "https://www.acme.test")
+		self.assertIsNone(frappe.local.response_headers.get("Access-Control-Allow-Credentials"))
+
+		frappe.local.response_headers = Headers()
+		with self.assertRaises(frappe.AuthenticationError):
+			self.post(source, body, {"Origin": "https://outro.test"})
+		self.assertIsNone(frappe.local.response_headers.get("Access-Control-Allow-Origin"))
+
+		# Webhook não vem de navegador: nunca libera a leitura, mesmo com Origin
+		hook, hook_key = self.source("webhook")
+		frappe.local.response_headers = Headers()
+		self.post(
+			hook,
+			{"fields": {"first_name": "Ana", "email": "ana@example.com"}},
+			{"X-CredHub-Key": hook_key, "Origin": "https://www.acme.test"},
+		)
+		self.assertIsNone(frappe.local.response_headers.get("Access-Control-Allow-Origin"))
+
+	def test_answers_are_size_limited(self):
+		source, key = self.source("website", allowed_origins="https://www.acme.test")
+		answers = {f"Pergunta {n}": "x" * (lead_intake.ANSWER_SIZE + 100) for n in range(lead_intake.ANSWERS_LIMIT + 5)}
+		body = {"key": key, "fields": {"first_name": "Leo", "email": "leo@example.com"}, "answers": answers}
+		_values, parsed, _id = lead_intake._parse("website", body)
+		self.assertEqual(len(parsed), lead_intake.ANSWERS_LIMIT)
+		self.assertTrue(all(len(v) == lead_intake.ANSWER_SIZE for v in parsed.values()))
+		# Formato errado não derruba o recebimento
+		self.assertEqual(lead_intake._parse("website", {"fields": "x", "answers": ["x"]})[:2], ({}, {}))
+
 	def test_website_rate_limit_per_visitor(self):
 		source, key = self.source("website", allowed_origins="https://www.acme.test")
 		frappe.cache.delete_value(f"credhub_intake:{source.name}:203.0.113.9")
-		for n in range(lead_intake.WEBSITE_LIMIT + 2):
+		answers = [
 			self.post(source, {"key": key, "fields": {"first_name": f"P{n}", "email": f"p{n}@example.com"}}, {"Origin": "https://www.acme.test"})
+			for n in range(lead_intake.WEBSITE_LIMIT + 2)
+		]
 		self.assertEqual(frappe.db.count("CRM Deal", {"pipeline": self.pipeline}), lead_intake.WEBSITE_LIMIT)
+		# Acima do limite o site fica sabendo que não gravou (não agradece por engano)
+		self.assertTrue(all(a["ok"] for a in answers[: lead_intake.WEBSITE_LIMIT]))
+		self.assertFalse(any(a["ok"] for a in answers[lead_intake.WEBSITE_LIMIT :]))
 		frappe.cache.delete_value(f"credhub_intake:{source.name}:203.0.113.9")
 
 	def test_activity_lists_all_sources_with_label(self):

@@ -873,6 +873,9 @@ msgstr "JSON inválido."
 msgid "This lead source is not connected to a pipeline."
 msgstr "Esta origem de leads não está ligada a um funil."
 
+msgid "Too many submissions. Please try again in a few minutes."
+msgstr "Muitos envios seguidos. Tente de novo em alguns minutos."
+
 msgid "Google Ads test lead (no card created)."
 msgstr "Lead de teste do Google Ads (nenhum card criado)."
 
