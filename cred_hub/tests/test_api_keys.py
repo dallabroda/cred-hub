@@ -95,6 +95,11 @@ class TestApiKeys(IntegrationTestCase):
 		with self.assertRaises(frappe.ValidationError):
 			user.save()
 
+	def test_technical_users_hook_lists_only_key_users(self):
+		technical = self.technical()
+		self.assertEqual(api_keys.technical_users(), [technical])
+		self.assertIn("cred_hub.api_keys.technical_users", frappe.get_hooks("crm_hidden_users"))
+
 	def test_regular_user_cannot_be_marked_by_hand(self):
 		human = frappe.get_doc({"doctype": "User", "email": "integra@example.com", "first_name": "Integra"})
 		human.credhub_api_key = "abc"
@@ -243,6 +248,51 @@ class TestApiKeys(IntegrationTestCase):
 		frappe.set_user("Administrator")
 		with self.assertRaises(frappe.PermissionError):
 			api_keys.get_api_keys()
+
+	# ---------- Chaves antigas ----------
+
+	def legacy_call(self, user):
+		"""Chamada com token antigo: o Frappe já pôs o usuário; o hook decide se ainda vale."""
+		request = MagicMock(path="/api/resource/CRM Deal", method="GET", headers=Headers({"Authorization": "token a:b"}))
+		frappe.set_user(user)
+		with (
+			patch.object(frappe, "request", request),
+			patch.object(frappe, "get_request_header", lambda name, default=None: request.headers.get(name, default)),
+		):
+			api_keys.authenticate()
+
+	def set_legacy_until(self, value):
+		frappe.local.conf.credhub_legacy_token_until = value
+		self.addCleanup(lambda: frappe.local.conf.pop("credhub_legacy_token_until", None))
+
+	def test_legacy_tokens_work_without_config_and_until_the_date(self):
+		self.legacy_call(SELLER)
+		self.set_legacy_until("2999-12-31")
+		self.legacy_call(SELLER)
+
+	def test_legacy_tokens_stop_after_the_date_except_administrator(self):
+		self.set_legacy_until("2020-01-01")
+		with self.assertRaises(frappe.AuthenticationError):
+			self.legacy_call(SELLER)
+		self.legacy_call("Administrator")
+
+	def test_api_screen_warns_about_legacy_keys(self):
+		frappe.db.set_value("User", SELLER, "api_key", "antiga123")
+		self.set_legacy_until("2026-11-27")
+		data = api_keys.get_api_keys()
+		self.assertEqual(str(data["legacy_until"]), "2026-11-27")
+		self.assertIn(SELLER, [u.name for u in data["legacy_users"]])
+
+	def test_no_new_legacy_keys_after_deploy_nor_on_technical_user(self):
+		from frappe.core.doctype.user.user import generate_keys
+
+		with self.assertRaises(frappe.ValidationError):
+			generate_keys(self.technical())
+		generate_keys(SELLER)
+		self.set_legacy_until("2999-12-31")
+		with self.assertRaises(frappe.ValidationError):
+			generate_keys(SELLER)
+		generate_keys("Administrator")
 
 	# ---------- Log ----------
 

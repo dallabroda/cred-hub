@@ -28,6 +28,8 @@ auth_hooks = ["cred_hub.api_keys.authenticate"]
 after_request = ["cred_hub.api_keys.after_request"]
 # O usuário técnico de uma chave nunca entra pela tela
 on_session_creation = "cred_hub.api_keys.block_login"
+# O crm esconde o usuário técnico das listas, dos membros dos funis e da distribuição
+crm_hidden_users = ["cred_hub.api_keys.technical_users"]
 
 # Quem chega sem conta vai para o cadastro de empresa nova (credtech#25)
 oauth_without_account = "cred_hub.signup_access.oauth_without_account"

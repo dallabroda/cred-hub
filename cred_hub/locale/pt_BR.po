@@ -1191,3 +1191,9 @@ msgstr "Código da resposta"
 
 msgid "API Key"
 msgstr "Chave da API"
+
+msgid "Old API keys stopped working on {0}. Ask your admin for a key in Settings > Integrations > API."
+msgstr "As chaves antigas da API pararam em {0}. Peça ao administrador uma chave em Configurações > Integrações > API."
+
+msgid "Create API keys in Settings > Integrations > API."
+msgstr "Crie as chaves da API em Configurações > Integrações > API."

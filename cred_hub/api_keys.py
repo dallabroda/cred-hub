@@ -111,6 +111,9 @@ def _split_token(token: str):
 def authenticate():
 	header = frappe.get_request_header("Authorization", "") or ""
 	scheme, _sep, token = header.partition(" ")
+	if scheme.lower() in ("token", "basic"):
+		_check_legacy_token()
+		return
 	if scheme.lower() != "bearer" or not token.startswith(PREFIX):
 		return
 	key_id, secret = _split_token(token.strip())
@@ -130,6 +133,39 @@ def authenticate():
 	_rate_limit(key.name, write)
 	frappe.set_user(key.technical_user)
 	frappe.local.credhub_api_key = {"name": key.name, "write": write}
+
+
+# ---------- Chaves antigas (token api_key:api_secret de um usuário) ----------
+
+
+def legacy_tokens_until():
+	"""Último dia das chaves antigas: `credhub_legacy_token_until` (AAAA-MM-DD), posto no deploy da API nova com
+	30 dias de transição (decisão do dono). Sem a config, as chaves antigas seguem como hoje."""
+	value = frappe.conf.get("credhub_legacy_token_until")
+	return getdate(value) if value else None
+
+
+def _check_legacy_token():
+	"""O Frappe já autenticou o token do usuário; depois do prazo, só o Administrator do site segue usando."""
+	until = legacy_tokens_until()
+	user = frappe.session.user
+	if not until or getdate(nowdate()) <= until or user in ("Guest", "Administrator"):
+		return
+	raise frappe.AuthenticationError(
+		_("Old API keys stopped working on {0}. Ask your admin for a key in Settings > Integrations > API.").format(
+			frappe.utils.format_date(until)
+		)
+	)
+
+
+def legacy_key_users() -> list[dict]:
+	"""Usuários com chave antiga (gerada em /app/user), para o aviso na tela de API."""
+	return frappe.get_all(
+		"User",
+		filters={"api_key": ("is", "set"), "name": ("not in", ("Administrator", "Guest")), "enabled": 1},
+		fields=["name", "full_name"],
+		order_by="full_name asc",
+	)
 
 
 def _ip_allowed(allowed: str | None, ip: str | None) -> bool:
@@ -375,6 +411,9 @@ def get_api_keys() -> dict:
 		"keys": [_key_info(frappe.get_doc(KEY, name)) for name in names],
 		"scopes": [{"value": k, "label": _(v)} for k, v in SCOPES.items()],
 		"limit": MAX_KEYS,
+		# Aviso aos admins: "as chaves antigas param em DD/MM" e quem ainda tem uma
+		"legacy_until": legacy_tokens_until(),
+		"legacy_users": legacy_key_users(),
 	}
 
 
@@ -489,10 +528,22 @@ def validate_user(doc, method=None):
 		frappe.throw(_("Only an API key can create its technical user."))
 	if not doc.is_new() and doc.has_value_changed("credhub_api_key") and not doc.credhub_api_key:
 		frappe.throw(_("The technical user of an API key cannot become a regular user. Revoke the key instead."))
+	# Chave antiga nova (generate_keys em /app/user): nunca no usuário técnico; para os outros, só até a API nova
+	# entrar no ar (a config do prazo é posta no deploy). O Administrator do site segue podendo.
+	new_secret = bool(doc.api_secret) and set(doc.api_secret) != {"*"}
+	if new_secret and doc.name != "Administrator" and (doc.credhub_api_key or legacy_tokens_until()):
+		frappe.throw(_("Create API keys in Settings > Integrations > API."))
 	if doc.credhub_api_key:
 		extra = {row.role for row in doc.roles} - set(TECHNICAL_ROLES) - set(AUTOMATIC_ROLES)
 		if extra:
 			frappe.throw(_("The technical user of an API key cannot get other roles: {0}").format(", ".join(sorted(extra))))
+
+
+def technical_users() -> list[str]:
+	"""Hook crm_hidden_users: o crm tira estes usuários das listas, dos membros dos funis e da distribuição."""
+	if not frappe.get_meta("User").has_field("credhub_api_key"):
+		return []
+	return frappe.get_all("User", {"credhub_api_key": ("is", "set")}, pluck="name")
 
 
 def is_api_user(user: str | None) -> bool:
