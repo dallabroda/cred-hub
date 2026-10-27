@@ -328,7 +328,7 @@ def request_extra_users(quantity: int, payer=None):
 
 
 def _description(quantity):
-	return f"Cred Hub - {quantity} usuário(s) a mais - {frappe.local.site}"
+	return f"HubTech CRM - {quantity} usuário(s) a mais - {frappe.local.site}"
 
 
 def _cleared():
@@ -403,7 +403,7 @@ def _change_active_plan(plan, quantity):
 			"billingType": "CREDIT_CARD",
 			"value": amount,
 			"dueDate": str(due),
-			"description": f"Cred Hub - {quantity - paid} usuário(s) a mais até o próximo vencimento - {frappe.local.site}",
+			"description": f"HubTech CRM - {quantity - paid} usuário(s) a mais até o próximo vencimento - {frappe.local.site}",
 			"externalReference": frappe.local.site,
 		},
 	)
@@ -782,12 +782,22 @@ def _trial_reminder(plan, today):
 	admins = set(frappe.get_all("Has Role", filters={"role": "System Manager", "parenttype": "User"}, pluck="parent"))
 	recipients = [name for name in active_users() if name in admins]
 	if excess > 0 and recipients:
+		last_day = mark == "0"
 		frappe.sendmail(
 			recipients=recipients,
-			subject=_("HubTech CRM: your free trial ends on {0}").format(format_date(end)),
-			message=_(
-				"Your HubTech CRM free trial with unlimited users ends on {0}. After that, the plan includes {1} free user plus the extra users you contract (R$ {2} per user per month). {3} active users or pending invitations are over that limit: from {4}, the newest users will be paused (nothing is deleted) and the pending invitations over the limit will no longer be valid. To avoid it, contract extra users in Settings > Users and plan, or choose who stays by deactivating the users you no longer need."
-			).format(format_date(end), FREE_USERS, PRICE_PER_USER, excess, format_date(add_days(end, 1))),
+			subject=_("HubTech CRM: your free trial ends today")
+			if last_day
+			else _("HubTech CRM: your free trial ends on {0}").format(format_date(end)),
+			template="hubtech_trial_reminder",
+			args={
+				"last_day": last_day,
+				"end": format_date(end),
+				"pause_on": format_date(add_days(end, 1)),
+				"free": FREE_USERS,
+				"price": frappe.utils.fmt_money(PRICE_PER_USER, currency="BRL"),
+				"excess": excess,
+				"plan_url": frappe.utils.get_url("/crm"),
+			},
 		)
 	_save_plan(plan, trial_reminders_sent=",".join(sorted(sent | {mark})))
 

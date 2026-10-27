@@ -1,0 +1,31 @@
+{#- Lead from the CredTech site to contato@ (Notification "Lead do site para contato@" of the CredTech company,
+    doc = Cred Hub Lead Event; see docs/runbooks/site-leads-hubtech.md). Message of the notification:
+    {% include "templates/emails/hubtech_site_lead.html" %} -#}
+{% from "templates/emails/hubtech_macros.html" import card with context %}
+{%- set lead = frappe.get_doc("CRM Lead", doc.lead) -%}
+{%- set source = frappe.db.get_value("Cred Hub Lead Source", doc.source, "label") -%}
+{%- set note = frappe.get_all("FCRM Note", filters={"reference_doctype": "CRM Deal", "reference_docname": doc.card_name}, fields=["content"], order_by="creation desc", limit=1) -%}
+{%- set owner = frappe.db.get_value("User", doc.assigned_to, "full_name") if doc.assigned_to else None -%}
+{%- set form = "<b>" ~ (source | e) ~ "</b>" if source else "" -%}
+{%- if doc.status == "Created" -%}
+	{%- set intro = _("A lead arrived from the site form {0} and is already in the funnel.").format(form) if source else _("A lead arrived from the site and is already in the funnel.") -%}
+{%- else -%}
+	{%- set intro = _("Someone who already has an open deal sent the form {0} again: the answers went to the card.").format(form) if source else _("Someone who already has an open deal sent a site form again: the answers went to the card.") -%}
+{%- endif -%}
+{{ card(
+	eyebrow=_("New lead") if doc.status == "Created" else _("Returning lead"),
+	heading=((lead.first_name or "") ~ " " ~ (lead.last_name or "")) | trim | e,
+	paragraphs=[intro],
+	details=[
+		(_("E-mail"), (lead.email or "-") | e),
+		(_("Phone"), (lead.mobile_no or "-") | e),
+		(_("Company"), (lead.organization or "-") | e),
+		(_("Job title"), (lead.job_title or "-") | e),
+		(_("Owner"), (owner or doc.assigned_to or "-") | e),
+	],
+	action_text=_("Open the deal on HubTech CRM"),
+	action_url=frappe.utils.get_url("/crm/deals/" ~ doc.card_name),
+) }}
+{%- if note %}
+<div style="margin: 0 0 20px; padding: 16px 18px; border: 1px solid #E4DCFD; border-radius: 16px; background-color: #FAF8FF; font-size: 14px; line-height: 21px; color: #334155;">{{ note[0].content }}</div>
+{%- endif %}

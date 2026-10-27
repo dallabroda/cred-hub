@@ -1,0 +1,17 @@
+{#- Welcome on the first access (Notification "HubTech CRM - Welcome" of site_setup, doc = the new User): people
+    who accepted an invitation or got in through Google, Microsoft or GitHub. -#}
+{% from "templates/emails/hubtech_macros.html" import card with context %}
+{%- set url = frappe.utils.get_url("/crm") -%}
+{{ card(
+	eyebrow=_("Welcome"),
+	heading=_("Welcome to HubTech CRM"),
+	greeting=_("Hi, {0}!").format((doc.first_name or "") | e) if doc.first_name else _("Hi!"),
+	paragraphs=[
+		_("Your HubTech CRM account is active. It is where your team organizes leads, deals and tasks in sales funnels."),
+		_("Sign in with Google, Microsoft or GitHub using this e-mail, or with your password."),
+		_("If you cannot see your company's data yet, ask your company's administrator for access."),
+	],
+	details=[(_("Address"), frappe.utils.get_url()), (_("Your login"), doc.email | e)],
+	action_text=_("Open HubTech CRM"),
+	action_url=url,
+) }}

@@ -1,0 +1,15 @@
+{#- Self-service signup with an e-mail that already created a company (cred_hub.signup). Args: name, company,
+    address. -#}
+{% from "templates/emails/hubtech_macros.html" import card with context %}
+{{ card(
+	eyebrow=_("Your company"),
+	heading=_("You already have a company on HubTech CRM"),
+	greeting=_("Hi, {0}!").format(name | e) if name else _("Hi!"),
+	paragraphs=[
+		_("This e-mail already created {0} on HubTech CRM. Each person creates one company, and inside it you can create as many sales funnels as you want.").format("<b>" ~ (company | e) ~ "</b>"),
+	],
+	details=[(_("Company"), company | e), (_("Address"), address | e)],
+	action_text=_("Open {0}").format(company | e),
+	action_url=address,
+	note=_("If you did not ask for this, ignore this e-mail."),
+) }}

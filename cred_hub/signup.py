@@ -30,6 +30,8 @@ from frappe import _
 from frappe.rate_limiter import rate_limit
 from frappe.utils import add_to_date, get_bench_path, get_url, now_datetime
 
+from cred_hub.site_setup import EMAIL_ACCOUNT, OLD_EMAIL_ACCOUNT
+
 DEFAULT_DOMAIN = "credtechdigital.com.br"
 LINK_HOURS = 24
 # Reenvios do link por pedido: sem limite, alguém poderia lotar a caixa de e-mail de outra pessoa
@@ -213,7 +215,7 @@ def request_signup(company_name: str, subdomain: str, full_name: str, email: str
 			frappe.cache.set_value(reminder_key, 1, expires_in_sec=24 * 60 * 60)
 			_send_existing_company(existing, email)
 		frappe.throw(
-			_("This e-mail has already created a company on Cred Hub. We sent its address to this e-mail."),
+			_("This e-mail has already created a company on HubTech CRM. We sent its address to this e-mail."),
 			AlreadyHasCompanyError,
 		)
 
@@ -271,40 +273,31 @@ def _pending(subdomain, email):
 
 
 def _send_confirmation(doc, token):
-	link = get_url(f"/cadastro/confirmar?token={token}")
 	frappe.sendmail(
 		recipients=[doc.email],
-		subject=_("Confirm your e-mail to create {0} on Cred Hub").format(doc.company_name),
-		message=_(
-			"<p>Hi, {0}!</p><p>To create <b>{1}</b> on Cred Hub, at <b>{2}</b>, confirm your e-mail:</p>"
-			'<p><a href="{3}">Confirm and create my company</a></p>'
-			"<p>The link is valid for {4} hours. If you did not ask for this, ignore this e-mail.</p>"
-			"<p>CredTech team</p>"
-		).format(
-			frappe.utils.escape_html(doc.full_name),
-			frappe.utils.escape_html(doc.company_name),
-			_site_name(doc.subdomain),
-			link,
-			LINK_HOURS,
-		),
+		subject=_("HubTech CRM: confirm your e-mail to create {0}").format(doc.company_name),
+		template="hubtech_signup_confirm",
+		args={
+			"name": doc.full_name,
+			"company": doc.company_name,
+			"address": f"https://{_site_name(doc.subdomain)}",
+			"link": get_url(f"/cadastro/confirmar?token={token}"),
+			"hours": LINK_HOURS,
+		},
 		now=True,
 	)
 
 
 def _send_existing_company(existing, email):
-	address = f"https://{existing.site_name or _site_name(existing.subdomain)}"
 	frappe.sendmail(
 		recipients=[email],
-		subject=_("Your company on Cred Hub"),
-		message=_(
-			"<p>Hi, {0}!</p><p>This e-mail has already created <b>{1}</b> on Cred Hub. Each person creates one "
-			'company; you can create as many funnels as you want inside it.</p><p><a href="{2}">Open {1}</a></p>'
-			"<p>CredTech team</p>"
-		).format(
-			frappe.utils.escape_html(existing.full_name or ""),
-			frappe.utils.escape_html(existing.company_name),
-			address,
-		),
+		subject=_("HubTech CRM: your company {0}").format(existing.company_name),
+		template="hubtech_signup_existing",
+		args={
+			"name": existing.full_name or "",
+			"company": existing.company_name,
+			"address": f"https://{existing.site_name or _site_name(existing.subdomain)}",
+		},
 		now=True,
 	)
 
@@ -401,7 +394,7 @@ def _site_secrets():
 
 	env = {}
 	account = frappe.db.get_value(
-		"Email Account", {"email_account_name": "Cred Hub"}, ["name", "email_id", "smtp_server", "smtp_port", "login_id"], as_dict=True
+		"Email Account", {"email_account_name": ("in", (EMAIL_ACCOUNT, OLD_EMAIL_ACCOUNT))}, ["name", "email_id", "smtp_server", "smtp_port", "login_id"], as_dict=True
 	)
 	if account:
 		env.update(
@@ -474,13 +467,14 @@ def _alert_team(doc):
 		return
 	frappe.sendmail(
 		recipients=recipients,
-		subject=f"Cred Hub: cadastro de {doc.company_name} falhou",
-		message=(
-			f"<p>O cadastro de <b>{frappe.utils.escape_html(doc.company_name)}</b> ({doc.site_name}, "
-			f"{frappe.utils.escape_html(doc.email)}) falhou.</p>"
-			f"<p>Veja o erro em <a href=\"{get_url(f'/app/cred-hub-signup/{doc.name}')}\">Cred Hub Signup</a> "
-			"e tente de novo com retry_provision.</p>"
-		),
+		subject=_("HubTech CRM: creating {0} failed").format(doc.company_name),
+		template="hubtech_signup_failed",
+		args={
+			"company": doc.company_name,
+			"site": doc.site_name,
+			"email": doc.email,
+			"link": get_url(f"/app/cred-hub-signup/{doc.name}"),
+		},
 	)
 
 

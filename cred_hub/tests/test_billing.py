@@ -512,7 +512,8 @@ class TestBilling(IntegrationTestCase):
 		self.mail.assert_not_called()
 		self.check(self.days(3))
 		self.assertEqual(sorted(self.mail.call_args.kwargs["recipients"]), sorted(a.name for a in admins))
-		self.assertIn(str(billing.PRICE_PER_USER), self.mail.call_args.kwargs["message"])
+		self.assertEqual(self.mail.call_args.kwargs["template"], "hubtech_trial_reminder")
+		self.assertIn(str(billing.PRICE_PER_USER), self.mail.call_args.kwargs["args"]["price"])
 		self.check(self.days(3))  # mesmo marco de novo (outra rodada do agendador): não repete
 		self.assertEqual(self.mail.call_count, 1)
 		self.check(frappe.utils.getdate())  # último dia

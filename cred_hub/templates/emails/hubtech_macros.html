@@ -1,0 +1,74 @@
+{#- Body of a HubTech CRM e-mail, the same blocks as the SmartChat ones: tag, title, greeting, paragraphs,
+    a box with details, the button, the link in text and a closing note. Every argument but heading is optional.
+    paragraphs: list of strings (HTML allowed, escape what comes from users); details: list of (label, value). -#}
+{% macro card(heading, eyebrow=None, greeting=None, paragraphs=[], details=[], action_text=None, action_url=None, note=None) -%}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width: 100%; margin: 0;">
+	{%- if eyebrow %}
+	<tr>
+		<td style="padding: 0 0 16px;">
+			<span style="display: inline-block; padding: 6px 10px; border-radius: 999px; background-color: #F1ECFE; color: #5925DC; font-size: 12px; line-height: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;">{{ eyebrow }}</span>
+		</td>
+	</tr>
+	{%- endif %}
+	<tr>
+		<td style="padding: 0 0 12px;">
+			<h1 class="ht-heading" style="margin: 0; font-size: 30px; line-height: 36px; font-weight: 700; color: #0F172A;">{{ heading }}</h1>
+		</td>
+	</tr>
+	{%- if greeting %}
+	<tr>
+		<td style="padding: 0 0 8px;">
+			<p style="margin: 0; font-size: 14px; line-height: 21px; color: #334155;">{{ greeting }}</p>
+		</td>
+	</tr>
+	{%- endif %}
+	{%- for paragraph in paragraphs %}
+	<tr>
+		<td style="padding: 0 0 {{ '10px' if not loop.last else ('16px' if details else '24px') }};">
+			<p style="margin: 0; font-size: 14px; line-height: 21px; color: #475569;">{{ paragraph }}</p>
+		</td>
+	</tr>
+	{%- endfor %}
+	{%- if details %}
+	<tr>
+		<td style="padding: 0 0 24px;">
+			<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width: 100%; border: 1px solid #E4DCFD; border-radius: 16px; background-color: #FAF8FF;" bgcolor="#FAF8FF">
+				{%- for label, value in details %}
+				<tr>
+					<td style="padding: 14px 18px;{{ ' border-top: 1px solid #E2E8F0;' if not loop.first else '' }}">
+						<p style="margin: 0 0 4px; font-size: 12px; line-height: 16px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #64748B;">{{ label }}</p>
+						<p style="margin: 0; font-size: 14px; line-height: 21px; font-weight: 600; color: #0F172A;">{{ value }}</p>
+					</td>
+				</tr>
+				{%- endfor %}
+			</table>
+		</td>
+	</tr>
+	{%- endif %}
+	{%- if action_url %}
+	<tr>
+		<td style="padding: 0 0 20px;">
+			<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width: 100%; margin: 0;">
+				<tr>
+					<td bgcolor="#6938EF" style="border-radius: 14px; background-color: #6938EF;">
+						<a href="{{ action_url }}" style="display: block; width: 100%; box-sizing: border-box; padding: 12px 24px; font-size: 14px; line-height: 20px; font-weight: 700; color: #FFFFFF; text-align: center; text-decoration: none;">{{ action_text }}</a>
+					</td>
+				</tr>
+			</table>
+		</td>
+	</tr>
+	<tr>
+		<td style="padding: 0 0 20px;">
+			<p style="margin: 0; font-size: 13px; line-height: 20px; color: #64748B;">{{ _("If the button does not work, copy and paste this link in your browser:") }}<br /><a href="{{ action_url }}" style="color: #6938EF; text-decoration: none; word-break: break-all;">{{ action_url }}</a></p>
+		</td>
+	</tr>
+	{%- endif %}
+	{%- if note %}
+	<tr>
+		<td style="padding: 0 0 20px;">
+			<p style="margin: 0; font-size: 13px; line-height: 20px; color: #64748B;">{{ note }}</p>
+		</td>
+	</tr>
+	{%- endif %}
+</table>
+{%- endmacro %}

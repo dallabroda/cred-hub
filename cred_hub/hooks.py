@@ -21,6 +21,8 @@ scheduler_events = {
 
 # Quem chega sem conta vai para o cadastro de empresa nova (credtech#25)
 oauth_without_account = "cred_hub.signup_access.oauth_without_account"
+# Assunto do e-mail de boas-vindas do Frappe (com o link para criar a senha): "Boas-vindas ao HubTech CRM"
+welcome_email = "cred_hub.site_setup.welcome_subject"
 login_signup_url = "cred_hub.signup_access.login_signup_url"
 
 doc_events = {
