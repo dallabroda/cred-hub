@@ -68,6 +68,21 @@ class TestLeadIntake(IntegrationTestCase):
 		with self.assertRaises(frappe.AuthenticationError):
 			self.post(source, body, {"X-CredHub-Key": "errada"})
 
+	def test_answers_of_a_returning_person_go_to_the_open_card(self):
+		source, key = self.source("webhook")
+		first = {"fields": {"first_name": "Bia", "email": "bia@example.com"}, "answers": {"Desafios": "primeira mensagem"}}
+		again = {"fields": {"first_name": "Bia", "email": "bia@example.com"}, "answers": {"Desafios": "segunda mensagem"}}
+		self.post(source, first, {"X-CredHub-Key": key})
+		self.post(source, again, {"X-CredHub-Key": key})
+		self.assertEqual(frappe.db.count("CRM Deal", {"pipeline": self.pipeline}), 1)
+		notes = frappe.get_all("FCRM Note", {"reference_docname": self.card().name}, pluck="content")
+		self.assertTrue(any("primeira mensagem" in note for note in notes))
+		self.assertTrue(any("segunda mensagem" in note for note in notes))
+		self.assertEqual(
+			frappe.db.get_value(lead_intake.EVENT, {"source": source.name}, "status", order_by="creation desc"),
+			"Duplicate",
+		)
+
 	def test_key_shown_once_then_only_hint(self):
 		source, key = self.source("webhook")
 		listed = next(s for s in lead_intake.get_webhook_sources() if s.name == source.name)
