@@ -641,7 +641,8 @@ def _note_answers(card, answers):
 	frappe.get_doc(
 		{
 			"doctype": "FCRM Note",
-			"title": _("Lead form answers"),
+			# Webhooks come as Guest, in the language of nobody: the note keeps the company's language
+			"title": _("Lead form answers", lang=frappe.db.get_default("lang") or "pt-BR"),
 			"content": f"<ul>{rows}</ul>",
 			"reference_doctype": "CRM Deal",
 			"reference_docname": card,

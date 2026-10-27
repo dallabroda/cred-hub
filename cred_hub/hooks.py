@@ -21,6 +21,8 @@ scheduler_events = {
 
 # Quem chega sem conta vai para o cadastro de empresa nova (credtech#25)
 oauth_without_account = "cred_hub.signup_access.oauth_without_account"
+# Linha do tempo do card: o lead automático aparece com o nome da origem, não como Guest (credtech#188)
+crm_automatic_entries = ["cred_hub.lead_intake.automatic_entries"]
 login_signup_url = "cred_hub.signup_access.login_signup_url"
 
 doc_events = {
