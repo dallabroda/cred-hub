@@ -153,6 +153,16 @@ class TestLeadIntake(IntegrationTestCase):
 		)
 		self.assertIsNone(frappe.local.response_headers.get("Access-Control-Allow-Origin"))
 
+	def test_answers_are_size_limited(self):
+		source, key = self.source("website", allowed_origins="https://www.acme.test")
+		answers = {f"Pergunta {n}": "x" * (lead_intake.ANSWER_SIZE + 100) for n in range(lead_intake.ANSWERS_LIMIT + 5)}
+		body = {"key": key, "fields": {"first_name": "Leo", "email": "leo@example.com"}, "answers": answers}
+		_values, parsed, _id = lead_intake._parse("website", body)
+		self.assertEqual(len(parsed), lead_intake.ANSWERS_LIMIT)
+		self.assertTrue(all(len(v) == lead_intake.ANSWER_SIZE for v in parsed.values()))
+		# Formato errado não derruba o recebimento
+		self.assertEqual(lead_intake._parse("website", {"fields": "x", "answers": ["x"]})[:2], ({}, {}))
+
 	def test_website_rate_limit_per_visitor(self):
 		source, key = self.source("website", allowed_origins="https://www.acme.test")
 		frappe.cache.delete_value(f"credhub_intake:{source.name}:203.0.113.9")

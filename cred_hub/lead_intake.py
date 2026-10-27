@@ -37,6 +37,8 @@ TRACKING = ("utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term
 LEAD_FIELDS = ("first_name", "last_name", "email", "mobile_no", "phone", "organization", "job_title", "website")
 FIELD_SIZES = {"mobile_no": 40, "phone": 40, "email": 140}
 WEBSITE_LIMIT = 10  # envios por visitante a cada 10 minutos
+# Respostas livres (a chave do site é pública): até 30 perguntas, 140 caracteres no nome e 5.000 na resposta
+ANSWERS_LIMIT, ANSWER_SIZE = 30, 5000
 GOOGLE_COLUMNS = {
 	"FULL_NAME": "full_name",
 	"FIRST_NAME": "first_name",
@@ -218,7 +220,8 @@ def _parse(kind, body):
 		return _parse_google(body)
 	if kind == "typeform":
 		return _parse_typeform(body)
-	fields = body.get("fields") or {}
+	fields = body.get("fields")
+	fields = fields if isinstance(fields, dict) else {}
 	# Tamanhos dos campos do lead: texto maior que o campo viraria falha
 	values = {
 		k: str(v).strip()[: FIELD_SIZES.get(k, 140)] for k, v in fields.items() if k in LEAD_FIELDS and v not in (None, "")
@@ -227,7 +230,9 @@ def _parse(kind, body):
 	page = body.get("landing_page") or body.get("page")
 	if page:
 		values["landing_page"] = str(page)[:1000]
-	answers = {str(k): str(v) for k, v in (body.get("answers") or {}).items() if v not in (None, "")}
+	given = body.get("answers")
+	given = list(given.items())[:ANSWERS_LIMIT] if isinstance(given, dict) else []
+	answers = {str(k)[:140]: str(v)[:ANSWER_SIZE] for k, v in given if v not in (None, "")}
 	return values, answers, str(body.get("id") or "") or None
 
 
