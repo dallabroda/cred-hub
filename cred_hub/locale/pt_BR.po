@@ -1389,3 +1389,15 @@ msgstr "Esses usuários não conseguem mais entrar. Nada foi apagado: os cards, 
 #: cred_hub/templates/emails/hubtech_users_paused.html
 msgid "Pending invitations over the limit are no longer valid: {0}. Invite again when there is a free seat."
 msgstr "Convites pendentes acima do limite deixaram de valer: {0}. Convide de novo quando houver vaga."
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "Pay the open invoice: as soon as the payment is confirmed, this user comes back by itself."
+msgstr "Pague a fatura em aberto: assim que o pagamento for confirmado, o usuário volta sozinho."
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "To bring this user back, contract an extra user in Settings > Users and plan: as soon as the payment is confirmed, the user comes back by itself. Or choose who stays: deactivate a user you no longer need and reactivate the paused one."
+msgstr "Para trazer o usuário de volta, contrate um usuário extra em Configurações > Usuários e plano: assim que o pagamento for confirmado, ele volta sozinho. Ou escolha quem fica: desative um usuário de que não precisa mais e reative o pausado."
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "This user can no longer sign in. Nothing was deleted: their cards, contacts and history stay."
+msgstr "Esse usuário não consegue mais entrar. Nada foi apagado: os cards, contatos e histórico dele continuam."

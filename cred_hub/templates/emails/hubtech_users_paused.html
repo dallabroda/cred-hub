@@ -9,10 +9,17 @@
 	"downgrade": _("The plan now has fewer users, as you scheduled."),
 	"canceled": _("The subscription was canceled. The plan now includes {0} free user.").format(free),
 }[reason] -%}
-{%- set back = _("Pay the open invoice: as soon as the payment is confirmed, they come back by themselves.")
-	if pay_url else
-	_("To bring them back, contract extra users in Settings > Users and plan: as soon as the payment is confirmed, they come back by themselves, oldest first. Or choose who stays: deactivate a user you no longer need and reactivate the paused one.") -%}
-{%- set paragraphs = [why, _("These users can no longer sign in. Nothing was deleted: their cards, contacts and history stay.")] -%}
+{%- set one = users | length == 1 -%}
+{%- if pay_url -%}
+	{%- set back = _("Pay the open invoice: as soon as the payment is confirmed, this user comes back by itself.") if one
+		else _("Pay the open invoice: as soon as the payment is confirmed, they come back by themselves.") -%}
+{%- elif one -%}
+	{%- set back = _("To bring this user back, contract an extra user in Settings > Users and plan: as soon as the payment is confirmed, the user comes back by itself. Or choose who stays: deactivate a user you no longer need and reactivate the paused one.") -%}
+{%- else -%}
+	{%- set back = _("To bring them back, contract extra users in Settings > Users and plan: as soon as the payment is confirmed, they come back by themselves, oldest first. Or choose who stays: deactivate a user you no longer need and reactivate the paused one.") -%}
+{%- endif -%}
+{%- set paragraphs = [why, _("This user can no longer sign in. Nothing was deleted: their cards, contacts and history stay.") if one
+	else _("These users can no longer sign in. Nothing was deleted: their cards, contacts and history stay.")] -%}
 {%- if invitations -%}
 	{%- set paragraphs = paragraphs + [_("Pending invitations over the limit are no longer valid: {0}. Invite again when there is a free seat.").format("<b>" ~ invitations ~ "</b>")] -%}
 {%- endif -%}

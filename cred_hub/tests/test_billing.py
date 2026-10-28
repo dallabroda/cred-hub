@@ -247,13 +247,15 @@ class TestBilling(IntegrationTestCase):
 	def test_unpaid_increase_pauses_only_the_new_users_until_paid(self):
 		self.active_plan(1)
 		old = [self.user(n).name for n in range(1, 3)]  # 1 grátis + 1 extra pago
+		frappe.get_doc("User", old[0]).add_roles("System Manager")
 		with patch.object(billing, "_asaas", FakeAsaas(upgrade_status="PENDING")):
 			billing.request_extra_users(3)
 		new = [self.user(n).name for n in range(3, 5)]
 		with patch.object(billing, "_asaas", FakeAsaas(upgrade_status="OVERDUE")):
 			billing.apply_asaas_event("PAYMENT_OVERDUE", "pay_up", None)
 		self.assertEqual(billing.active_users(), old)
-		self.assertEqual(self.paused_notice()["args"]["reason"], "upgrade_unpaid")
+		notice = self.paused_notice()
+		self.assertEqual((notice["recipients"], notice["args"]["reason"]), (old[:1], "upgrade_unpaid"))
 		self.assertTrue(billing.get_plan()["upgrade"]["overdue"])
 		with patch.object(billing, "_asaas", FakeAsaas()):
 			billing.apply_asaas_event("PAYMENT_CONFIRMED", "pay_up", None)
