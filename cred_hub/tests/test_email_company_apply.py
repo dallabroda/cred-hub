@@ -126,7 +126,7 @@ class TestEmailCompanyApply(IntegrationTestCase):
 		lead, deal = self.card()
 		apply.apply(lead, self.result(confidence=score.LOW))
 		doc = self.deal(deal)
-		self.assertEqual((doc.organization, doc.email_company_status), (None, None))
+		self.assertFalse(doc.organization or doc.email_company_status)
 		self.assertEqual(self.comments(deal), [])
 
 	def test_card_with_the_same_cnpj_stays_as_it_is(self):

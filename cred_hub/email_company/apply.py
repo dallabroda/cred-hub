@@ -73,6 +73,16 @@ def custom_fields():
 	}
 
 
+def install():
+	"""Campos no card e o interruptor; sites que já existem começam com ele ligado (o padrão do campo só vale para
+	configurações gravadas depois)."""
+	from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
+
+	create_custom_fields(custom_fields(), update=True)
+	if not frappe.db.exists("Singles", {"doctype": SETTINGS, "field": SETTING_FIELD}):
+		frappe.db.set_single_value(SETTINGS, SETTING_FIELD, 1)
+
+
 def enabled() -> bool:
 	"""Interruptor em Configurações (ligado por padrão); `credhub_email_company` no site_config ainda manda."""
 	forced = frappe.conf.get("credhub_email_company")
