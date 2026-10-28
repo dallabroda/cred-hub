@@ -126,7 +126,10 @@ def authenticate():
 		raise frappe.AuthenticationError
 	write = _check_route(key.name)
 	_rate_limit(key.name, write)
+	# set_user zera o form_dict (os argumentos da chamada); o OAuth do Frappe faz o mesmo cuidado
+	form_dict = frappe.local.form_dict
 	frappe.set_user(key.technical_user)
+	frappe.local.form_dict = form_dict
 	frappe.local.credhub_api_key = {"name": key.name, "write": write}
 
 

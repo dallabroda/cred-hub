@@ -144,6 +144,22 @@ class TestApiKeys(IntegrationTestCase):
 		technical = frappe.db.get_value(api_keys.KEY, created["name"], "technical_user")
 		self.assertEqual(self.call(created["token"], "/api/resource/CRM Deal"), technical)
 
+	def test_call_arguments_survive_authentication(self):
+		# set_user zera o form_dict: sem o cuidado, get_stage_rules(pipeline, stage) chegava sem argumentos
+		token = self.create()["token"]
+		request = MagicMock(path="/api/method/crm.api.pipeline.get_stage_rules", method="GET")
+		request.headers = Headers({"Authorization": f"Bearer {token}"})
+		frappe.set_user("Guest")
+		frappe.local.credhub_api_key = None
+		frappe.local.form_dict = frappe._dict(pipeline=self.pipeline, stage="Novo")
+		with (
+			patch.object(frappe, "request", request),
+			patch.object(frappe, "get_request_header", lambda name, default=None: request.headers.get(name, default)),
+		):
+			frappe.local.request_ip = "203.0.113.9"
+			api_keys.authenticate()
+		self.assertEqual(dict(frappe.local.form_dict), {"pipeline": self.pipeline, "stage": "Novo"})
+
 	def test_wrong_secret_revoked_and_expired_keys_fail(self):
 		created = self.create()
 		with self.assertRaises(frappe.AuthenticationError):
