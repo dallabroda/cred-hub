@@ -70,6 +70,8 @@ METHODS = {
 	"crm.api.pipeline.save_pipeline": "fields_admin",
 	# Formulários dinâmicos (dev 3): o schema vai com a leitura de cada recurso
 	"crm.api.forms.get_form_schema": "cards_read",
+	# Campos da organização, segunda organização e contato que a etapa mostra no card (Fase 5, credtech#182)
+	"crm.api.forms.get_card_blocks": "cards_read",
 }
 WRITE_METHODS = {name for name, scope in METHODS.items() if scope.endswith("_write") or scope == "fields_admin"}
 # frappe.client.* só para leitura, com o doctype conferido contra RESOURCES

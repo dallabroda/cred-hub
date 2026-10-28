@@ -211,6 +211,8 @@ class TestApiKeys(IntegrationTestCase):
 		token = self.create(scopes=("cards_read",))["token"]
 		self.call(token, "/api/resource/CRM Deal")
 		self.call(token, "/api/method/crm.api.pipeline.get_stage_rules")
+		self.call(token, "/api/method/crm.api.forms.get_form_schema")
+		self.call(token, "/api/method/crm.api.forms.get_card_blocks")
 		self.call(token, "/api/method/frappe.client.get_list", form={"doctype": "CRM Deal"})
 		for path, method, form in (
 			("/api/resource/CRM Deal", "POST", None),
