@@ -15,12 +15,15 @@ from cred_hub.email_company import safe_http
 from cred_hub.email_company.domain import email_domain, url_domain
 
 CACHE_DAYS = 30
+# Site fora do ar ou recusado: tenta de novo no dia seguinte, não daqui a 30 dias
+FAILURE_CACHE_HOURS = 24
 CACHE_PREFIX = "credhub_email_company:"
 
 
 def enabled() -> bool:
-	# Interruptor provisório por site; a Fase 4 leva para Configurações (ligado por padrão)
-	return bool(cint(frappe.conf.get("credhub_email_company", 1)))
+	# Desligado por padrão até a Fase 4 aplicar o resultado no card (decisão do orquestrador): sem fila e sem HTTP
+	# saindo do servidor. Liga por site com `credhub_email_company: 1`; a Fase 4 leva para Configurações.
+	return bool(cint(frappe.conf.get("credhub_email_company", 0)))
 
 
 def on_lead_insert(doc, method=None):
@@ -80,7 +83,8 @@ def site_info(domain: str) -> dict:
 		if page.status < 400:
 			info["final_domain"] = url_domain(page.url)
 			break
-	frappe.cache.set_value(key, info, expires_in_sec=CACHE_DAYS * 86400)
+	expires = CACHE_DAYS * 86400 if info["final_domain"] else FAILURE_CACHE_HOURS * 3600
+	frappe.cache.set_value(key, info, expires_in_sec=expires)
 	return info
 
 
