@@ -1549,3 +1549,42 @@ msgstr "Fora da janela de 24 horas, o WhatsApp só aceita um modelo aprovado pel
 
 msgid "Fill in every field of the template."
 msgstr "Preencha todos os campos do modelo."
+
+msgid "Only managers can change this setting."
+msgstr "Só gestores podem mudar esta configuração."
+
+msgid "Company identified from the e-mail domain {0} ({1}), high confidence: {2}."
+msgstr "Empresa identificada pelo domínio do e-mail {0} ({1}), confiança alta: {2}."
+
+msgid "organization already registered"
+msgstr "organização já cadastrada"
+
+msgid "Probable company from the e-mail domain {0}: {1} (CNPJ {2}). Confirm or dismiss it on the card."
+msgstr "Empresa provável pelo domínio do e-mail {0}: {1} (CNPJ {2}). Confirme ou descarte no card."
+
+msgid "There is no probable company to confirm on this card."
+msgstr "Não há empresa provável para confirmar neste card."
+
+msgid "{0} confirmed the probable company: {1}."
+msgstr "{0} confirmou a empresa provável: {1}."
+
+msgid "There is no probable company to dismiss on this card."
+msgstr "Não há empresa provável para descartar neste card."
+
+msgid "{0} dismissed the probable company {1}."
+msgstr "{0} descartou a empresa provável {1}."
+
+msgid "Find the company from the lead's e-mail"
+msgstr "Descobrir a empresa pelo e-mail do lead"
+
+msgid "Probable company CNPJ"
+msgstr "CNPJ da empresa provável"
+
+msgid "Probable company"
+msgstr "Empresa provável"
+
+msgid "Probable company domain"
+msgstr "Domínio da empresa provável"
+
+msgid "Probable company status"
+msgstr "Situação da empresa provável"

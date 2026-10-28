@@ -14,7 +14,7 @@ também vira sugestão. Pôr o CNPJ na organização já dispara a busca dos dad
 
 import frappe
 from frappe import _
-from frappe.utils import cint
+from frappe.utils import cint, get_fullname
 
 from cred_hub.cnpj.mapping import format_cnpj, only_digits
 from cred_hub.email_company import score
@@ -171,7 +171,7 @@ def confirm(deal: str) -> dict:
 	organization = _apply(doc, result, confirmed=True)
 	doc.db_set("email_company_status", CONFIRMED, update_modified=False)
 	doc.add_comment(
-		"Comment", _("{0} confirmed the probable company: {1}.").format(frappe.session.user, organization)
+		"Comment", _("{0} confirmed the probable company: {1}.").format(get_fullname(), organization)
 	)
 	return {"organization": organization}
 
@@ -183,7 +183,7 @@ def dismiss(deal: str) -> dict:
 	if doc.get("email_company_status") != SUGGESTED:
 		frappe.throw(_("There is no probable company to dismiss on this card."))
 	doc.db_set("email_company_status", DISMISSED, update_modified=False)
-	doc.add_comment("Comment", _("{0} dismissed the probable company {1}.").format(frappe.session.user, doc.email_company_name))
+	doc.add_comment("Comment", _("{0} dismissed the probable company {1}.").format(get_fullname(), doc.email_company_name))
 	return {"dismissed": True}
 
 
