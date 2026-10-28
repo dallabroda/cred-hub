@@ -25,6 +25,8 @@ oauth_without_account = "cred_hub.signup_access.oauth_without_account"
 welcome_email = "cred_hub.site_setup.welcome_subject"
 # Conta de envio do sistema (site_setup.EMAIL_ACCOUNT e o nome antigo): o crm a esconde da tela e não deixa editar
 crm_system_email_accounts = ["HubTech CRM", "Cred Hub"]
+# Linha do tempo do card: o lead automático aparece com o nome da origem, não como Guest (credtech#188)
+crm_automatic_entries = ["cred_hub.lead_intake.automatic_entries"]
 login_signup_url = "cred_hub.signup_access.login_signup_url"
 
 doc_events = {

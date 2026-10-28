@@ -204,3 +204,30 @@ class TestLeadIntake(IntegrationTestCase):
 		self.post(source, {"lead_id": "t-1", "google_key": key, "is_test": True})
 		self.assertFalse(frappe.db.exists("CRM Deal", {"pipeline": self.pipeline}))
 		self.assertEqual(frappe.db.get_value(lead_intake.EVENT, {"source": source.name}, "status"), "Test")
+
+	def test_timeline_names_the_source_and_note_is_in_the_company_language(self):
+		# credtech#188: o lead do site aparecia como "Guest" e a anotação em inglês
+		source, key = self.source("webhook")
+		frappe.local.lang = "en"  # requisição sem idioma (Guest de um webhook)
+		try:
+			self.post(source, {"fields": {"first_name": "Lia", "email": "lia@example.com"}, "answers": {"Desafio": "x"}}, {"X-CredHub-Key": key})
+		finally:
+			frappe.local.lang = frappe.db.get_default("lang") or "pt-BR"
+		card = self.card()
+		entries = lead_intake.automatic_entries("CRM Deal", card.name)
+		self.assertEqual([e["label"] for e in entries], [source.label])
+		title = frappe.get_all("FCRM Note", {"reference_docname": card.name}, pluck="title")[0]
+		self.assertEqual(title, frappe._("Lead form answers", lang=frappe.db.get_default("lang") or "pt-BR"))
+		if card.lead:
+			self.assertEqual(lead_intake.automatic_entries("CRM Lead", card.lead)[0]["label"], source.label)
+		self.assertEqual(lead_intake.automatic_entries("Contact", "x"), [])
+
+	def test_card_source_is_the_registered_source(self):
+		# credtech#188: "Site: fale com a gente", não só "Site"
+		source, key = self.source("webhook")
+		self.post(source, {"fields": {"first_name": "Ivo", "email": "ivo@example.com"}}, {"X-CredHub-Key": key})
+		self.assertEqual(self.card().source, f"Webhook: {source.label}")
+		self.assertTrue(frappe.db.exists("CRM Lead Source", f"Webhook: {source.label}"))
+		named = frappe.get_doc(lead_intake.SOURCE, source.name)
+		named.db_set("label", "Webhook: parceiro")
+		self.assertEqual(lead_intake._lead_source(named), "Webhook: parceiro")  # sem repetir o tipo

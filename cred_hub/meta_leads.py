@@ -610,9 +610,13 @@ def _lead_doc(lead, source, form_id, form_name):
 	# Na anotação vai o texto da pergunta, não a chave técnica ("Cidade", não "cidade")
 	unmapped = {labels.get(k, k): v for k, v in answers.items() if k not in mapping}
 	captured = lead.get("created_time")
+	from cred_hub.lead_intake import card_source
+
+	# Origem do card com a plataforma e o formulário, ex.: "Facebook: Simulação de crédito" (credtech#188)
+	platform = PLATFORMS.get(lead.get("platform") or "fb", str(lead.get("platform")).title())
 	values.update(
 		{
-			"source": "Facebook",
+			"source": card_source(f"{platform}: {form_name}" if form_name else platform),
 			"facebook_lead_id": lead["id"],
 			"facebook_form_id": form_id,
 			"pipeline": source.pipeline,
@@ -641,7 +645,8 @@ def _note_answers(card, answers):
 	frappe.get_doc(
 		{
 			"doctype": "FCRM Note",
-			"title": _("Lead form answers"),
+			# Webhooks come as Guest, in the language of nobody: the note keeps the company's language
+			"title": _("Lead form answers", lang=frappe.db.get_default("lang") or "pt-BR"),
 			"content": f"<ul>{rows}</ul>",
 			"reference_doctype": "CRM Deal",
 			"reference_docname": card,

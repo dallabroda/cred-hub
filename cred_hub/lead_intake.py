@@ -372,11 +372,51 @@ def _ingest(source, values, answers, external_id):
 
 
 def _lead_source(source):
-	"""Origem do lead (CRM Lead Source) pelo tipo; cria a origem se ainda não existir."""
-	label = TYPE_LABELS[source.type]
+	"""Origem do card (CRM Lead Source) com o nome da origem cadastrada, ex.: "Site: fale com a gente"
+	(pedido do dono, credtech#188). O tipo vai na frente quando o nome não o traz."""
+	kind, label = TYPE_LABELS[source.type], (source.label or "").strip()
+	if not label:
+		return card_source(kind)
+	return card_source(label if label.lower().startswith(kind.lower()) else f"{kind}: {label}")
+
+
+def card_source(label):
+	"""Cria (se faltar) e devolve a Origem (CRM Lead Source) com esse nome."""
+	label = label[:140]
 	if not frappe.db.exists("CRM Lead Source", label):
 		frappe.get_doc({"doctype": "CRM Lead Source", "source_name": label}).insert(ignore_permissions=True)
 	return label
+
+
+def automatic_entries(doctype, name):
+	"""Hook crm_automatic_entries (credtech#188): where a card or lead came from, so its timeline shows
+	"Site: fale com a gente" or "Facebook: <form>" instead of Guest. [{label, on}], oldest first."""
+	if doctype == "CRM Deal":
+		filters = {"card_name": name}
+		lead = frappe.db.get_value("CRM Deal", name, "lead")
+		or_filters = {"card_name": name, "lead": lead} if lead else None
+	elif doctype == "CRM Lead":
+		filters, or_filters = {"lead": name}, None
+	else:
+		return []
+	events = frappe.get_all(
+		EVENT,
+		filters={"status": ("in", ("Created", "Duplicate")), **({} if or_filters else filters)},
+		or_filters=or_filters,
+		fields=["source", "form_name", "received_on"],
+		order_by="received_on asc",
+	)
+	labels = dict(
+		frappe.get_all(SOURCE, {"name": ("in", [e.source for e in events] or [""])}, ["name", "label"], as_list=True)
+	)
+	return [
+		{
+			"label": labels.get(e.source) or (f"{e.source}: {e.form_name}" if e.form_name else e.source),
+			"on": e.received_on,
+		}
+		for e in events
+		if e.received_on
+	]
 
 
 def _note_answers(card, answers):
