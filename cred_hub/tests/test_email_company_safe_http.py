@@ -24,7 +24,10 @@ class _Handler(BaseHTTPRequestHandler):
 			self.send_header(name, value)
 		self.send_header("Content-Length", str(len(body)))
 		self.end_headers()
-		self.wfile.write(body)
+		try:
+			self.wfile.write(body)
+		except (BrokenPipeError, ConnectionResetError):
+			pass  # o cliente parou de ler no limite de tamanho
 
 	def log_message(self, *args):
 		pass
