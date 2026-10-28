@@ -84,6 +84,8 @@ def use_legal_name(doc, legal_name: str | None):
 	old = doc.name
 	frappe.rename_doc("CRM Organization", old, legal_name, force=True, show_alert=False)
 	frappe.db.set_value("CRM Organization", legal_name, "organization_name", legal_name, update_modified=False)
+	# a organização do contato é texto (company_name), não vínculo: o rename não troca sozinho
+	frappe.db.set_value("Contact", {"company_name": old}, "company_name", legal_name, update_modified=False)
 	frappe.get_doc("CRM Organization", legal_name).add_comment(
 		"Comment", _("Nome trocado de {0} para a razão social da Receita.").format(old)
 	)

@@ -34,6 +34,14 @@ class TestLegalName(IntegrationTestCase):
 		self.assertEqual(frappe.db.get_value("CRM Organization", "MAGAZINE LUIZA S/A", "organization_name"), "MAGAZINE LUIZA S/A")
 		self.assertEqual(frappe.db.get_value("CRM Deal", deal.name, "organization"), "MAGAZINE LUIZA S/A")
 
+	def test_the_contacts_of_the_organization_follow_the_new_name(self):
+		org = self.organization("Contatos digitado")
+		contact = frappe.get_doc({"doctype": "Contact", "first_name": "Ana", "company_name": org.name}).insert(
+			ignore_permissions=True
+		)
+		enrich.use_legal_name(org, "CONTATOS LTDA")
+		self.assertEqual(frappe.db.get_value("Contact", contact.name, "company_name"), "CONTATOS LTDA")
+
 	def test_a_name_already_taken_keeps_what_the_user_typed(self):
 		self.organization("ACME SEGUROS LTDA")
 		org = self.organization("Acme digitado")
