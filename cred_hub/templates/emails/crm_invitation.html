@@ -1,0 +1,30 @@
+{#- Overrides the CRM invitation e-mail. Args from crm (CRM Invitation.invite_via_email): invite_link, and since
+    the HubTech e-mails also inviter, company, role, email and days (each optional, so an older crm still works). -#}
+{% from "templates/emails/hubtech_macros.html" import card with context %}
+{%- set details = [] -%}
+{%- if company %}{% set details = details + [(_("Company"), company | e)] %}{% endif -%}
+{%- if role -%}
+	{%- set role_label = {"Sales User": _("Salesperson"), "Sales Manager": _("Sales manager"), "System Manager": _("Administrator")}.get(role, _(role)) -%}
+	{%- set details = details + [(_("Your access"), role_label)] -%}
+{%- endif -%}
+{%- if email %}{% set details = details + [(_("Your login"), email | e)] %}{% endif -%}
+{%- if inviter and company -%}
+	{%- set intro = _("{0} invited you to join the {1} team on HubTech CRM.").format(inviter | e, company | e) -%}
+{%- elif inviter -%}
+	{%- set intro = _("{0} invited you to join HubTech CRM.").format(inviter | e) -%}
+{%- else -%}
+	{%- set intro = _("You were invited to join HubTech CRM.") -%}
+{%- endif -%}
+{{ card(
+	eyebrow=_("Invitation"),
+	heading=_("You were invited to {0}").format(company | e) if company else _("You were invited to HubTech CRM"),
+	greeting=_("Hi!"),
+	paragraphs=[
+		intro,
+		_("HubTech CRM is where the team organizes cards and tasks in funnels. Accept the invitation to get in: then sign in with Google, Microsoft or GitHub using this e-mail, or create a password."),
+	],
+	details=details,
+	action_text=_("Accept invitation"),
+	action_url=invite_link,
+	note=(_("The invitation is valid for {0} days.").format(days) ~ " " if days else "") ~ _("If you were not expecting it, you can ignore this e-mail."),
+) }}

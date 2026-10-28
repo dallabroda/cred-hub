@@ -17,7 +17,7 @@ def get_context(context):
 	if not signup_open():
 		frappe.local.flags.redirect_location = "/login"
 		raise frappe.Redirect
-	context.title = f"{_('Create your company')} · Cred Hub"
+	context.title = f"{_('Create your company')} · HubTech CRM"
 	context.logo = get_app_logo()
 	context.domain = _domain()
 	context.terms_url = TERMS_URL

@@ -51,6 +51,8 @@ MIN_CHARGE = 5
 UPGRADE_DUE_DAYS = 3
 # Tolerância depois de uma mensalidade vencida antes de pausar alguém
 GRACE_DAYS = 3
+# Por que alguém foi pausado (texto do e-mail aos administradores, templates/emails/hubtech_users_paused.html)
+PAUSE_REASONS = ("trial", "past_due", "upgrade_unpaid", "downgrade", "canceled")
 HIDDEN_USERS = ("Administrator", "Guest")
 CONFIRMED = ("CONFIRMED", "RECEIVED", "RECEIVED_IN_CASH")
 WEBHOOK_EVENTS = [
@@ -128,7 +130,13 @@ def user_limit(plan=None):
 
 
 def active_users(exclude=None):
-	filters = {"enabled": 1, "user_type": "System User", "name": ("not in", (*HIDDEN_USERS, exclude or ""))}
+	# Usuários técnicos das chaves da API não ocupam vaga (credtech#175)
+	filters = {
+		"enabled": 1,
+		"user_type": "System User",
+		"name": ("not in", (*HIDDEN_USERS, exclude or "")),
+		"credhub_api_key": ("is", "not set"),
+	}
 	return frappe.get_all("User", filters=filters, pluck="name", order_by="creation asc")
 
 
@@ -149,7 +157,7 @@ def _enforced():
 
 def validate_user(doc, method=None):
 	"""doc_event User.validate: criar, reativar ou promover um usuário de sistema precisa de vaga no plano."""
-	if not _enforced() or doc.name in HIDDEN_USERS or frappe.flags.credhub_billing_sync:
+	if not _enforced() or doc.name in HIDDEN_USERS or frappe.flags.credhub_billing_sync or doc.get("credhub_api_key"):
 		return
 	if not doc.enabled or doc.user_type != "System User":
 		return
@@ -281,7 +289,7 @@ def request_extra_users(quantity: int, payer=None):
 		# Sem assinatura paga não há vaga paga a preservar: volta a só os grátis
 		_forget_subscription(plan)
 		_save_plan(plan, status="Free", monthly_amount=0, invoice_url=None, next_due_date=None, grace_until=None, **_cleared())
-		pause_over_limit()
+		pause_over_limit("downgrade")
 		return {"ok": True, "invoice_url": None, "status": "Free"}
 
 	clean = None
@@ -328,7 +336,7 @@ def request_extra_users(quantity: int, payer=None):
 
 
 def _description(quantity):
-	return f"Cred Hub - {quantity} usuário(s) a mais - {frappe.local.site}"
+	return f"HubTech CRM - {quantity} usuário(s) a mais - {frappe.local.site}"
 
 
 def _cleared():
@@ -403,7 +411,7 @@ def _change_active_plan(plan, quantity):
 			"billingType": "CREDIT_CARD",
 			"value": amount,
 			"dueDate": str(due),
-			"description": f"Cred Hub - {quantity - paid} usuário(s) a mais até o próximo vencimento - {frappe.local.site}",
+			"description": f"HubTech CRM - {quantity - paid} usuário(s) a mais até o próximo vencimento - {frappe.local.site}",
 			"externalReference": frappe.local.site,
 		},
 	)
@@ -504,17 +512,53 @@ def _save_plan(plan, **values):
 # Pausar e reativar
 
 
-def pause_over_limit():
-	"""Pausa os usuários acima do limite, dos mais recentes para os mais antigos (o criador da empresa fica)."""
+def pause_over_limit(reason, pay_url=None):
+	"""Pausa os usuários acima do limite, dos mais recentes para os mais antigos (o criador da empresa fica), e avisa
+	os administradores do motivo (um de PAUSE_REASONS) e de como reativar. `pay_url`: a fatura que, paga, devolve os
+	pausados (sem ela, no atraso da mensalidade vale a fatura em aberto do plano)."""
 	users = active_users()
 	excess = len(users) - user_limit()
-	for name in reversed(users[-excess:] if excess > 0 else []):
+	paused = list(reversed(users[-excess:] if excess > 0 else []))
+	for name in paused:
 		_set_user(name, enabled=0, paused=1)
-	_expire_invitations_over_limit()
+	invitations = _expire_invitations_over_limit()
+	if paused:
+		_paused_notice(reason, paused, invitations, pay_url)
+
+
+def _paused_notice(reason, paused, invitations, pay_url=None):
+	"""E-mail aos administradores ativos quando alguém é pausado (decisão do dono, 27/10/2026)."""
+	plan = _plan()
+	admins = set(frappe.get_all("Has Role", filters={"role": "System Manager", "parenttype": "User"}, pluck="parent"))
+	recipients = [name for name in active_users() if name in admins]
+	if not recipients:
+		return
+	names = [frappe.db.get_value("User", name, "full_name") or name for name in paused]
+	# Fatura em aberto: pagar devolve os pausados (restore_paused na confirmação do Asaas)
+	if reason == "past_due":
+		pay_url = pay_url or plan.invoice_url
+	frappe.sendmail(
+		recipients=recipients,
+		subject=_("HubTech CRM: 1 user was paused")
+		if len(names) == 1
+		else _("HubTech CRM: {0} users were paused").format(len(names)),
+		template="hubtech_users_paused",
+		args={
+			"reason": reason,
+			"users": names,
+			"invitations": invitations,
+			"free": FREE_USERS,
+			"price": frappe.utils.fmt_money(PRICE_PER_USER, currency="BRL"),
+			"grace_days": GRACE_DAYS,
+			"pay_url": pay_url,
+			"plan_url": frappe.utils.get_url("/crm"),
+		},
+	)
 
 
 def _expire_invitations_over_limit():
-	"""Convites pendentes acima do limite deixam de valer (os mais recentes primeiro); o admin convida de novo depois."""
+	"""Convites pendentes acima do limite deixam de valer (os mais recentes primeiro); o admin convida de novo depois.
+	Devolve quantos deixaram de valer."""
 	enabled = set(active_users())
 	pending = [
 		invitation.name
@@ -526,6 +570,7 @@ def _expire_invitations_over_limit():
 	seats = max(user_limit() - len(enabled), 0)
 	for name in pending[seats:]:
 		frappe.db.set_value("CRM Invitation", name, "status", "Expired")
+	return len(pending[seats:])
 
 
 def restore_paused():
@@ -675,7 +720,7 @@ def apply_asaas_event(event, payment_id=None, subscription_id=None):
 			grace_until=None,
 			**_cleared(),
 		)
-		pause_over_limit()
+		pause_over_limit("canceled")
 	frappe.db.commit()
 
 
@@ -685,8 +730,9 @@ def _apply_upgrade_payment(plan, event, payment_id):
 	if not payment_id or payment_id == plan.applied_upgrade_payment_id:
 		return  # o Asaas manda CONFIRMED e depois RECEIVED para o mesmo pagamento
 	if event == "PAYMENT_OVERDUE":
-		if payment_id == plan.upgrade_payment_id and _asaas("GET", f"/payments/{payment_id}").get("status") == "OVERDUE":
-			_upgrade_overdue(plan)
+		payment = _asaas("GET", f"/payments/{payment_id}") if payment_id == plan.upgrade_payment_id else {}
+		if payment.get("status") == "OVERDUE":
+			_upgrade_overdue(plan, payment)
 			frappe.db.commit()
 		return
 	if event not in ("PAYMENT_CONFIRMED", "PAYMENT_RECEIVED"):
@@ -723,13 +769,13 @@ def _apply_upgrade_payment(plan, event, payment_id):
 	frappe.db.commit()
 
 
-def _upgrade_overdue(plan):
+def _upgrade_overdue(plan, payment):
 	"""Prazo da diferença venceu: as vagas voltam às pagas e os usuários novos (os mais recentes) são pausados.
-	A cobrança continua aberta: pagando, eles voltam."""
+	A cobrança continua aberta: pagando, eles voltam (o e-mail leva o link dela, não o da mensalidade)."""
 	if cint(plan.extra_users) <= cint(plan.upgrade_base_users):
 		return
 	_save_plan(plan, extra_users=cint(plan.upgrade_base_users))
-	pause_over_limit()
+	pause_over_limit("upgrade_unpaid", payment.get("invoiceUrl"))
 
 
 def daily_check():
@@ -751,18 +797,18 @@ def daily_check():
 			if quantity == 0:
 				values.update(status="Free", monthly_amount=0, next_due_date=None, invoice_url=None)
 			_save_plan(plan, **values)
-			pause_over_limit()
+			pause_over_limit("canceled" if quantity == 0 else "downgrade")
 	if plan.status == "Past Due" and plan.grace_until and today > getdate(plan.grace_until):
-		pause_over_limit()
+		pause_over_limit("past_due")
 	if plan.upgrade_payment_id and plan.upgrade_due_date and today > getdate(plan.upgrade_due_date):
 		payment = _asaas("GET", f"/payments/{plan.upgrade_payment_id}", allow_missing=True)
 		if payment.get("status") in CONFIRMED:
 			_apply_upgrade_payment(plan, "PAYMENT_CONFIRMED", plan.upgrade_payment_id)
 		else:
-			_upgrade_overdue(plan)
+			_upgrade_overdue(plan, payment)
 	if not in_trial(plan):
 		# Virada do teste e fim da tolerância da 1ª fatura contratada no teste; nos outros dias não há excesso
-		pause_over_limit()
+		pause_over_limit("past_due" if _trial_contract(plan) else "trial")
 	frappe.db.commit()
 
 
@@ -782,12 +828,22 @@ def _trial_reminder(plan, today):
 	admins = set(frappe.get_all("Has Role", filters={"role": "System Manager", "parenttype": "User"}, pluck="parent"))
 	recipients = [name for name in active_users() if name in admins]
 	if excess > 0 and recipients:
+		last_day = mark == "0"
 		frappe.sendmail(
 			recipients=recipients,
-			subject=_("HubTech CRM: your free trial ends on {0}").format(format_date(end)),
-			message=_(
-				"Your HubTech CRM free trial with unlimited users ends on {0}. After that, the plan includes {1} free user plus the extra users you contract (R$ {2} per user per month). {3} active users or pending invitations are over that limit: from {4}, the newest users will be paused (nothing is deleted) and the pending invitations over the limit will no longer be valid. To avoid it, contract extra users in Settings > Users and plan, or choose who stays by deactivating the users you no longer need."
-			).format(format_date(end), FREE_USERS, PRICE_PER_USER, excess, format_date(add_days(end, 1))),
+			subject=_("HubTech CRM: your free trial ends today")
+			if last_day
+			else _("HubTech CRM: your free trial ends on {0}").format(format_date(end)),
+			template="hubtech_trial_reminder",
+			args={
+				"last_day": last_day,
+				"end": format_date(end),
+				"pause_on": format_date(add_days(end, 1)),
+				"free": FREE_USERS,
+				"price": frappe.utils.fmt_money(PRICE_PER_USER, currency="BRL"),
+				"excess": excess,
+				"plan_url": frappe.utils.get_url("/crm"),
+			},
 		)
 	_save_plan(plan, trial_reminders_sent=",".join(sorted(sent | {mark})))
 

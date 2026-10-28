@@ -21,7 +21,7 @@ msgid "CRM Industry"
 msgstr "Setor"
 
 msgid "CRM Lead"
-msgstr "Lead"
+msgstr "Contato de entrada"
 
 msgid "CRM Organization"
 msgstr "Organização"
@@ -30,13 +30,13 @@ msgid "CSV imports"
 msgstr "Importações de CSV"
 
 msgid "Capture leads with a form"
-msgstr "Capturar leads com um formulário"
+msgstr "Receber contatos com um formulário"
 
 msgid "Capture my first lead"
-msgstr "Capturar meu primeiro lead"
+msgstr "Receber meu primeiro contato"
 
 msgid "Capturing Leads"
-msgstr "Captura de leads"
+msgstr "Captação"
 
 msgid "Close my first deal"
 msgstr "Fechar meu primeiro card"
@@ -54,13 +54,13 @@ msgid "Convert"
 msgstr "Converter"
 
 msgid "Convert lead to deal"
-msgstr "Converter lead em card"
+msgstr "Converter contato em card"
 
 msgid "Create Lead from Incoming Emails"
-msgstr "Criar lead a partir de e-mails recebidos"
+msgstr "Criar contato a partir de e-mails recebidos"
 
 msgid "Create your first lead"
-msgstr "Crie seu primeiro lead"
+msgstr "Crie seu primeiro card"
 
 msgid "Create your first note"
 msgstr "Crie sua primeira anotação"
@@ -96,7 +96,7 @@ msgid "Enrichment"
 msgstr "Enriquecimento"
 
 msgid "Error creating lead: {0}"
-msgstr "Erro ao criar o lead: {0}"
+msgstr "Erro ao criar o contato: {0}"
 
 msgid "Facebook/Instagram Ads"
 msgstr "Anúncios do Facebook/Instagram"
@@ -120,10 +120,10 @@ msgid "How are you managing your sales today?"
 msgstr "Como você gerencia suas vendas hoje?"
 
 msgid "How do new leads usually come to you?"
-msgstr "Como os novos leads costumam chegar até você?"
+msgstr "Como os novos contatos costumam chegar até você?"
 
 msgid "If enabled, a lead will be automatically created when an incoming email is received from an unknown contact."
-msgstr "Se ativado, um lead é criado automaticamente quando chega um e-mail de um contato desconhecido."
+msgstr "Se ativado, um contato é criado automaticamente quando chega um e-mail de alguém desconhecido."
 
 msgid "Import my existing data"
 msgstr "Importar meus dados existentes"
@@ -548,10 +548,10 @@ msgid "Too many signups with this e-mail today. Please try again tomorrow."
 msgstr "Muitos cadastros com este e-mail hoje. Tente de novo amanhã."
 
 msgid "Confirm your e-mail to create {0} on Cred Hub"
-msgstr "Confirme seu e-mail para criar {0} no Cred Hub"
+msgstr "Confirme seu e-mail para criar {0} no HubTech CRM"
 
 msgid "<p>Hi, {0}!</p><p>To create <b>{1}</b> on Cred Hub, at <b>{2}</b>, confirm your e-mail:</p><p><a href=\"{3}\">Confirm and create my company</a></p><p>The link is valid for {4} hours. If you did not ask for this, ignore this e-mail.</p><p>CredTech team</p>"
-msgstr "<p>Olá, {0}!</p><p>Para criar <b>{1}</b> no Cred Hub, em <b>{2}</b>, confirme seu e-mail:</p><p><a href=\"{3}\">Confirmar e criar minha empresa</a></p><p>O link vale por {4} horas. Se você não pediu isso, ignore este e-mail.</p><p>Equipe CredTech</p>"
+msgstr "<p>Olá, {0}!</p><p>Para criar <b>{1}</b> no HubTech CRM, em <b>{2}</b>, confirme seu e-mail:</p><p><a href=\"{3}\">Confirmar e criar minha empresa</a></p><p>O link vale por {4} horas. Se você não pediu isso, ignore este e-mail.</p><p>Equipe CredTech</p>"
 
 msgid "This link is invalid. Please sign up again."
 msgstr "Este link é inválido. Faça o cadastro de novo."
@@ -603,7 +603,7 @@ msgstr "Algo deu errado. Tente de novo em alguns minutos."
 
 #: cred_hub/www/cadastro/index.html
 msgid "Your company gets its own Cred Hub address. You will be its administrator."
-msgstr "Sua empresa ganha um endereço próprio no Cred Hub, e você será o administrador."
+msgstr "Sua empresa ganha um endereço próprio no HubTech CRM, e você será o administrador."
 
 #: cred_hub/www/cadastro/index.html
 msgid "Company name"
@@ -651,7 +651,7 @@ msgstr "O link vale por 24 horas. Não chegou? Confira a pasta de spam."
 
 #: cred_hub/www/cadastro/index.html
 msgid "Already use Cred Hub?"
-msgstr "Já usa o Cred Hub?"
+msgstr "Já usa o HubTech CRM?"
 
 #: cred_hub/www/cadastro/index.html
 msgid "Sign in"
@@ -735,7 +735,7 @@ msgstr "Falar no WhatsApp"
 
 #: cred_hub/www/cadastro/index.html
 msgid "There is no Cred Hub account with {0}."
-msgstr "Não há conta no Cred Hub com {0}."
+msgstr "Não há conta no HubTech CRM com {0}."
 
 #: cred_hub/www/cadastro/index.html
 msgid "There is no account with this e-mail in that company."
@@ -743,7 +743,7 @@ msgstr "Não há conta com esse e-mail naquela empresa."
 
 #: cred_hub/www/cadastro/index.html
 msgid "To join a company that already uses Cred Hub, ask its administrator for an invite. To create your own company, fill in the form below."
-msgstr "Para entrar numa empresa que já usa o Cred Hub, peça um convite ao administrador dela. Para criar a sua empresa, preencha o formulário abaixo."
+msgstr "Para entrar numa empresa que já usa o HubTech CRM, peça um convite ao administrador dela. Para criar a sua empresa, preencha o formulário abaixo."
 
 #: cred_hub/www/cadastro/index.html
 msgid "Send the link again"
@@ -754,13 +754,13 @@ msgid "We sent a new link. Use the newest e-mail."
 msgstr "Enviamos um link novo. Use o e-mail mais recente."
 
 msgid "This e-mail has already created a company on Cred Hub. We sent its address to this e-mail."
-msgstr "Este e-mail já criou uma empresa no Cred Hub. Enviamos o endereço dela para este e-mail."
+msgstr "Este e-mail já criou uma empresa no HubTech CRM. Enviamos o endereço dela para este e-mail."
 
 msgid "Your company on Cred Hub"
-msgstr "Sua empresa no Cred Hub"
+msgstr "Sua empresa no HubTech CRM"
 
 msgid "<p>Hi, {0}!</p><p>This e-mail has already created <b>{1}</b> on Cred Hub. Each person creates one company; you can create as many funnels as you want inside it.</p><p><a href=\"{2}\">Open {1}</a></p><p>CredTech team</p>"
-msgstr "<p>Olá, {0}!</p><p>Este e-mail já criou <b>{1}</b> no Cred Hub. Cada pessoa cria uma empresa; dentro dela você pode criar quantos funis quiser.</p><p><a href=\"{2}\">Abrir {1}</a></p><p>Equipe CredTech</p>"
+msgstr "<p>Olá, {0}!</p><p>Este e-mail já criou <b>{1}</b> no HubTech CRM. Cada pessoa cria uma empresa; dentro dela você pode criar quantos funis quiser.</p><p><a href=\"{2}\">Abrir {1}</a></p><p>Equipe CredTech</p>"
 
 msgid "The Facebook connection is not available right now."
 msgstr "A conexão com o Facebook não está disponível agora."
@@ -796,13 +796,13 @@ msgid "This form is not connected to a pipeline."
 msgstr "Este formulário não está ligado a um funil."
 
 msgid "Facebook lead"
-msgstr "Lead do Facebook"
+msgstr "Contato do Facebook"
 
 msgid "Lead form answers"
 msgstr "Respostas do formulário"
 
 msgid "The Facebook connection stopped working. Open Settings › Lead Sources and connect again."
-msgstr "A conexão com o Facebook parou de funcionar. Abra Configurações › Origens de leads e conecte de novo."
+msgstr "A conexão com o Facebook parou de funcionar. Abra Configurações › Origens e conecte de novo."
 
 msgid "Ad Origin"
 msgstr "Origem do anúncio"
@@ -865,22 +865,22 @@ msgid "The Facebook Page is not connected."
 msgstr "A página do Facebook não está conectada."
 
 msgid "Unknown lead source type."
-msgstr "Tipo de origem de leads desconhecido."
+msgstr "Tipo de origem desconhecido."
 
 msgid "Invalid JSON."
 msgstr "JSON inválido."
 
 msgid "This lead source is not connected to a pipeline."
-msgstr "Esta origem de leads não está ligada a um funil."
+msgstr "Esta origem não está ligada a um funil."
 
 msgid "Too many submissions. Please try again in a few minutes."
 msgstr "Muitos envios seguidos. Tente de novo em alguns minutos."
 
 msgid "Google Ads test lead (no card created)."
-msgstr "Lead de teste do Google Ads (nenhum card criado)."
+msgstr "Contato de teste do Google Ads (nenhum card criado)."
 
 msgid "Website lead"
-msgstr "Lead do site"
+msgstr "Contato do site"
 
 msgid "Label"
 msgstr "Nome"
@@ -892,52 +892,52 @@ msgid "Key (last 4)"
 msgstr "Chave (4 últimos)"
 
 msgid "Cred Chat did not answer. Try again in a few minutes."
-msgstr "O Cred Chat não respondeu. Tente de novo em alguns minutos."
+msgstr "O SmartChat não respondeu. Tente de novo em alguns minutos."
 
 msgid "The Cred Chat access key is not valid."
-msgstr "A chave de acesso do Cred Chat não é válida."
+msgstr "A chave de acesso do SmartChat não é válida."
 
 msgid "This access key has no access to that Cred Chat account."
-msgstr "Esta chave de acesso não tem acesso a essa conta do Cred Chat."
+msgstr "Esta chave de acesso não tem acesso a essa conta do SmartChat."
 
 msgid "Cred Chat refused the request: {0}"
-msgstr "O Cred Chat recusou o pedido: {0}"
+msgstr "O SmartChat recusou o pedido: {0}"
 
 msgid "Inform the Cred Chat account number and access key."
-msgstr "Informe o número da conta e a chave de acesso do Cred Chat."
+msgstr "Informe o número da conta e a chave de acesso do SmartChat."
 
 msgid "Lead source not found."
-msgstr "Origem de leads não encontrada."
+msgstr "Origem não encontrada."
 
 msgid "Connect the Cred Chat before turning on the welcome message."
-msgstr "Conecte o Cred Chat antes de ligar a mensagem de boas-vindas."
+msgstr "Conecte o SmartChat antes de ligar a mensagem de boas-vindas."
 
 msgid "Choose the WhatsApp number and the message template."
 msgstr "Escolha o número de WhatsApp e o modelo de mensagem."
 
 msgid "This WhatsApp number is not in the connected Cred Chat account."
-msgstr "Este número de WhatsApp não está na conta conectada do Cred Chat."
+msgstr "Este número de WhatsApp não está na conta conectada do SmartChat."
 
 msgid "This template is not approved for this WhatsApp number."
 msgstr "Este modelo não está aprovado para este número de WhatsApp."
 
 msgid "Choose a lead field for each variable of the template."
-msgstr "Escolha um campo do lead para cada variável do modelo."
+msgstr "Escolha um campo do contato para cada variável do modelo."
 
 msgid "The welcome message was turned off or the Cred Chat was disconnected."
-msgstr "A mensagem de boas-vindas foi desligada ou o Cred Chat foi desconectado."
+msgstr "A mensagem de boas-vindas foi desligada ou o SmartChat foi desconectado."
 
 msgid "The lead has no valid mobile number."
-msgstr "O lead não tem celular válido."
+msgstr "O contato não tem celular válido."
 
 msgid "The template is no longer approved for this WhatsApp number."
 msgstr "O modelo não está mais aprovado para este número de WhatsApp."
 
 msgid "The lead has no value for {0}."
-msgstr "O lead não tem {0} preenchido."
+msgstr "O contato não tem {0} preenchido."
 
 msgid "Cred Hub Chat Connection"
-msgstr "Conexão com o Cred Chat"
+msgstr "Conexão com o SmartChat"
 
 msgid "Cred Hub Welcome"
 msgstr "Mensagem de boas-vindas"
@@ -982,34 +982,34 @@ msgid "Sent"
 msgstr "Enviada"
 
 msgid "Cred Chat account of this company, used to send the welcome message to new ad and form leads (credtech#53) and to show the Cred Hub panel in conversations (credtech#45)."
-msgstr "Conta do Cred Chat desta empresa, usada para mandar a boas-vindas aos leads novos de anúncio e formulário (credtech#53) e para mostrar o painel do Cred Hub nas conversas (credtech#45)."
+msgstr "Conta do SmartChat desta empresa, usada para mandar a boas-vindas aos contatos novos de anúncio e formulário (credtech#53) e para mostrar o painel do HubTech CRM nas conversas (credtech#45)."
 
 msgid "Panel App ID"
-msgstr "ID do painel no Cred Chat"
+msgstr "ID do painel no SmartChat"
 
 msgid "Dashboard App that shows the Cred Hub panel in Cred Chat conversations."
-msgstr "Dashboard App que mostra o painel do Cred Hub nas conversas do Cred Chat."
+msgstr "Dashboard App que mostra o painel do HubTech CRM nas conversas do SmartChat."
 
 msgid "Panel Error"
 msgstr "Erro do painel"
 
 msgid "To show the Cred Hub panel in conversations, the access key must belong to a Cred Chat administrator."
-msgstr "Para mostrar o painel do Cred Hub nas conversas, a chave de acesso precisa ser de um administrador do Cred Chat."
+msgstr "Para mostrar o painel do HubTech CRM nas conversas, a chave de acesso precisa ser de um administrador do SmartChat."
 
 msgid "Connect Cred Chat first."
-msgstr "Conecte o Cred Chat primeiro."
+msgstr "Conecte o SmartChat primeiro."
 
 msgid "Sign in to Cred Hub to see this contact's cards."
-msgstr "Entre no Cred Hub para ver os cards deste contato."
+msgstr "Entre no HubTech CRM para ver os cards deste contato."
 
 msgid "Sign in to Cred Hub"
-msgstr "Entrar no Cred Hub"
+msgstr "Entrar no HubTech CRM"
 
 msgid "After signing in, come back to this conversation."
 msgstr "Depois de entrar, volte para esta conversa."
 
 msgid "Open this panel from a conversation in Cred Chat."
-msgstr "Abra este painel por uma conversa no Cred Chat."
+msgstr "Abra este painel por uma conversa no SmartChat."
 
 msgid "This conversation has no phone number or e-mail to look for."
 msgstr "Esta conversa não tem telefone nem e-mail para buscar."
@@ -1018,7 +1018,7 @@ msgid "No card for this contact."
 msgstr "Nenhum card para este contato."
 
 msgid "Open Cred Hub"
-msgstr "Abrir o Cred Hub"
+msgstr "Abrir o HubTech CRM"
 
 msgid "Open card"
 msgstr "Abrir card"
@@ -1043,10 +1043,6 @@ msgstr "Escolha entre 0 e 500 usuários extras."
 
 msgid "HubTech CRM: your free trial ends on {0}"
 msgstr "HubTech CRM: seu teste grátis termina em {0}"
-
-msgid "Your HubTech CRM free trial with unlimited users ends on {0}. After that, the plan includes {1} free user plus the extra users you contract (R$ {2} per user per month). {3} active users or pending invitations are over that limit: from {4}, the newest users will be paused (nothing is deleted) and the pending invitations over the limit will no longer be valid. To avoid it, contract extra users in Settings > Users and plan, or choose who stays by deactivating the users you no longer need."
-msgstr "Seu teste grátis do HubTech CRM, com usuários ilimitados, termina em {0}. Depois disso, o plano inclui {1} usuário grátis mais os usuários extras que você contratar (R$ {2} por usuário por mês). Hoje há {3} usuário(s) ativo(s) ou convite(s) pendente(s) acima desse limite: a partir de {4}, os usuários mais recentes serão pausados (nada é apagado) e os convites pendentes acima do limite deixarão de valer. Para evitar isso, contrate usuários extras em Configurações > Usuários e plano, ou escolha quem fica desativando os usuários de que você não precisa mais."
-
 
 msgid "Billing is not available right now. Please try again later."
 msgstr "A cobrança não está disponível agora. Tente de novo mais tarde."
@@ -1074,3 +1070,482 @@ msgstr "A partir de"
 
 msgid "Grace Until"
 msgstr "Tolerância até"
+
+msgid "This API key is not allowed to do that."
+msgstr "Esta chave da API não tem permissão para isso."
+
+msgid "Too many requests for this API key. Wait a minute and try again."
+msgstr "Muitas chamadas com esta chave da API. Espere um minuto e tente de novo."
+
+msgid "API: {0}"
+msgstr "API: {0}"
+
+msgid "Pipeline {0} does not exist."
+msgstr "O funil {0} não existe."
+
+msgid "Unknown scope: {0}"
+msgstr "Permissão desconhecida: {0}"
+
+msgid "Choose at least one permission for the key."
+msgstr "Escolha pelo menos uma permissão para a chave."
+
+msgid "Choose at least one pipeline for the cards."
+msgstr "Escolha pelo menos um funil para os cards."
+
+msgid "Give the key a name."
+msgstr "Dê um nome à chave."
+
+msgid "This company already has {0} active API keys. Revoke one to create another."
+msgstr "Esta empresa já tem {0} chaves da API ativas. Revogue uma para criar outra."
+
+msgid "This key was revoked."
+msgstr "Esta chave foi revogada."
+
+msgid "{0} is not a valid IP address or range."
+msgstr "{0} não é um endereço IP ou faixa válida."
+
+msgid "Only an API key can create its technical user."
+msgstr "Só uma chave da API pode criar o seu usuário técnico."
+
+msgid "The technical user of an API key cannot become a regular user. Revoke the key instead."
+msgstr "O usuário técnico de uma chave da API não pode virar usuário comum. Revogue a chave."
+
+msgid "The technical user of an API key cannot get other roles: {0}"
+msgstr "O usuário técnico de uma chave da API não pode receber outros papéis: {0}"
+
+msgid "This user belongs to an API key and cannot sign in."
+msgstr "Este usuário pertence a uma chave da API e não pode entrar."
+
+msgid "Cards: read"
+msgstr "Cards: ler"
+
+msgid "Cards: write"
+msgstr "Cards: escrever"
+
+msgid "Contacts: read"
+msgstr "Contatos: ler"
+
+msgid "Contacts: write"
+msgstr "Contatos: escrever"
+
+msgid "Organizations: read"
+msgstr "Empresas: ler"
+
+msgid "Organizations: write"
+msgstr "Empresas: escrever"
+
+msgid "Incoming contacts: create"
+msgstr "Contatos de entrada: criar"
+
+msgid "Pipelines: read"
+msgstr "Funis: ler"
+
+msgid "Fields and rules (admin)"
+msgstr "Campos e regras das etapas (admin)"
+
+msgid "Cred Hub API Key"
+msgstr "Chave da API"
+
+msgid "Cred Hub API Log"
+msgstr "Registro da API"
+
+msgid "Key ID"
+msgstr "ID da chave"
+
+msgid "Secret (last 4)"
+msgstr "Segredo (últimos 4)"
+
+msgid "Technical User"
+msgstr "Usuário técnico"
+
+msgid "Allowed IPs"
+msgstr "IPs permitidos"
+
+msgid "Optional: one IP address or range per line (e.g. 203.0.113.10 or 203.0.113.0/24)."
+msgstr "Opcional: um endereço IP ou faixa por linha (ex.: 203.0.113.10 ou 203.0.113.0/24)."
+
+msgid "Expires On"
+msgstr "Vale até"
+
+msgid "Last Used On"
+msgstr "Último uso"
+
+msgid "Last Used IP"
+msgstr "IP do último uso"
+
+msgid "Revoked"
+msgstr "Revogada"
+
+msgid "Called On"
+msgstr "Data da chamada"
+
+msgid "Route"
+msgstr "Rota"
+
+msgid "Status Code"
+msgstr "Código da resposta"
+
+msgid "API Key"
+msgstr "Chave da API"
+
+msgid "Old API keys stopped working on {0}. Ask your admin for a key in Settings > Integrations > API."
+msgstr "As chaves antigas da API pararam em {0}. Peça ao administrador uma chave em Configurações > Integrações > API."
+
+msgid "Create API keys in Settings > Integrations > API."
+msgstr "Crie as chaves da API em Configurações > Integrações > API."
+
+# E-mails do HubTech CRM (cred_hub/templates/emails)
+msgid "HubTech CRM is a CredTech Digital product."
+msgstr "O HubTech CRM é um produto da CredTech Digital."
+
+msgid "Questions?"
+msgstr "Dúvidas?"
+
+msgid "If the button does not work, copy and paste this link in your browser:"
+msgstr "Se o botão não funcionar, copie e cole este link no navegador:"
+
+msgid "Welcome"
+msgstr "Boas-vindas"
+
+msgid "Welcome to HubTech CRM"
+msgstr "Boas-vindas ao HubTech CRM"
+
+msgid "Your HubTech CRM account is ready"
+msgstr "Sua conta no HubTech CRM está pronta"
+
+msgid "Hi, {0}!"
+msgstr "Olá, {0}!"
+
+msgid "Hi!"
+msgstr "Olá!"
+
+msgid "An account was created for you on HubTech CRM, where your team organizes cards and tasks in funnels."
+msgstr "Criamos uma conta para você no HubTech CRM, onde a sua equipe organiza cards e tarefas em funis."
+
+msgid "To sign in, first create your password."
+msgstr "Para entrar, crie primeiro a sua senha."
+
+msgid "Your login"
+msgstr "Seu login"
+
+msgid "Create my password"
+msgstr "Criar minha senha"
+
+msgid "If you were not expecting this account, you can ignore this e-mail."
+msgstr "Se você não esperava esta conta, pode ignorar este e-mail."
+
+msgid "Password Reset"
+msgstr "HubTech CRM: redefina sua senha"
+
+msgid "Password reset"
+msgstr "Redefinição de senha"
+
+msgid "Reset your password"
+msgstr "Redefina sua senha"
+
+msgid "We received a request to change the password of your HubTech CRM account ({0})."
+msgstr "Recebemos um pedido para trocar a senha da sua conta no HubTech CRM ({0})."
+
+msgid "Create a new password"
+msgstr "Criar nova senha"
+
+msgid "The link is valid for {0} hour(s)."
+msgstr "O link vale por {0} hora(s)."
+
+msgid "The link is valid for {0} minutes."
+msgstr "O link vale por {0} minutos."
+
+msgid "If it was not you, ignore this e-mail: your password only changes after you open the link and create a new one."
+msgstr "Se não foi você, ignore este e-mail: sua senha só muda depois que você abrir o link e criar uma nova."
+
+msgid "Security Alert: Your password has been changed."
+msgstr "HubTech CRM: sua senha foi alterada"
+
+msgid "Your password has been changed and you might have been logged out of all systems.<br>Please contact the Administrator for further assistance."
+msgstr "<h1 style=\"margin: 0 0 12px; font-size: 30px; line-height: 36px; font-weight: 700; color: #0F172A;\">Sua senha foi alterada</h1><p style=\"margin: 0 0 10px; font-size: 14px; line-height: 21px; color: #475569;\">A senha da sua conta no HubTech CRM acabou de ser alterada, e as sessões abertas podem ter sido encerradas.</p><p style=\"margin: 0 0 10px; font-size: 14px; line-height: 21px; color: #475569;\">Se foi você, não precisa fazer nada. Se não foi, peça ao administrador da sua empresa para bloquear o acesso e redefina sua senha, ou fale com <a href=\"mailto:contato@credtechdigital.com.br\" style=\"color: #6938EF; font-weight: 600; text-decoration: none;\">contato@credtechdigital.com.br</a>.</p>"
+
+msgid "Invitation"
+msgstr "Convite"
+
+msgid "You were invited to {0}"
+msgstr "Você foi convidado para {0}"
+
+msgid "You were invited to HubTech CRM"
+msgstr "Você foi convidado para o HubTech CRM"
+
+msgid "{0} invited you to join the {1} team on HubTech CRM."
+msgstr "{0} convidou você para a equipe {1} no HubTech CRM."
+
+msgid "{0} invited you to join HubTech CRM."
+msgstr "{0} convidou você para o HubTech CRM."
+
+msgid "You were invited to join HubTech CRM."
+msgstr "Você foi convidado para o HubTech CRM."
+
+msgid "HubTech CRM is where the team organizes cards and tasks in funnels. Accept the invitation to get in: then sign in with Google, Microsoft or GitHub using this e-mail, or create a password."
+msgstr "O HubTech CRM é onde a equipe organiza cards e tarefas em funis. Aceite o convite para entrar: depois, use Google, Microsoft ou GitHub com este e-mail, ou crie uma senha."
+
+msgid "Company"
+msgstr "Empresa"
+
+msgid "Your access"
+msgstr "Seu acesso"
+
+msgid "Salesperson"
+msgstr "Vendedor"
+
+msgid "Sales manager"
+msgstr "Gestor de vendas"
+
+msgid "Administrator"
+msgstr "Administrador"
+
+msgid "Accept invitation"
+msgstr "Aceitar convite"
+
+msgid "The invitation is valid for {0} days."
+msgstr "O convite vale por {0} dias."
+
+msgid "If you were not expecting it, you can ignore this e-mail."
+msgstr "Se você não esperava este convite, pode ignorar este e-mail."
+
+msgid "Your HubTech CRM account is active. It is where your team organizes cards and tasks in funnels."
+msgstr "Sua conta no HubTech CRM está ativa. É onde a sua equipe organiza cards e tarefas em funis."
+
+msgid "Sign in with Google, Microsoft or GitHub using this e-mail, or with your password."
+msgstr "Entre com Google, Microsoft ou GitHub usando este e-mail, ou com a sua senha."
+
+msgid "If you cannot see your company's data yet, ask your company's administrator for access."
+msgstr "Se ainda não aparecerem os dados da sua empresa, peça acesso ao administrador da sua empresa."
+
+msgid "Open HubTech CRM"
+msgstr "Abrir o HubTech CRM"
+
+msgid "HubTech CRM: confirm your e-mail to create {0}"
+msgstr "HubTech CRM: confirme seu e-mail para criar {0}"
+
+msgid "Confirm your e-mail to create {0}"
+msgstr "Confirme seu e-mail para criar {0}"
+
+msgid "We received a request to create {0} on HubTech CRM, where your team organizes cards and tasks in funnels."
+msgstr "Recebemos um pedido para criar {0} no HubTech CRM, onde a sua equipe organiza cards e tarefas em funis."
+
+msgid "Confirm your e-mail and we create the company: it takes from 30 seconds to 2 minutes."
+msgstr "Confirme seu e-mail e nós criamos a empresa: leva de 30 segundos a 2 minutos."
+
+msgid "Free trial"
+msgstr "Teste grátis"
+
+msgid "14 days with unlimited users"
+msgstr "14 dias com usuários ilimitados"
+
+msgid "Confirm and create my company"
+msgstr "Confirmar e criar minha empresa"
+
+msgid "The link is valid for {0} hours."
+msgstr "O link vale por {0} horas."
+
+msgid "If you did not ask for this, ignore this e-mail: nothing is created."
+msgstr "Se não foi você que pediu, ignore este e-mail: nada é criado."
+
+msgid "HubTech CRM: your company {0}"
+msgstr "HubTech CRM: sua empresa {0}"
+
+msgid "Your company"
+msgstr "Sua empresa"
+
+msgid "You already have a company on HubTech CRM"
+msgstr "Você já tem uma empresa no HubTech CRM"
+
+msgid "This e-mail already created {0} on HubTech CRM. Each person creates one company, and inside it you can create as many funnels as you want."
+msgstr "Este e-mail já criou {0} no HubTech CRM. Cada pessoa cria uma empresa e, dentro dela, quantos funis quiser."
+
+msgid "Open {0}"
+msgstr "Abrir {0}"
+
+msgid "If you did not ask for this, ignore this e-mail."
+msgstr "Se não foi você que pediu, ignore este e-mail."
+
+msgid "This e-mail has already created a company on HubTech CRM. We sent its address to this e-mail."
+msgstr "Este e-mail já criou uma empresa no HubTech CRM. Enviamos o endereço dela para este e-mail."
+
+msgid "HubTech CRM: creating {0} failed"
+msgstr "HubTech CRM: o cadastro de {0} falhou"
+
+msgid "Signup failed"
+msgstr "Cadastro falhou"
+
+msgid "Creating {0} failed"
+msgstr "O cadastro de {0} falhou"
+
+msgid "The company was not created. See the error in the signup record and try again with retry_provision."
+msgstr "A empresa não foi criada. Veja o erro no registro do cadastro e tente de novo com retry_provision."
+
+msgid "E-mail"
+msgstr "E-mail"
+
+msgid "Open the signup record"
+msgstr "Abrir o registro do cadastro"
+
+msgid "HubTech CRM: your free trial ends today"
+msgstr "HubTech CRM: seu teste grátis termina hoje"
+
+msgid "Your free trial ends today"
+msgstr "Seu teste grátis termina hoje"
+
+msgid "Your free trial ends on {0}"
+msgstr "Seu teste grátis termina em {0}"
+
+msgid "Your HubTech CRM free trial with unlimited users ends on {0}. After that, the plan includes {1} free user plus the extra users you contract, at {2} per user per month."
+msgstr "Seu teste grátis do HubTech CRM, com usuários ilimitados, termina em {0}. Depois disso, o plano inclui {1} usuário grátis mais os usuários extras que você contratar, a {2} por usuário por mês."
+
+msgid "Today {0} active users or pending invitations are over that limit. From {1}, the newest users are paused (nothing is deleted) and pending invitations over the limit are no longer valid."
+msgstr "Hoje, {0} usuário(s) ativo(s) ou convite(s) pendente(s) passam desse limite. A partir de {1}, os usuários mais recentes são pausados (nada é apagado) e os convites pendentes acima do limite deixam de valer."
+
+msgid "To avoid it, contract extra users in Settings > Users and plan, or choose who stays by deactivating the users you no longer need."
+msgstr "Para evitar isso, contrate usuários extras em Configurações > Usuários e plano, ou escolha quem fica desativando os usuários de que você não precisa mais."
+
+msgid "Last day of the trial"
+msgstr "Último dia do teste"
+
+msgid "Free users after the trial"
+msgstr "Usuários grátis depois do teste"
+
+msgid "Over the limit today"
+msgstr "Acima do limite hoje"
+
+msgid "See users and plan"
+msgstr "Ver usuários e plano"
+
+msgid "New contact"
+msgstr "Novo contato"
+
+msgid "Returning contact"
+msgstr "Contato que voltou"
+
+msgid "A contact arrived from the site form {0} and is already in the funnel."
+msgstr "Chegou um contato pelo formulário do site {0}, e ele já está no funil."
+
+msgid "Someone who already has an open card sent the form {0} again: the answers went to the card."
+msgstr "Alguém que já tem card aberto enviou de novo o formulário {0}: as respostas foram para o card."
+
+msgid "Phone"
+msgstr "Telefone"
+
+msgid "Job title"
+msgstr "Cargo"
+
+msgid "Owner"
+msgstr "Responsável"
+
+msgid "Open the card on HubTech CRM"
+msgstr "Abrir o card no HubTech CRM"
+
+msgid "A contact arrived from the site and is already in the funnel."
+msgstr "Chegou um contato pelo site, e ele já está no funil."
+
+msgid "Someone who already has an open card sent a site form again: the answers went to the card."
+msgstr "Alguém que já tem card aberto enviou de novo um formulário do site: as respostas foram para o card."
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "HubTech CRM: 1 user was paused"
+msgstr "HubTech CRM: 1 usuário foi pausado"
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "HubTech CRM: {0} users were paused"
+msgstr "HubTech CRM: {0} usuários foram pausados"
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "1 user was paused"
+msgstr "1 usuário foi pausado"
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "{0} users were paused"
+msgstr "{0} usuários foram pausados"
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "Users and plan"
+msgstr "Usuários e plano"
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "Paused"
+msgstr "Pausados"
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "Pay the invoice"
+msgstr "Pagar a fatura"
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "The HubTech CRM free trial with unlimited users ended. The plan now includes {0} free user plus the extra users you contract, at {1} per user per month."
+msgstr "O teste grátis do HubTech CRM, com usuários ilimitados, acabou. Agora o plano inclui {0} usuário grátis mais os usuários extras que você contratar, a {1} por usuário por mês."
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "The monthly invoice is still unpaid after {0} days of tolerance, so the plan went back to {1} free user."
+msgstr "A mensalidade continua em aberto depois de {0} dias de tolerância, então o plano voltou para {1} usuário grátis."
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "The charge for the users you added was not paid by its due date, so the plan went back to the users already paid."
+msgstr "A cobrança dos usuários que você adicionou não foi paga até o vencimento, então o plano voltou para os usuários já pagos."
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "The plan now has fewer users, as you scheduled."
+msgstr "O plano agora tem menos usuários, como você agendou."
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "The subscription was canceled. The plan now includes {0} free user."
+msgstr "A assinatura foi cancelada. Agora o plano inclui {0} usuário grátis."
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "Pay the open invoice: as soon as the payment is confirmed, they come back by themselves."
+msgstr "Pague a fatura em aberto: assim que o pagamento for confirmado, eles voltam sozinhos."
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "To bring them back, contract extra users in Settings > Users and plan: as soon as the payment is confirmed, they come back by themselves, oldest first. Or choose who stays: deactivate a user you no longer need and reactivate the paused one."
+msgstr "Para trazê-los de volta, contrate usuários extras em Configurações > Usuários e plano: assim que o pagamento for confirmado, eles voltam sozinhos, dos mais antigos para os mais novos. Ou escolha quem fica: desative um usuário de que não precisa mais e reative o pausado."
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "These users can no longer sign in. Nothing was deleted: their cards, contacts and history stay."
+msgstr "Esses usuários não conseguem mais entrar. Nada foi apagado: os cards, contatos e histórico deles continuam."
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "Pending invitations over the limit are no longer valid: {0}. Invite again when there is a free seat."
+msgstr "Convites pendentes acima do limite deixaram de valer: {0}. Convide de novo quando houver vaga."
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "Pay the open invoice: as soon as the payment is confirmed, this user comes back by itself."
+msgstr "Pague a fatura em aberto: assim que o pagamento for confirmado, o usuário volta sozinho."
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "To bring this user back, contract an extra user in Settings > Users and plan: as soon as the payment is confirmed, the user comes back by itself. Or choose who stays: deactivate a user you no longer need and reactivate the paused one."
+msgstr "Para trazer o usuário de volta, contrate um usuário extra em Configurações > Usuários e plano: assim que o pagamento for confirmado, ele volta sozinho. Ou escolha quem fica: desative um usuário de que não precisa mais e reative o pausado."
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "This user can no longer sign in. Nothing was deleted: their cards, contacts and history stay."
+msgstr "Esse usuário não consegue mais entrar. Nada foi apagado: os cards, contatos e histórico dele continuam."
+
+msgid "Your e-mail ({0}) is not a user of the company's SmartChat. Ask an admin to invite you there."
+msgstr "Seu e-mail ({0}) não é usuário do SmartChat da empresa. Peça a um admin que convide você lá."
+
+msgid "This contact has no valid mobile number."
+msgstr "Este contato não tem celular válido."
+
+msgid "Connect the company's SmartChat first (Settings › Integrations › Lead Sources)."
+msgstr "Conecte primeiro o SmartChat da empresa (Configurações › Integrações › Origens)."
+
+msgid "You are not a member of this SmartChat inbox."
+msgstr "Você não é membro desta caixa do SmartChat."
+
+msgid "Write the message."
+msgstr "Escreva a mensagem."
+
+msgid "WhatsApp sent to {0} through the SmartChat inbox {1}:"
+msgstr "WhatsApp enviado para {0} pela caixa {1} do SmartChat:"
+
+msgid "Open the conversation in SmartChat"
+msgstr "Abrir a conversa no SmartChat"
+
+msgid "Outside the 24-hour window, WhatsApp only accepts a template approved by Meta. Choose one."
+msgstr "Fora da janela de 24 horas, o WhatsApp só aceita um modelo aprovado pela Meta. Escolha um."
+
+msgid "Fill in every field of the template."
+msgstr "Preencha todos os campos do modelo."

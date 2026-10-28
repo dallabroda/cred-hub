@@ -26,7 +26,7 @@ class FakeChat:
 			return {"payload": []}
 		if path.endswith("/dashboard_apps"):
 			return self.apps if method == "GET" else {"id": 42}
-		if method == "DELETE":
+		if method in ("DELETE", "PATCH"):
 			return {}
 		raise AssertionError(path)
 
@@ -110,11 +110,19 @@ class TestChatPanel(IntegrationTestCase):
 		self.assertIn(("DELETE", "/api/v1/accounts/3/dashboard_apps/42", None), chat.calls)
 
 	def test_existing_panel_is_reused_and_agent_key_only_warns(self):
-		chat = FakeChat(apps=[{"id": 9, "content": [{"type": "frame", "url": chat_panel.panel_url()}]}])
+		app = {"id": 9, "title": "Cred Hub", "content": [{"type": "frame", "url": chat_panel.panel_url()}]}
+		chat = FakeChat(apps=[app])
 		with patch.object(welcome, "_call", chat):
 			welcome.connect_chat(3, "chave")
 		self.assertEqual(frappe.get_single(welcome.CONNECTION).panel_app_id, 9)
 		self.assertFalse(any(c[0] == "POST" for c in chat.calls))
+		# aba com o nome antigo ganha o nome novo; com o nome certo, nada muda
+		rename = ("PATCH", "/api/v1/accounts/3/dashboard_apps/9", {"dashboard_app": {"title": "HubTech CRM"}})
+		self.assertIn(rename, chat.calls)
+		chat = FakeChat(apps=[{**app, "title": chat_panel.TITLE}])
+		with patch.object(welcome, "_call", chat):
+			welcome.connect_chat(3, "chave")
+		self.assertFalse(any(c[0] == "PATCH" for c in chat.calls))
 		with patch.object(welcome, "_call", FakeChat(role="agent")):
 			result = welcome.connect_chat(3, "chave")
 		self.assertTrue(result["connected"])

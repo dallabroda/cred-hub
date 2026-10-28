@@ -5,6 +5,7 @@ import json
 import frappe
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
+from cred_hub.api_keys import install as install_api_keys
 from cred_hub.chat_panel import install_pending as install_chat_panel
 from cred_hub.cnpj.fields import CHECKED_DATE_FIELDS, DETAILS_ADDRESS_FIELDS, DOCTYPES, SIDE_PANEL_FIELDS, custom_fields
 from cred_hub.cnpj.sectors import SECTORS
@@ -73,6 +74,8 @@ def after_install():
 		},
 		update=True,
 	)
+	# Chaves da API (credtech#175): marca do usuário técnico, que não ocupa vaga
+	install_api_keys()
 	create_custom_fields({dt: custom_fields(insert_after="facebook") + _missing(dt, company_custom_fields(insert_after="cnpj_checked_on")) for dt in DOCTYPES}, update=True)
 	migrate_checked_dates()
 	add_industries()

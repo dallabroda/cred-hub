@@ -1,0 +1,178 @@
+{
+ "actions": [],
+ "creation": "2026-10-27 22:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "links": [],
+ "modified": "2026-10-27 22:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Cred Hub",
+ "owner": "Administrator",
+ "states": [],
+ "autoname": "hash",
+ "description": "API key of the HubTech, created by the admin. Only the hash of the secret is stored (credtech#175).",
+ "field_order": [
+  "label",
+  "status",
+  "key_id",
+  "secret_hash",
+  "secret_hint",
+  "technical_user",
+  "scopes_section",
+  "cards_read",
+  "cards_write",
+  "contacts_read",
+  "contacts_write",
+  "organizations_read",
+  "organizations_write",
+  "leads_write",
+  "pipelines_read",
+  "fields_admin",
+  "pipelines",
+  "security_section",
+  "allowed_ips",
+  "expires_on",
+  "last_used_on",
+  "last_used_ip"
+ ],
+ "fields": [
+  {
+   "fieldname": "label",
+   "fieldtype": "Data",
+   "label": "Name",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Active\nRevoked",
+   "default": "Active",
+   "in_list_view": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "key_id",
+   "fieldtype": "Data",
+   "label": "Key ID",
+   "read_only": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "secret_hash",
+   "fieldtype": "Data",
+   "label": "Secret Hash",
+   "read_only": 1,
+   "hidden": 1
+  },
+  {
+   "fieldname": "secret_hint",
+   "fieldtype": "Data",
+   "label": "Secret (last 4)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "technical_user",
+   "fieldtype": "Link",
+   "label": "Technical User",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "scopes_section",
+   "fieldtype": "Section Break",
+   "label": "Permissions"
+  },
+  {
+   "fieldname": "cards_read",
+   "fieldtype": "Check",
+   "label": "Cards: read"
+  },
+  {
+   "fieldname": "cards_write",
+   "fieldtype": "Check",
+   "label": "Cards: write"
+  },
+  {
+   "fieldname": "contacts_read",
+   "fieldtype": "Check",
+   "label": "Contacts: read"
+  },
+  {
+   "fieldname": "contacts_write",
+   "fieldtype": "Check",
+   "label": "Contacts: write"
+  },
+  {
+   "fieldname": "organizations_read",
+   "fieldtype": "Check",
+   "label": "Organizations: read"
+  },
+  {
+   "fieldname": "organizations_write",
+   "fieldtype": "Check",
+   "label": "Organizations: write"
+  },
+  {
+   "fieldname": "leads_write",
+   "fieldtype": "Check",
+   "label": "Incoming contacts: create"
+  },
+  {
+   "fieldname": "pipelines_read",
+   "fieldtype": "Check",
+   "label": "Pipelines: read"
+  },
+  {
+   "fieldname": "fields_admin",
+   "fieldtype": "Check",
+   "label": "Fields and rules (admin)"
+  },
+  {
+   "fieldname": "pipelines",
+   "fieldtype": "Table",
+   "label": "Pipelines",
+   "options": "Cred Hub API Key Pipeline"
+  },
+  {
+   "fieldname": "security_section",
+   "fieldtype": "Section Break",
+   "label": "Security"
+  },
+  {
+   "fieldname": "allowed_ips",
+   "fieldtype": "Small Text",
+   "label": "Allowed IPs",
+   "description": "Optional: one IP address or range per line (e.g. 203.0.113.10 or 203.0.113.0/24)."
+  },
+  {
+   "fieldname": "expires_on",
+   "fieldtype": "Date",
+   "label": "Expires On"
+  },
+  {
+   "fieldname": "last_used_on",
+   "fieldtype": "Datetime",
+   "label": "Last Used On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_used_ip",
+   "fieldtype": "Data",
+   "label": "Last Used IP",
+   "read_only": 1
+  }
+ ],
+ "name": "Cred Hub API Key",
+ "track_changes": 1,
+ "permissions": [
+  {
+   "read": 1,
+   "role": "System Manager"
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "title_field": "label"
+}
