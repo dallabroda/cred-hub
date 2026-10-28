@@ -1522,3 +1522,30 @@ msgstr "Para trazer o usuário de volta, contrate um usuário extra em Configura
 #: cred_hub/templates/emails/hubtech_users_paused.html
 msgid "This user can no longer sign in. Nothing was deleted: their cards, contacts and history stay."
 msgstr "Esse usuário não consegue mais entrar. Nada foi apagado: os cards, contatos e histórico dele continuam."
+
+msgid "Your e-mail ({0}) is not a user of the company's SmartChat. Ask an admin to invite you there."
+msgstr "Seu e-mail ({0}) não é usuário do SmartChat da empresa. Peça a um admin que convide você lá."
+
+msgid "This contact has no valid mobile number."
+msgstr "Este contato não tem celular válido."
+
+msgid "Connect the company's SmartChat first (Settings › Integrations › Lead Sources)."
+msgstr "Conecte primeiro o SmartChat da empresa (Configurações › Integrações › Origens)."
+
+msgid "You are not a member of this SmartChat inbox."
+msgstr "Você não é membro desta caixa do SmartChat."
+
+msgid "Write the message."
+msgstr "Escreva a mensagem."
+
+msgid "WhatsApp sent to {0} through the SmartChat inbox {1}:"
+msgstr "WhatsApp enviado para {0} pela caixa {1} do SmartChat:"
+
+msgid "Open the conversation in SmartChat"
+msgstr "Abrir a conversa no SmartChat"
+
+msgid "Outside the 24-hour window, WhatsApp only accepts a template approved by Meta. Choose one."
+msgstr "Fora da janela de 24 horas, o WhatsApp só aceita um modelo aprovado pela Meta. Escolha um."
+
+msgid "Fill in every field of the template."
+msgstr "Preencha todos os campos do modelo."
