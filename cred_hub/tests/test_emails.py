@@ -7,7 +7,7 @@ from frappe.email.email_body import get_formatted_html
 from frappe.tests import IntegrationTestCase
 from frappe.utils.jinja import get_email_from_template
 
-from cred_hub import site_setup
+from cred_hub import billing, site_setup
 
 LOGO = "https://chat.credtechdigital.com.br/brand-assets/credchat-email-logo.png"
 
@@ -81,6 +81,24 @@ class TestEmails(IntegrationTestCase):
 		)
 		self.assert_branded(html, "https://acme.test/crm")
 		self.assertIn("R$ 60,00", html)
+
+	def test_users_paused_for_each_reason(self):
+		args = {
+			"users": ["Bruno <b>", "Carla"],
+			"invitations": 0,
+			"free": 1,
+			"price": "R$ 60,00",
+			"grace_days": 3,
+			"pay_url": None,
+			"plan_url": "https://acme.test/crm",
+		}
+		for reason in billing.PAUSE_REASONS:
+			html = render("hubtech_users_paused", {**args, "reason": reason})
+			self.assert_branded(html, "https://acme.test/crm")
+			self.assertIn("Bruno &lt;b&gt;, Carla", html)  # nome vem do usuário: escapado
+		paid = render("hubtech_users_paused", {**args, "reason": "past_due", "invitations": 2, "pay_url": "https://asaas.test/i/1"})
+		self.assert_branded(paid, "https://asaas.test/i/1")
+		self.assertIn("<b>2</b>", paid)
 
 	def test_signup_emails(self):
 		link = "https://hub.credtechdigital.com.br/cadastro/confirmar?token=t"

@@ -1319,8 +1319,73 @@ msgstr "Responsável"
 
 msgid "Open the card on HubTech CRM"
 msgstr "Abrir o card no HubTech CRM"
+
 msgid "A contact arrived from the site and is already in the funnel."
 msgstr "Chegou um contato pelo site, e ele já está no funil."
 
 msgid "Someone who already has an open card sent a site form again: the answers went to the card."
 msgstr "Alguém que já tem card aberto enviou de novo um formulário do site: as respostas foram para o card."
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "HubTech CRM: 1 user was paused"
+msgstr "HubTech CRM: 1 usuário foi pausado"
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "HubTech CRM: {0} users were paused"
+msgstr "HubTech CRM: {0} usuários foram pausados"
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "1 user was paused"
+msgstr "1 usuário foi pausado"
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "{0} users were paused"
+msgstr "{0} usuários foram pausados"
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "Users and plan"
+msgstr "Usuários e plano"
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "Paused"
+msgstr "Pausados"
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "Pay the invoice"
+msgstr "Pagar a fatura"
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "The HubTech CRM free trial with unlimited users ended. The plan now includes {0} free user plus the extra users you contract, at {1} per user per month."
+msgstr "O teste grátis do HubTech CRM, com usuários ilimitados, acabou. Agora o plano inclui {0} usuário grátis mais os usuários extras que você contratar, a {1} por usuário por mês."
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "The monthly invoice is still unpaid after {0} days of tolerance, so the plan went back to {1} free user."
+msgstr "A mensalidade continua em aberto depois de {0} dias de tolerância, então o plano voltou para {1} usuário grátis."
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "The charge for the users you added was not paid by its due date, so the plan went back to the users already paid."
+msgstr "A cobrança dos usuários que você adicionou não foi paga até o vencimento, então o plano voltou para os usuários já pagos."
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "The plan now has fewer users, as you scheduled."
+msgstr "O plano agora tem menos usuários, como você agendou."
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "The subscription was canceled. The plan now includes {0} free user."
+msgstr "A assinatura foi cancelada. Agora o plano inclui {0} usuário grátis."
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "Pay the open invoice: as soon as the payment is confirmed, they come back by themselves."
+msgstr "Pague a fatura em aberto: assim que o pagamento for confirmado, eles voltam sozinhos."
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "To bring them back, contract extra users in Settings > Users and plan: as soon as the payment is confirmed, they come back by themselves, oldest first. Or choose who stays: deactivate a user you no longer need and reactivate the paused one."
+msgstr "Para trazê-los de volta, contrate usuários extras em Configurações > Usuários e plano: assim que o pagamento for confirmado, eles voltam sozinhos, dos mais antigos para os mais novos. Ou escolha quem fica: desative um usuário de que não precisa mais e reative o pausado."
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "These users can no longer sign in. Nothing was deleted: their cards, contacts and history stay."
+msgstr "Esses usuários não conseguem mais entrar. Nada foi apagado: os cards, contatos e histórico deles continuam."
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "Pending invitations over the limit are no longer valid: {0}. Invite again when there is a free seat."
+msgstr "Convites pendentes acima do limite deixaram de valer: {0}. Convide de novo quando houver vaga."
