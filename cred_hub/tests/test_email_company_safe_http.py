@@ -3,6 +3,7 @@ do site, e o DNS é simulado. Roda no bench ou com `python -m unittest cred_hub.
 
 import socket
 import threading
+import time
 import unittest
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import ClassVar
@@ -77,11 +78,13 @@ class TestSafeHttp(unittest.TestCase):
 		for ip in (
 			"127.0.0.1", "10.0.0.1", "172.16.5.4", "192.168.1.1", "169.254.169.254", "100.64.0.1", "0.0.0.0",
 			"255.255.255.255", "224.0.0.1", "::1", "fc00::1", "fe80::1", "::ffff:127.0.0.1", "::ffff:169.254.169.254",
+			# IPv4 interno dentro de IPv6: NAT64, 6to4
+			"64:ff9b::7f00:1", "64:ff9b::a9fe:a9fe", "2002:7f00:1::", "2002:a00:1::",
 			"not-an-ip",
 		):
 			with self.subTest(ip=ip):
 				self.assertFalse(safe_http.is_public_ip(ip))
-		for ip in ("8.8.8.8", "200.160.2.3", "2001:4860:4860::8888"):
+		for ip in ("8.8.8.8", "200.160.2.3", "2001:4860:4860::8888", "64:ff9b::808:808"):
 			with self.subTest(ip=ip):
 				self.assertTrue(safe_http.is_public_ip(ip))
 
@@ -144,6 +147,32 @@ class TestSafeHttp(unittest.TestCase):
 		_Handler.routes["/"] = (200, {}, b"x" * (2 * 1024 * 1024))
 		page = safe_http.fetch(self.url("site.test"), max_bytes=1000)
 		self.assertEqual(len(page.body), 1000)
+
+	def test_total_deadline_stops_a_slow_server(self):
+		# Um servidor que manda 1 byte por vez nunca estoura o timeout de leitura, mas a busca tem prazo total
+		self.allow_test_server()
+		self.dns["lento.test"] = "127.0.0.1"
+
+		def do_GET(handler):
+			handler.send_response(200)
+			handler.send_header("Content-Length", "100000")
+			handler.end_headers()
+			try:
+				for _ in range(100):
+					handler.wfile.write(b"x")
+					handler.wfile.flush()
+					time.sleep(0.3)
+			except (BrokenPipeError, ConnectionResetError):
+				pass
+
+		started = time.monotonic()
+		with (
+			patch.object(_Handler, "do_GET", do_GET),
+			patch.object(safe_http, "DEADLINE", 2),
+			self.assertRaises(safe_http.TooSlow),
+		):
+			safe_http.fetch(self.url("lento.test"))
+		self.assertLess(time.monotonic() - started, 4)
 
 	def test_identified_user_agent_and_no_env_proxy(self):
 		self.allow_test_server()

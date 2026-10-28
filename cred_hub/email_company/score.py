@@ -19,6 +19,8 @@ _STOP = {
 	"tecnologia", "solucoes", "consultoria", "com", "br", "www", "net",
 }
 _MIN_TOKEN = 4
+# Nome dentro do domínio (ou o contrário) só bate inteiro se cobrir pelo menos metade: "casa" em casadoscelulares não
+_MIN_COVER = 0.5
 # Só os sufixos jurídicos saem da junção de palavras seguidas ("Casa do Pão Ltda" -> casadopao)
 _LEGAL_SUFFIXES = {"ltda", "sa", "s", "a", "me", "epp", "eireli", "mei", "cia"}
 
@@ -55,12 +57,15 @@ def matches_domain(names: list[str], domain: str | None) -> str | None:
 		if not tokens:
 			continue
 		joined = "".join(tokens)
-		if joined == label or (len(label) >= _MIN_TOKEN and (label in joined or joined in label)):
+		if joined == label:
+			return "full"
+		inside = len(label) >= _MIN_TOKEN and (label in joined or joined in label)
+		if inside and min(len(label), len(joined)) / max(len(label), len(joined)) >= _MIN_COVER:
 			return "full"
 		if label in _runs(name):
 			return "full"
 		# Sigla: "Credtech Inteligencia de Negocios" -> credtech é palavra inteira do nome
-		if any(t == label or (len(t) >= 5 and t in label) for t in tokens):
+		if any(t == label or t in label for t in tokens):
 			best = "partial" if best is None else best
 	return best
 

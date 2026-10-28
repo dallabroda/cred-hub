@@ -4,11 +4,13 @@
 - O nome é resolvido e TODOS os endereços precisam ser públicos; e o endereço de fato conectado é conferido de
   novo no socket (protege contra DNS rebinding: o nome resolve público na conferência e interno na conexão).
 - Redirecionamentos seguidos à mão, no máximo 3, cada destino conferido do mesmo jeito.
-- Timeouts curtos, corpo limitado, sem proxy do ambiente, User-Agent identificado.
+- Timeouts curtos e um PRAZO TOTAL por busca (um servidor que manda 1 byte por vez não segura o worker), corpo
+  limitado, sem proxy do ambiente, User-Agent identificado.
 """
 
 import ipaddress
 import socket
+import time
 from urllib.parse import urljoin, urlsplit
 
 import requests
@@ -18,6 +20,7 @@ from urllib3.connectionpool import HTTPConnectionPool, HTTPSConnectionPool
 
 USER_AGENT = "HubTech-CompanyFinder/1.0 (+contato@credtechdigital.com.br)"
 TIMEOUT = (3, 5)  # conexão, leitura
+DEADLINE = 15  # segundos para a busca inteira, com redirecionamentos e corpo
 MAX_BYTES = 512 * 1024
 MAX_REDIRECTS = 3
 PORTS = {"http": 80, "https": 443}
@@ -29,13 +32,28 @@ class BlockedAddress(Exception):
 	"""Destino recusado: esquema, porta, IP não público ou redirecionamentos demais."""
 
 
+class TooSlow(TimeoutError):
+	"""A busca passou do prazo total."""
+
+
+# IPv6 que carregam um IPv4 dentro (NAT64 e 6to4): vale o IPv4 de dentro
+_NAT64 = ipaddress.ip_network("64:ff9b::/96")
+
+
 def is_public_ip(value: str) -> bool:
 	try:
 		ip = ipaddress.ip_address(value.split("%", 1)[0])
 	except ValueError:
 		return False
-	if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
-		ip = ip.ipv4_mapped
+	if isinstance(ip, ipaddress.IPv6Address):
+		if ip.ipv4_mapped:
+			ip = ip.ipv4_mapped
+		elif ip.sixtofour:
+			ip = ip.sixtofour
+		elif ip.teredo:
+			ip = ip.teredo[1]
+		elif ip in _NAT64:
+			ip = ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF)
 	return ip.is_global and not ip.is_multicast
 
 
@@ -146,12 +164,22 @@ def fetch(url: str, method: str = "GET", max_bytes: int = MAX_BYTES, max_redirec
 	"""Busca `url` seguindo até `max_redirects` redirecionamentos seguros. Corpo cortado em `max_bytes`."""
 	session = _session()
 	redirects = []
+	ends_at = time.monotonic() + DEADLINE
+
+	def remaining() -> float:
+		left = ends_at - time.monotonic()
+		if left <= 0:
+			raise TooSlow(f"over {DEADLINE}s")
+		return left
+
 	try:
 		for _hop in range(max_redirects + 1):
 			host = check_url(url)
 			scheme = urlsplit(url).scheme.lower()
 			resolve_public(host, urlsplit(url).port or PORTS[scheme])
-			response = session.request(method, url, timeout=TIMEOUT, allow_redirects=False, stream=True)
+			left = remaining()
+			timeout = (min(TIMEOUT[0], left), min(TIMEOUT[1], left))
+			response = session.request(method, url, timeout=timeout, allow_redirects=False, stream=True)
 			try:
 				if response.status_code in REDIRECT_CODES and response.headers.get("Location"):
 					redirects.append(url)
@@ -161,11 +189,14 @@ def fetch(url: str, method: str = "GET", max_bytes: int = MAX_BYTES, max_redirec
 					continue
 				body = b""
 				if method != "HEAD":
-					for chunk in response.iter_content(16 * 1024):
-						body += chunk
-						if len(body) >= max_bytes:
-							body = body[:max_bytes]
+					# read1 volta depois de UMA leitura do socket: o prazo é conferido entre elas
+					while len(body) < max_bytes:
+						remaining()
+						chunk = response.raw.read1(16 * 1024)
+						if not chunk:
 							break
+						body += chunk
+					body = body[:max_bytes]
 				return Page(url, response.status_code, response.headers, body, redirects)
 			finally:
 				response.close()

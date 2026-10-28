@@ -90,6 +90,12 @@ class TestConfidence(unittest.TestCase):
 			score.MEDIUM,
 		)
 
+	def test_short_name_inside_a_long_domain_is_not_full(self):
+		# "Casa Ltda" não é dona de casadoscelulares.com.br só por "casa" estar no domínio: vira sugestão, não liga
+		self.assertEqual(score.confidence(self.company("CASA LTDA"), "casadoscelulares.com.br"), score.MEDIUM)
+		self.assertEqual(score.confidence(self.company("ACME LTDA"), "acmeseguros.com.br"), score.MEDIUM)
+		self.assertEqual(score.confidence(self.company("ACME SEGUROS LTDA"), "acmeseguros.com.br"), score.HIGH)
+
 	def test_low_when_name_does_not_match_or_not_active(self):
 		# Domínio registrado por uma agência, em nome dela
 		self.assertEqual(score.confidence(self.company("AGENCIA WEB PIXEL LTDA"), "acmeseguros.com.br"), score.LOW)

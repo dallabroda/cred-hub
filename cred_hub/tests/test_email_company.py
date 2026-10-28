@@ -163,8 +163,12 @@ class TestEmailCompany(IntegrationTestCase):
 			patch.object(cnpj_client, "fetch", side_effect=cnpj_client.CnpjUnavailable("fora")),
 		):
 			self.assertIsNone(finder.discover("ana@acmeseguros.com.br")["confidence"])
+	def switch_on(self):
+		frappe.local.conf.credhub_email_company = 1
+		self.addCleanup(lambda: frappe.local.conf.pop("credhub_email_company", None))
 
 	def test_lead_insert_enqueues_only_corporate_emails_after_commit(self):
+		self.switch_on()
 		with patch.object(frappe, "enqueue") as enqueue:
 			finder.on_lead_insert(frappe._dict(name="L1", email="ana@acme-teste.com.br"))
 			finder.on_lead_insert(frappe._dict(name="L2", email="ana@gmail.com"))
@@ -173,12 +177,13 @@ class TestEmailCompany(IntegrationTestCase):
 		kwargs = enqueue.call_args.kwargs
 		self.assertEqual((kwargs["lead"], kwargs["enqueue_after_commit"]), ("L1", True))
 
-	def test_switched_off_by_site_config(self):
-		frappe.local.conf.credhub_email_company = 0
-		self.addCleanup(lambda: frappe.local.conf.pop("credhub_email_company", None))
-		with patch.object(frappe, "enqueue") as enqueue:
+	def test_off_by_default_no_queue_no_http(self):
+		# Até a Fase 4 aplicar no card: nada entra na fila e nenhuma busca sai do servidor
+		frappe.local.conf.pop("credhub_email_company", None)
+		with patch.object(frappe, "enqueue") as enqueue, patch.object(safe_http, "fetch") as fetch:
 			finder.on_lead_insert(frappe._dict(name="L1", email="ana@acme-teste.com.br"))
 		enqueue.assert_not_called()
+		fetch.assert_not_called()
 
 	def test_job_never_raises(self):
 		lead = frappe.get_doc(
