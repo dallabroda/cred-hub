@@ -16,7 +16,7 @@ def get_context(context):
 	frappe.local.response_headers["Content-Security-Policy"] = f"frame-ancestors 'self' {chat}"
 	logged_in = frappe.session.user != "Guest"
 	context.no_breadcrumbs = True
-	context.title = "Cred Hub"
+	context.title = "HubTech CRM"
 	context.lang = frappe.local.lang or "pt-BR"
 	context.logged_in = logged_in
 	context.chat_origin = chat

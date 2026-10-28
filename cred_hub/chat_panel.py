@@ -18,7 +18,8 @@ from frappe import _
 from frappe.utils import cint, flt, get_url
 
 ROUTE = "/chat-panel"
-TITLE = "Cred Hub"
+# Nome da aba nas conversas do SmartChat (credtech#192: nomes novos dos produtos)
+TITLE = "HubTech CRM"
 CARD_LIMIT = 20
 
 
@@ -53,6 +54,11 @@ def install(doc, token):
 		)
 		if not current:
 			current = _call("POST", base, token, json={"dashboard_app": {"title": TITLE, "content": [{"type": "frame", "url": url}]}})
+		elif current.get("title") != TITLE:
+			# Aba criada com o nome antigo ("Cred Hub"): ganha o nome novo na próxima instalação
+			current = _call(
+				"PATCH", f"{base}/{cint(current.get('id'))}", token, json={"dashboard_app": {"title": TITLE}}
+			)
 		doc.panel_app_id, doc.panel_error = cint(current.get("id")), None
 	except ChatError as e:
 		doc.panel_app_id, doc.panel_error = None, str(e)
