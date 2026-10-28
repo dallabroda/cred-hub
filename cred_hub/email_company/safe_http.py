@@ -11,6 +11,7 @@
 import ipaddress
 import socket
 import time
+import zlib
 from urllib.parse import urljoin, urlsplit
 
 import requests
@@ -139,7 +140,11 @@ class _SafeAdapter(HTTPAdapter):
 def _session() -> requests.Session:
 	session = requests.Session()
 	session.trust_env = False  # sem HTTP(S)_PROXY nem .netrc do ambiente
-	session.headers.update({"User-Agent": USER_AGENT, "Accept-Language": "pt-BR,pt;q=0.9"})
+	# sem compressão: o corpo é lido cru (read1) e contado em bytes; o que vier comprimido mesmo assim é aberto em
+	# _decoded (credtech#186: a Fase 3 lê o texto da página)
+	session.headers.update(
+		{"User-Agent": USER_AGENT, "Accept-Language": "pt-BR,pt;q=0.9", "Accept-Encoding": "identity"}
+	)
 	adapter = _SafeAdapter(max_retries=0)
 	session.mount("http://", adapter)
 	session.mount("https://", adapter)

@@ -83,3 +83,14 @@ class TestSiteReading(IntegrationTestCase):
 		):
 			result = finder.discover("ana@acmeseguros.com")
 		self.assertEqual((result["cnpj"], result["source"], result["confidence"]), (MATRIZ, "site", score.HIGH))
+
+
+class TestCompressedPages(IntegrationTestCase):
+	def test_gzip_body_is_opened(self):
+		import gzip
+
+		from cred_hub.email_company.safe_http import _decoded
+
+		raw = gzip.compress(PRIVACY.encode())
+		self.assertIn(b"11.222.333/0001-81", _decoded(raw, "gzip", 256 * 1024))
+		self.assertEqual(_decoded(b"plain", None, 100), b"plain")
