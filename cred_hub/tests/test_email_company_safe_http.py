@@ -166,9 +166,12 @@ class TestSafeHttp(unittest.TestCase):
 				pass
 
 		started = time.monotonic()
-		with patch.object(_Handler, "do_GET", do_GET), patch.object(safe_http, "DEADLINE", 2):
-			with self.assertRaises(safe_http.TooSlow):
-				safe_http.fetch(self.url("lento.test"))
+		with (
+			patch.object(_Handler, "do_GET", do_GET),
+			patch.object(safe_http, "DEADLINE", 2),
+			self.assertRaises(safe_http.TooSlow),
+		):
+			safe_http.fetch(self.url("lento.test"))
 		self.assertLess(time.monotonic() - started, 4)
 
 	def test_identified_user_agent_and_no_env_proxy(self):
