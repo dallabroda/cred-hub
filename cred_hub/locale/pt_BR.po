@@ -1044,10 +1044,6 @@ msgstr "Escolha entre 0 e 500 usuários extras."
 msgid "HubTech CRM: your free trial ends on {0}"
 msgstr "HubTech CRM: seu teste grátis termina em {0}"
 
-msgid "Your HubTech CRM free trial with unlimited users ends on {0}. After that, the plan includes {1} free user plus the extra users you contract (R$ {2} per user per month). {3} active users or pending invitations are over that limit: from {4}, the newest users will be paused (nothing is deleted) and the pending invitations over the limit will no longer be valid. To avoid it, contract extra users in Settings > Users and plan, or choose who stays by deactivating the users you no longer need."
-msgstr "Seu teste grátis do HubTech CRM, com usuários ilimitados, termina em {0}. Depois disso, o plano inclui {1} usuário grátis mais os usuários extras que você contratar (R$ {2} por usuário por mês). Hoje há {3} usuário(s) ativo(s) ou convite(s) pendente(s) acima desse limite: a partir de {4}, os usuários mais recentes serão pausados (nada é apagado) e os convites pendentes acima do limite deixarão de valer. Para evitar isso, contrate usuários extras em Configurações > Usuários e plano, ou escolha quem fica desativando os usuários de que você não precisa mais."
-
-
 msgid "Billing is not available right now. Please try again later."
 msgstr "A cobrança não está disponível agora. Tente de novo mais tarde."
 
@@ -1197,3 +1193,332 @@ msgstr "As chaves antigas da API pararam em {0}. Peça ao administrador uma chav
 
 msgid "Create API keys in Settings > Integrations > API."
 msgstr "Crie as chaves da API em Configurações > Integrações > API."
+
+# E-mails do HubTech CRM (cred_hub/templates/emails)
+msgid "HubTech CRM is a CredTech Digital product."
+msgstr "O HubTech CRM é um produto da CredTech Digital."
+
+msgid "Questions?"
+msgstr "Dúvidas?"
+
+msgid "If the button does not work, copy and paste this link in your browser:"
+msgstr "Se o botão não funcionar, copie e cole este link no navegador:"
+
+msgid "Welcome"
+msgstr "Boas-vindas"
+
+msgid "Welcome to HubTech CRM"
+msgstr "Boas-vindas ao HubTech CRM"
+
+msgid "Your HubTech CRM account is ready"
+msgstr "Sua conta no HubTech CRM está pronta"
+
+msgid "Hi, {0}!"
+msgstr "Olá, {0}!"
+
+msgid "Hi!"
+msgstr "Olá!"
+
+msgid "An account was created for you on HubTech CRM, where your team organizes cards and tasks in funnels."
+msgstr "Criamos uma conta para você no HubTech CRM, onde a sua equipe organiza cards e tarefas em funis."
+
+msgid "To sign in, first create your password."
+msgstr "Para entrar, crie primeiro a sua senha."
+
+msgid "Your login"
+msgstr "Seu login"
+
+msgid "Create my password"
+msgstr "Criar minha senha"
+
+msgid "If you were not expecting this account, you can ignore this e-mail."
+msgstr "Se você não esperava esta conta, pode ignorar este e-mail."
+
+msgid "Password Reset"
+msgstr "HubTech CRM: redefina sua senha"
+
+msgid "Password reset"
+msgstr "Redefinição de senha"
+
+msgid "Reset your password"
+msgstr "Redefina sua senha"
+
+msgid "We received a request to change the password of your HubTech CRM account ({0})."
+msgstr "Recebemos um pedido para trocar a senha da sua conta no HubTech CRM ({0})."
+
+msgid "Create a new password"
+msgstr "Criar nova senha"
+
+msgid "The link is valid for {0} hour(s)."
+msgstr "O link vale por {0} hora(s)."
+
+msgid "The link is valid for {0} minutes."
+msgstr "O link vale por {0} minutos."
+
+msgid "If it was not you, ignore this e-mail: your password only changes after you open the link and create a new one."
+msgstr "Se não foi você, ignore este e-mail: sua senha só muda depois que você abrir o link e criar uma nova."
+
+msgid "Security Alert: Your password has been changed."
+msgstr "HubTech CRM: sua senha foi alterada"
+
+msgid "Your password has been changed and you might have been logged out of all systems.<br>Please contact the Administrator for further assistance."
+msgstr "<h1 style=\"margin: 0 0 12px; font-size: 30px; line-height: 36px; font-weight: 700; color: #0F172A;\">Sua senha foi alterada</h1><p style=\"margin: 0 0 10px; font-size: 14px; line-height: 21px; color: #475569;\">A senha da sua conta no HubTech CRM acabou de ser alterada, e as sessões abertas podem ter sido encerradas.</p><p style=\"margin: 0 0 10px; font-size: 14px; line-height: 21px; color: #475569;\">Se foi você, não precisa fazer nada. Se não foi, peça ao administrador da sua empresa para bloquear o acesso e redefina sua senha, ou fale com <a href=\"mailto:contato@credtechdigital.com.br\" style=\"color: #6938EF; font-weight: 600; text-decoration: none;\">contato@credtechdigital.com.br</a>.</p>"
+
+msgid "Invitation"
+msgstr "Convite"
+
+msgid "You were invited to {0}"
+msgstr "Você foi convidado para {0}"
+
+msgid "You were invited to HubTech CRM"
+msgstr "Você foi convidado para o HubTech CRM"
+
+msgid "{0} invited you to join the {1} team on HubTech CRM."
+msgstr "{0} convidou você para a equipe {1} no HubTech CRM."
+
+msgid "{0} invited you to join HubTech CRM."
+msgstr "{0} convidou você para o HubTech CRM."
+
+msgid "You were invited to join HubTech CRM."
+msgstr "Você foi convidado para o HubTech CRM."
+
+msgid "HubTech CRM is where the team organizes cards and tasks in funnels. Accept the invitation to get in: then sign in with Google, Microsoft or GitHub using this e-mail, or create a password."
+msgstr "O HubTech CRM é onde a equipe organiza cards e tarefas em funis. Aceite o convite para entrar: depois, use Google, Microsoft ou GitHub com este e-mail, ou crie uma senha."
+
+msgid "Company"
+msgstr "Empresa"
+
+msgid "Your access"
+msgstr "Seu acesso"
+
+msgid "Salesperson"
+msgstr "Vendedor"
+
+msgid "Sales manager"
+msgstr "Gestor de vendas"
+
+msgid "Administrator"
+msgstr "Administrador"
+
+msgid "Accept invitation"
+msgstr "Aceitar convite"
+
+msgid "The invitation is valid for {0} days."
+msgstr "O convite vale por {0} dias."
+
+msgid "If you were not expecting it, you can ignore this e-mail."
+msgstr "Se você não esperava este convite, pode ignorar este e-mail."
+
+msgid "Your HubTech CRM account is active. It is where your team organizes cards and tasks in funnels."
+msgstr "Sua conta no HubTech CRM está ativa. É onde a sua equipe organiza cards e tarefas em funis."
+
+msgid "Sign in with Google, Microsoft or GitHub using this e-mail, or with your password."
+msgstr "Entre com Google, Microsoft ou GitHub usando este e-mail, ou com a sua senha."
+
+msgid "If you cannot see your company's data yet, ask your company's administrator for access."
+msgstr "Se ainda não aparecerem os dados da sua empresa, peça acesso ao administrador da sua empresa."
+
+msgid "Open HubTech CRM"
+msgstr "Abrir o HubTech CRM"
+
+msgid "HubTech CRM: confirm your e-mail to create {0}"
+msgstr "HubTech CRM: confirme seu e-mail para criar {0}"
+
+msgid "Confirm your e-mail to create {0}"
+msgstr "Confirme seu e-mail para criar {0}"
+
+msgid "We received a request to create {0} on HubTech CRM, where your team organizes cards and tasks in funnels."
+msgstr "Recebemos um pedido para criar {0} no HubTech CRM, onde a sua equipe organiza cards e tarefas em funis."
+
+msgid "Confirm your e-mail and we create the company: it takes from 30 seconds to 2 minutes."
+msgstr "Confirme seu e-mail e nós criamos a empresa: leva de 30 segundos a 2 minutos."
+
+msgid "Free trial"
+msgstr "Teste grátis"
+
+msgid "14 days with unlimited users"
+msgstr "14 dias com usuários ilimitados"
+
+msgid "Confirm and create my company"
+msgstr "Confirmar e criar minha empresa"
+
+msgid "The link is valid for {0} hours."
+msgstr "O link vale por {0} horas."
+
+msgid "If you did not ask for this, ignore this e-mail: nothing is created."
+msgstr "Se não foi você que pediu, ignore este e-mail: nada é criado."
+
+msgid "HubTech CRM: your company {0}"
+msgstr "HubTech CRM: sua empresa {0}"
+
+msgid "Your company"
+msgstr "Sua empresa"
+
+msgid "You already have a company on HubTech CRM"
+msgstr "Você já tem uma empresa no HubTech CRM"
+
+msgid "This e-mail already created {0} on HubTech CRM. Each person creates one company, and inside it you can create as many funnels as you want."
+msgstr "Este e-mail já criou {0} no HubTech CRM. Cada pessoa cria uma empresa e, dentro dela, quantos funis quiser."
+
+msgid "Open {0}"
+msgstr "Abrir {0}"
+
+msgid "If you did not ask for this, ignore this e-mail."
+msgstr "Se não foi você que pediu, ignore este e-mail."
+
+msgid "This e-mail has already created a company on HubTech CRM. We sent its address to this e-mail."
+msgstr "Este e-mail já criou uma empresa no HubTech CRM. Enviamos o endereço dela para este e-mail."
+
+msgid "HubTech CRM: creating {0} failed"
+msgstr "HubTech CRM: o cadastro de {0} falhou"
+
+msgid "Signup failed"
+msgstr "Cadastro falhou"
+
+msgid "Creating {0} failed"
+msgstr "O cadastro de {0} falhou"
+
+msgid "The company was not created. See the error in the signup record and try again with retry_provision."
+msgstr "A empresa não foi criada. Veja o erro no registro do cadastro e tente de novo com retry_provision."
+
+msgid "E-mail"
+msgstr "E-mail"
+
+msgid "Open the signup record"
+msgstr "Abrir o registro do cadastro"
+
+msgid "HubTech CRM: your free trial ends today"
+msgstr "HubTech CRM: seu teste grátis termina hoje"
+
+msgid "Your free trial ends today"
+msgstr "Seu teste grátis termina hoje"
+
+msgid "Your free trial ends on {0}"
+msgstr "Seu teste grátis termina em {0}"
+
+msgid "Your HubTech CRM free trial with unlimited users ends on {0}. After that, the plan includes {1} free user plus the extra users you contract, at {2} per user per month."
+msgstr "Seu teste grátis do HubTech CRM, com usuários ilimitados, termina em {0}. Depois disso, o plano inclui {1} usuário grátis mais os usuários extras que você contratar, a {2} por usuário por mês."
+
+msgid "Today {0} active users or pending invitations are over that limit. From {1}, the newest users are paused (nothing is deleted) and pending invitations over the limit are no longer valid."
+msgstr "Hoje, {0} usuário(s) ativo(s) ou convite(s) pendente(s) passam desse limite. A partir de {1}, os usuários mais recentes são pausados (nada é apagado) e os convites pendentes acima do limite deixam de valer."
+
+msgid "To avoid it, contract extra users in Settings > Users and plan, or choose who stays by deactivating the users you no longer need."
+msgstr "Para evitar isso, contrate usuários extras em Configurações > Usuários e plano, ou escolha quem fica desativando os usuários de que você não precisa mais."
+
+msgid "Last day of the trial"
+msgstr "Último dia do teste"
+
+msgid "Free users after the trial"
+msgstr "Usuários grátis depois do teste"
+
+msgid "Over the limit today"
+msgstr "Acima do limite hoje"
+
+msgid "See users and plan"
+msgstr "Ver usuários e plano"
+
+msgid "New contact"
+msgstr "Novo contato"
+
+msgid "Returning contact"
+msgstr "Contato que voltou"
+
+msgid "A contact arrived from the site form {0} and is already in the funnel."
+msgstr "Chegou um contato pelo formulário do site {0}, e ele já está no funil."
+
+msgid "Someone who already has an open card sent the form {0} again: the answers went to the card."
+msgstr "Alguém que já tem card aberto enviou de novo o formulário {0}: as respostas foram para o card."
+
+msgid "Phone"
+msgstr "Telefone"
+
+msgid "Job title"
+msgstr "Cargo"
+
+msgid "Owner"
+msgstr "Responsável"
+
+msgid "Open the card on HubTech CRM"
+msgstr "Abrir o card no HubTech CRM"
+
+msgid "A contact arrived from the site and is already in the funnel."
+msgstr "Chegou um contato pelo site, e ele já está no funil."
+
+msgid "Someone who already has an open card sent a site form again: the answers went to the card."
+msgstr "Alguém que já tem card aberto enviou de novo um formulário do site: as respostas foram para o card."
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "HubTech CRM: 1 user was paused"
+msgstr "HubTech CRM: 1 usuário foi pausado"
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "HubTech CRM: {0} users were paused"
+msgstr "HubTech CRM: {0} usuários foram pausados"
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "1 user was paused"
+msgstr "1 usuário foi pausado"
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "{0} users were paused"
+msgstr "{0} usuários foram pausados"
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "Users and plan"
+msgstr "Usuários e plano"
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "Paused"
+msgstr "Pausados"
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "Pay the invoice"
+msgstr "Pagar a fatura"
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "The HubTech CRM free trial with unlimited users ended. The plan now includes {0} free user plus the extra users you contract, at {1} per user per month."
+msgstr "O teste grátis do HubTech CRM, com usuários ilimitados, acabou. Agora o plano inclui {0} usuário grátis mais os usuários extras que você contratar, a {1} por usuário por mês."
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "The monthly invoice is still unpaid after {0} days of tolerance, so the plan went back to {1} free user."
+msgstr "A mensalidade continua em aberto depois de {0} dias de tolerância, então o plano voltou para {1} usuário grátis."
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "The charge for the users you added was not paid by its due date, so the plan went back to the users already paid."
+msgstr "A cobrança dos usuários que você adicionou não foi paga até o vencimento, então o plano voltou para os usuários já pagos."
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "The plan now has fewer users, as you scheduled."
+msgstr "O plano agora tem menos usuários, como você agendou."
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "The subscription was canceled. The plan now includes {0} free user."
+msgstr "A assinatura foi cancelada. Agora o plano inclui {0} usuário grátis."
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "Pay the open invoice: as soon as the payment is confirmed, they come back by themselves."
+msgstr "Pague a fatura em aberto: assim que o pagamento for confirmado, eles voltam sozinhos."
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "To bring them back, contract extra users in Settings > Users and plan: as soon as the payment is confirmed, they come back by themselves, oldest first. Or choose who stays: deactivate a user you no longer need and reactivate the paused one."
+msgstr "Para trazê-los de volta, contrate usuários extras em Configurações > Usuários e plano: assim que o pagamento for confirmado, eles voltam sozinhos, dos mais antigos para os mais novos. Ou escolha quem fica: desative um usuário de que não precisa mais e reative o pausado."
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "These users can no longer sign in. Nothing was deleted: their cards, contacts and history stay."
+msgstr "Esses usuários não conseguem mais entrar. Nada foi apagado: os cards, contatos e histórico deles continuam."
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "Pending invitations over the limit are no longer valid: {0}. Invite again when there is a free seat."
+msgstr "Convites pendentes acima do limite deixaram de valer: {0}. Convide de novo quando houver vaga."
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "Pay the open invoice: as soon as the payment is confirmed, this user comes back by itself."
+msgstr "Pague a fatura em aberto: assim que o pagamento for confirmado, o usuário volta sozinho."
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "To bring this user back, contract an extra user in Settings > Users and plan: as soon as the payment is confirmed, the user comes back by itself. Or choose who stays: deactivate a user you no longer need and reactivate the paused one."
+msgstr "Para trazer o usuário de volta, contrate um usuário extra em Configurações > Usuários e plano: assim que o pagamento for confirmado, ele volta sozinho. Ou escolha quem fica: desative um usuário de que não precisa mais e reative o pausado."
+
+#: cred_hub/templates/emails/hubtech_users_paused.html
+msgid "This user can no longer sign in. Nothing was deleted: their cards, contacts and history stay."
+msgstr "Esse usuário não consegue mais entrar. Nada foi apagado: os cards, contatos e histórico dele continuam."

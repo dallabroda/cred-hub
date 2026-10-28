@@ -1,0 +1,11 @@
+{#- To the CredTech team (System Managers of the central site): a self-service signup failed. Args: company, site,
+    email, link. -#}
+{% from "templates/emails/hubtech_macros.html" import card with context %}
+{{ card(
+	eyebrow=_("Signup failed"),
+	heading=_("Creating {0} failed").format(company | e),
+	paragraphs=[_("The company was not created. See the error in the signup record and try again with retry_provision.")],
+	details=[(_("Company"), company | e), (_("Address"), site | e), (_("E-mail"), email | e)],
+	action_text=_("Open the signup record"),
+	action_url=link,
+) }}
