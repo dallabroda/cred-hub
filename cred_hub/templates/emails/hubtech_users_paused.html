@@ -1,6 +1,6 @@
 {#- Users paused by the plan, to every active admin (cred_hub.billing._paused_notice).
-    Args: name, reason (trial, past_due, upgrade_unpaid, downgrade, canceled), users (full names), invitations,
-    free, price, grace_days, pay_url, plan_url. -#}
+    Args: reason (trial, past_due, upgrade_unpaid, downgrade, canceled), users (full names), invitations,
+    free, price, grace_days, pay_url, plan_url; name is optional (one e-mail goes to every admin, so it is not sent). -#}
 {% from "templates/emails/hubtech_macros.html" import card with context %}
 {%- set why = {
 	"trial": _("The HubTech CRM free trial with unlimited users ended. The plan now includes {0} free user plus the extra users you contract, at {1} per user per month.").format(free, price),

@@ -44,7 +44,9 @@ class FakeAsaas:
 		if path.endswith("/payments"):
 			return {"data": [{"id": "pay_1", "invoiceUrl": "https://asaas.test/i/pay_1"}]}
 		if path.startswith("/payments/pay_up"):
-			return {"id": path.rsplit("/", 1)[1], "status": self.upgrade_status or self.payment_status, "value": 30}
+			pay_id = path.rsplit("/", 1)[1]
+			status = self.upgrade_status or self.payment_status
+			return {"id": pay_id, "status": status, "value": 30, "invoiceUrl": f"https://asaas.test/i/{pay_id}"}
 		if path.startswith("/payments/"):
 			return {
 				"id": "pay_1",
@@ -256,6 +258,8 @@ class TestBilling(IntegrationTestCase):
 		self.assertEqual(billing.active_users(), old)
 		notice = self.paused_notice()
 		self.assertEqual((notice["recipients"], notice["args"]["reason"]), (old[:1], "upgrade_unpaid"))
+		# o link é o da cobrança do aumento, mesmo com outra fatura do plano em aberto
+		self.assertEqual(notice["args"]["pay_url"], "https://asaas.test/i/pay_up")
 		self.assertTrue(billing.get_plan()["upgrade"]["overdue"])
 		with patch.object(billing, "_asaas", FakeAsaas()):
 			billing.apply_asaas_event("PAYMENT_CONFIRMED", "pay_up", None)
