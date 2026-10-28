@@ -8,7 +8,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 
 from cred_hub.cnpj import client as cnpj_client
-from cred_hub.email_company import finder, rdap, safe_http
+from cred_hub.email_company import apply, finder, rdap, safe_http
 from cred_hub.email_company.domain import email_domain, url_domain
 
 
@@ -177,9 +177,12 @@ class TestEmailCompany(IntegrationTestCase):
 		kwargs = enqueue.call_args.kwargs
 		self.assertEqual((kwargs["lead"], kwargs["enqueue_after_commit"]), ("L1", True))
 
-	def test_off_by_default_no_queue_no_http(self):
-		# Até a Fase 4 aplicar no card: nada entra na fila e nenhuma busca sai do servidor
+	def test_switch_off_in_settings_means_no_queue_no_http(self):
+		# Interruptor em Configurações (credtech#187), ligado por padrão
 		frappe.local.conf.pop("credhub_email_company", None)
+		self.assertTrue(apply.enabled())
+		apply.save_setting(0)
+		self.addCleanup(lambda: frappe.db.set_single_value(apply.SETTINGS, apply.SETTING_FIELD, 1))
 		with patch.object(frappe, "enqueue") as enqueue, patch.object(safe_http, "fetch") as fetch:
 			finder.on_lead_insert(frappe._dict(name="L1", email="ana@acme-teste.com.br"))
 		enqueue.assert_not_called()

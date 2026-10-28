@@ -5,14 +5,15 @@ Cascata, que para no primeiro resultado:
    existe na empresa com o site nesse domínio.
 2. (credtech#185) RDAP do Registro.br (só .br): CNPJ do titular pessoa jurídica; dígitos conferidos; Organização com
    esse CNPJ, se já existir; senão confirmação na consulta de CNPJ do cred_hub e confiança alta/média/baixa.
-A leitura do site (Fase 3) e a aplicação no card (Fase 4) entram depois; até lá o resultado só é calculado.
+O resultado é aplicado no card (Fase 4, credtech#187: cred_hub.email_company.apply). A leitura do site (Fase 3)
+fica para depois.
 
 Roda em fila depois que o lead entra: nunca atrasa nem derruba a entrada do lead.
 """
 
 import frappe
 import requests
-from frappe.utils import cint, now_datetime
+from frappe.utils import now_datetime
 
 from cred_hub.cnpj import client as cnpj_client
 from cred_hub.cnpj.mapping import is_valid_cnpj
@@ -26,9 +27,10 @@ CACHE_PREFIX = "credhub_email_company:"
 
 
 def enabled() -> bool:
-	# Desligado por padrão até a Fase 4 aplicar o resultado no card (decisão do orquestrador): sem fila e sem HTTP
-	# saindo do servidor. Liga por site com `credhub_email_company: 1`; a Fase 4 leva para Configurações.
-	return bool(cint(frappe.conf.get("credhub_email_company", 0)))
+	# Interruptor em Configurações › Origens, ligado por padrão (credtech#187)
+	from cred_hub.email_company import apply
+
+	return apply.enabled()
 
 
 def on_lead_insert(doc, method=None):
@@ -48,10 +50,14 @@ def on_lead_insert(doc, method=None):
 def run(lead: str) -> dict | None:
 	"""Job: descobre a empresa do lead. Erros ficam no log, nunca no lead."""
 	try:
+		from cred_hub.email_company import apply
+
 		values = frappe.db.get_value("CRM Lead", lead, ["email", "organization"], as_dict=True)
 		if not values:
 			return None
-		return discover(values.email, company_name=values.organization)
+		result = discover(values.email, company_name=values.organization)
+		apply.apply(lead, result)
+		return result
 	except Exception:
 		frappe.log_error(title=f"Cred Hub: descobrir empresa do lead {lead}")
 		return None
