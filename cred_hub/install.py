@@ -20,6 +20,14 @@ TERRITORY_DOCTYPES = ("CRM Lead", "CRM Deal", "CRM Organization")
 # Contato: saudação, sobrenome, gênero e endereço saem do painel por padrão (pedido do dono, 26/10/2026). Só uma
 # vez por site, para o admin poder recolocar algum pelo editor de layout sem o próximo migrate tirar de novo.
 CONTACT_HIDDEN_FIELDS = ("salutation", "last_name", "gender", "address")
+# Campos repetidos ou sem uso que o dono tirou das telas em 28/10/2026 (os valores ficam salvos): na Organização,
+# território, razão social e nome fantasia (o nome da organização vira a razão social quando há CNPJ) e o número e
+# a faixa de funcionários da busca (fica o campo de funcionários do CRM); no Contato, um nome só (nome completo) e
+# sem saudação, gênero, endereço e nome da empresa (o contato é ligado à organização)
+REMOVED_FIELDS = {
+	"CRM Organization": ("territory", "legal_name", "trade_name", "employee_count", "employee_range"),
+	"Contact": ("salutation", "gender", "address", "middle_name", "last_name", "company_name"),
+}
 
 
 # Origem do anúncio no lead e no card (credtech#51): o lead vira card e os campos de mesmo nome vão junto
@@ -88,6 +96,9 @@ def after_install():
 		add_address_to_details(doctype)
 		_once(f"cred_hub_linkedin_after_website:{doctype}", move_to_details, doctype, "linkedin", after="website")
 	_once("cred_hub_contact_panel_trimmed", remove_from_layout, "Contact-Side Panel", CONTACT_HIDDEN_FIELDS)
+	for doctype, removed in REMOVED_FIELDS.items():
+		for kind in ("Side Panel", "Quick Entry", "Data Fields"):
+			remove_from_layout(f"{doctype}-{kind}", removed)
 	for doctype in TERRITORY_DOCTYPES:
 		for kind in ("Side Panel", "Quick Entry", "Data Fields"):
 			remove_from_layout(f"{doctype}-{kind}", HIDDEN_FIELDS)
