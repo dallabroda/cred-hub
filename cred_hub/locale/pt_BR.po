@@ -21,7 +21,7 @@ msgid "CRM Industry"
 msgstr "Setor"
 
 msgid "CRM Lead"
-msgstr "Lead"
+msgstr "Contato de entrada"
 
 msgid "CRM Organization"
 msgstr "Organização"
@@ -30,13 +30,13 @@ msgid "CSV imports"
 msgstr "Importações de CSV"
 
 msgid "Capture leads with a form"
-msgstr "Capturar leads com um formulário"
+msgstr "Receber contatos com um formulário"
 
 msgid "Capture my first lead"
-msgstr "Capturar meu primeiro lead"
+msgstr "Receber meu primeiro contato"
 
 msgid "Capturing Leads"
-msgstr "Captura de leads"
+msgstr "Captação"
 
 msgid "Close my first deal"
 msgstr "Fechar meu primeiro card"
@@ -54,13 +54,13 @@ msgid "Convert"
 msgstr "Converter"
 
 msgid "Convert lead to deal"
-msgstr "Converter lead em card"
+msgstr "Converter contato em card"
 
 msgid "Create Lead from Incoming Emails"
-msgstr "Criar lead a partir de e-mails recebidos"
+msgstr "Criar contato a partir de e-mails recebidos"
 
 msgid "Create your first lead"
-msgstr "Crie seu primeiro lead"
+msgstr "Crie seu primeiro card"
 
 msgid "Create your first note"
 msgstr "Crie sua primeira anotação"
@@ -96,7 +96,7 @@ msgid "Enrichment"
 msgstr "Enriquecimento"
 
 msgid "Error creating lead: {0}"
-msgstr "Erro ao criar o lead: {0}"
+msgstr "Erro ao criar o contato: {0}"
 
 msgid "Facebook/Instagram Ads"
 msgstr "Anúncios do Facebook/Instagram"
@@ -120,10 +120,10 @@ msgid "How are you managing your sales today?"
 msgstr "Como você gerencia suas vendas hoje?"
 
 msgid "How do new leads usually come to you?"
-msgstr "Como os novos leads costumam chegar até você?"
+msgstr "Como os novos contatos costumam chegar até você?"
 
 msgid "If enabled, a lead will be automatically created when an incoming email is received from an unknown contact."
-msgstr "Se ativado, um lead é criado automaticamente quando chega um e-mail de um contato desconhecido."
+msgstr "Se ativado, um contato é criado automaticamente quando chega um e-mail de alguém desconhecido."
 
 msgid "Import my existing data"
 msgstr "Importar meus dados existentes"
@@ -548,10 +548,10 @@ msgid "Too many signups with this e-mail today. Please try again tomorrow."
 msgstr "Muitos cadastros com este e-mail hoje. Tente de novo amanhã."
 
 msgid "Confirm your e-mail to create {0} on Cred Hub"
-msgstr "Confirme seu e-mail para criar {0} no Cred Hub"
+msgstr "Confirme seu e-mail para criar {0} no HubTech CRM"
 
 msgid "<p>Hi, {0}!</p><p>To create <b>{1}</b> on Cred Hub, at <b>{2}</b>, confirm your e-mail:</p><p><a href=\"{3}\">Confirm and create my company</a></p><p>The link is valid for {4} hours. If you did not ask for this, ignore this e-mail.</p><p>CredTech team</p>"
-msgstr "<p>Olá, {0}!</p><p>Para criar <b>{1}</b> no Cred Hub, em <b>{2}</b>, confirme seu e-mail:</p><p><a href=\"{3}\">Confirmar e criar minha empresa</a></p><p>O link vale por {4} horas. Se você não pediu isso, ignore este e-mail.</p><p>Equipe CredTech</p>"
+msgstr "<p>Olá, {0}!</p><p>Para criar <b>{1}</b> no HubTech CRM, em <b>{2}</b>, confirme seu e-mail:</p><p><a href=\"{3}\">Confirmar e criar minha empresa</a></p><p>O link vale por {4} horas. Se você não pediu isso, ignore este e-mail.</p><p>Equipe CredTech</p>"
 
 msgid "This link is invalid. Please sign up again."
 msgstr "Este link é inválido. Faça o cadastro de novo."
@@ -603,7 +603,7 @@ msgstr "Algo deu errado. Tente de novo em alguns minutos."
 
 #: cred_hub/www/cadastro/index.html
 msgid "Your company gets its own Cred Hub address. You will be its administrator."
-msgstr "Sua empresa ganha um endereço próprio no Cred Hub, e você será o administrador."
+msgstr "Sua empresa ganha um endereço próprio no HubTech CRM, e você será o administrador."
 
 #: cred_hub/www/cadastro/index.html
 msgid "Company name"
@@ -651,7 +651,7 @@ msgstr "O link vale por 24 horas. Não chegou? Confira a pasta de spam."
 
 #: cred_hub/www/cadastro/index.html
 msgid "Already use Cred Hub?"
-msgstr "Já usa o Cred Hub?"
+msgstr "Já usa o HubTech CRM?"
 
 #: cred_hub/www/cadastro/index.html
 msgid "Sign in"
@@ -735,7 +735,7 @@ msgstr "Falar no WhatsApp"
 
 #: cred_hub/www/cadastro/index.html
 msgid "There is no Cred Hub account with {0}."
-msgstr "Não há conta no Cred Hub com {0}."
+msgstr "Não há conta no HubTech CRM com {0}."
 
 #: cred_hub/www/cadastro/index.html
 msgid "There is no account with this e-mail in that company."
@@ -743,7 +743,7 @@ msgstr "Não há conta com esse e-mail naquela empresa."
 
 #: cred_hub/www/cadastro/index.html
 msgid "To join a company that already uses Cred Hub, ask its administrator for an invite. To create your own company, fill in the form below."
-msgstr "Para entrar numa empresa que já usa o Cred Hub, peça um convite ao administrador dela. Para criar a sua empresa, preencha o formulário abaixo."
+msgstr "Para entrar numa empresa que já usa o HubTech CRM, peça um convite ao administrador dela. Para criar a sua empresa, preencha o formulário abaixo."
 
 #: cred_hub/www/cadastro/index.html
 msgid "Send the link again"
@@ -754,13 +754,13 @@ msgid "We sent a new link. Use the newest e-mail."
 msgstr "Enviamos um link novo. Use o e-mail mais recente."
 
 msgid "This e-mail has already created a company on Cred Hub. We sent its address to this e-mail."
-msgstr "Este e-mail já criou uma empresa no Cred Hub. Enviamos o endereço dela para este e-mail."
+msgstr "Este e-mail já criou uma empresa no HubTech CRM. Enviamos o endereço dela para este e-mail."
 
 msgid "Your company on Cred Hub"
-msgstr "Sua empresa no Cred Hub"
+msgstr "Sua empresa no HubTech CRM"
 
 msgid "<p>Hi, {0}!</p><p>This e-mail has already created <b>{1}</b> on Cred Hub. Each person creates one company; you can create as many funnels as you want inside it.</p><p><a href=\"{2}\">Open {1}</a></p><p>CredTech team</p>"
-msgstr "<p>Olá, {0}!</p><p>Este e-mail já criou <b>{1}</b> no Cred Hub. Cada pessoa cria uma empresa; dentro dela você pode criar quantos funis quiser.</p><p><a href=\"{2}\">Abrir {1}</a></p><p>Equipe CredTech</p>"
+msgstr "<p>Olá, {0}!</p><p>Este e-mail já criou <b>{1}</b> no HubTech CRM. Cada pessoa cria uma empresa; dentro dela você pode criar quantos funis quiser.</p><p><a href=\"{2}\">Abrir {1}</a></p><p>Equipe CredTech</p>"
 
 msgid "The Facebook connection is not available right now."
 msgstr "A conexão com o Facebook não está disponível agora."
@@ -796,13 +796,13 @@ msgid "This form is not connected to a pipeline."
 msgstr "Este formulário não está ligado a um funil."
 
 msgid "Facebook lead"
-msgstr "Lead do Facebook"
+msgstr "Contato do Facebook"
 
 msgid "Lead form answers"
 msgstr "Respostas do formulário"
 
 msgid "The Facebook connection stopped working. Open Settings › Lead Sources and connect again."
-msgstr "A conexão com o Facebook parou de funcionar. Abra Configurações › Origens de leads e conecte de novo."
+msgstr "A conexão com o Facebook parou de funcionar. Abra Configurações › Origens e conecte de novo."
 
 msgid "Ad Origin"
 msgstr "Origem do anúncio"
@@ -865,22 +865,22 @@ msgid "The Facebook Page is not connected."
 msgstr "A página do Facebook não está conectada."
 
 msgid "Unknown lead source type."
-msgstr "Tipo de origem de leads desconhecido."
+msgstr "Tipo de origem desconhecido."
 
 msgid "Invalid JSON."
 msgstr "JSON inválido."
 
 msgid "This lead source is not connected to a pipeline."
-msgstr "Esta origem de leads não está ligada a um funil."
+msgstr "Esta origem não está ligada a um funil."
 
 msgid "Too many submissions. Please try again in a few minutes."
 msgstr "Muitos envios seguidos. Tente de novo em alguns minutos."
 
 msgid "Google Ads test lead (no card created)."
-msgstr "Lead de teste do Google Ads (nenhum card criado)."
+msgstr "Contato de teste do Google Ads (nenhum card criado)."
 
 msgid "Website lead"
-msgstr "Lead do site"
+msgstr "Contato do site"
 
 msgid "Label"
 msgstr "Nome"
@@ -892,52 +892,52 @@ msgid "Key (last 4)"
 msgstr "Chave (4 últimos)"
 
 msgid "Cred Chat did not answer. Try again in a few minutes."
-msgstr "O Cred Chat não respondeu. Tente de novo em alguns minutos."
+msgstr "O SmartChat não respondeu. Tente de novo em alguns minutos."
 
 msgid "The Cred Chat access key is not valid."
-msgstr "A chave de acesso do Cred Chat não é válida."
+msgstr "A chave de acesso do SmartChat não é válida."
 
 msgid "This access key has no access to that Cred Chat account."
-msgstr "Esta chave de acesso não tem acesso a essa conta do Cred Chat."
+msgstr "Esta chave de acesso não tem acesso a essa conta do SmartChat."
 
 msgid "Cred Chat refused the request: {0}"
-msgstr "O Cred Chat recusou o pedido: {0}"
+msgstr "O SmartChat recusou o pedido: {0}"
 
 msgid "Inform the Cred Chat account number and access key."
-msgstr "Informe o número da conta e a chave de acesso do Cred Chat."
+msgstr "Informe o número da conta e a chave de acesso do SmartChat."
 
 msgid "Lead source not found."
-msgstr "Origem de leads não encontrada."
+msgstr "Origem não encontrada."
 
 msgid "Connect the Cred Chat before turning on the welcome message."
-msgstr "Conecte o Cred Chat antes de ligar a mensagem de boas-vindas."
+msgstr "Conecte o SmartChat antes de ligar a mensagem de boas-vindas."
 
 msgid "Choose the WhatsApp number and the message template."
 msgstr "Escolha o número de WhatsApp e o modelo de mensagem."
 
 msgid "This WhatsApp number is not in the connected Cred Chat account."
-msgstr "Este número de WhatsApp não está na conta conectada do Cred Chat."
+msgstr "Este número de WhatsApp não está na conta conectada do SmartChat."
 
 msgid "This template is not approved for this WhatsApp number."
 msgstr "Este modelo não está aprovado para este número de WhatsApp."
 
 msgid "Choose a lead field for each variable of the template."
-msgstr "Escolha um campo do lead para cada variável do modelo."
+msgstr "Escolha um campo do contato para cada variável do modelo."
 
 msgid "The welcome message was turned off or the Cred Chat was disconnected."
-msgstr "A mensagem de boas-vindas foi desligada ou o Cred Chat foi desconectado."
+msgstr "A mensagem de boas-vindas foi desligada ou o SmartChat foi desconectado."
 
 msgid "The lead has no valid mobile number."
-msgstr "O lead não tem celular válido."
+msgstr "O contato não tem celular válido."
 
 msgid "The template is no longer approved for this WhatsApp number."
 msgstr "O modelo não está mais aprovado para este número de WhatsApp."
 
 msgid "The lead has no value for {0}."
-msgstr "O lead não tem {0} preenchido."
+msgstr "O contato não tem {0} preenchido."
 
 msgid "Cred Hub Chat Connection"
-msgstr "Conexão com o Cred Chat"
+msgstr "Conexão com o SmartChat"
 
 msgid "Cred Hub Welcome"
 msgstr "Mensagem de boas-vindas"
@@ -982,34 +982,34 @@ msgid "Sent"
 msgstr "Enviada"
 
 msgid "Cred Chat account of this company, used to send the welcome message to new ad and form leads (credtech#53) and to show the Cred Hub panel in conversations (credtech#45)."
-msgstr "Conta do Cred Chat desta empresa, usada para mandar a boas-vindas aos leads novos de anúncio e formulário (credtech#53) e para mostrar o painel do Cred Hub nas conversas (credtech#45)."
+msgstr "Conta do SmartChat desta empresa, usada para mandar a boas-vindas aos contatos novos de anúncio e formulário (credtech#53) e para mostrar o painel do HubTech CRM nas conversas (credtech#45)."
 
 msgid "Panel App ID"
-msgstr "ID do painel no Cred Chat"
+msgstr "ID do painel no SmartChat"
 
 msgid "Dashboard App that shows the Cred Hub panel in Cred Chat conversations."
-msgstr "Dashboard App que mostra o painel do Cred Hub nas conversas do Cred Chat."
+msgstr "Dashboard App que mostra o painel do HubTech CRM nas conversas do SmartChat."
 
 msgid "Panel Error"
 msgstr "Erro do painel"
 
 msgid "To show the Cred Hub panel in conversations, the access key must belong to a Cred Chat administrator."
-msgstr "Para mostrar o painel do Cred Hub nas conversas, a chave de acesso precisa ser de um administrador do Cred Chat."
+msgstr "Para mostrar o painel do HubTech CRM nas conversas, a chave de acesso precisa ser de um administrador do SmartChat."
 
 msgid "Connect Cred Chat first."
-msgstr "Conecte o Cred Chat primeiro."
+msgstr "Conecte o SmartChat primeiro."
 
 msgid "Sign in to Cred Hub to see this contact's cards."
-msgstr "Entre no Cred Hub para ver os cards deste contato."
+msgstr "Entre no HubTech CRM para ver os cards deste contato."
 
 msgid "Sign in to Cred Hub"
-msgstr "Entrar no Cred Hub"
+msgstr "Entrar no HubTech CRM"
 
 msgid "After signing in, come back to this conversation."
 msgstr "Depois de entrar, volte para esta conversa."
 
 msgid "Open this panel from a conversation in Cred Chat."
-msgstr "Abra este painel por uma conversa no Cred Chat."
+msgstr "Abra este painel por uma conversa no SmartChat."
 
 msgid "This conversation has no phone number or e-mail to look for."
 msgstr "Esta conversa não tem telefone nem e-mail para buscar."
@@ -1018,7 +1018,7 @@ msgid "No card for this contact."
 msgstr "Nenhum card para este contato."
 
 msgid "Open Cred Hub"
-msgstr "Abrir o Cred Hub"
+msgstr "Abrir o HubTech CRM"
 
 msgid "Open card"
 msgstr "Abrir card"

@@ -16,7 +16,7 @@ def get_context(context):
 	if not signup_open():
 		frappe.local.flags.redirect_location = "/login"
 		raise frappe.Redirect
-	context.title = f"{_('Create your company')} · Cred Hub"
+	context.title = f"{_('Create your company')} · HubTech CRM"
 	context.logo = get_app_logo()
 	context.support_url = SUPPORT_WHATSAPP
 	# Título e texto de cada situação do cadastro, já traduzidos (o JavaScript só escolhe)
