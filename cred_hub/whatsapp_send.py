@@ -137,7 +137,7 @@ def send_whatsapp(
 	except welcome.ChatError as e:
 		frappe.throw(str(e))
 	if not connection:
-		frappe.throw(_("Connect the company's SmartChat first (Settings › Integrations › Lead sources)."))
+		frappe.throw(_("Connect the company's SmartChat first (Settings › Integrations › Lead Sources)."))
 	inbox = next((i for i in inboxes if cint(i["id"]) == cint(inbox_id)), None)
 	if not inbox:
 		frappe.throw(_("You are not a member of this SmartChat inbox."), frappe.PermissionError)
