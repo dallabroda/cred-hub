@@ -165,6 +165,18 @@ class Page:
 		return self.body.decode(charset, errors="replace")
 
 
+def _decoded(body: bytes, encoding: str | None, max_bytes: int) -> bytes:
+	"""Abre gzip/deflate (corpo possivelmente cortado no limite); outra compressão fica como veio."""
+	encoding = (encoding or "").strip().lower()
+	if encoding not in ("gzip", "x-gzip", "deflate"):
+		return body
+	try:
+		opener = zlib.decompressobj(16 + zlib.MAX_WBITS if "gzip" in encoding else zlib.MAX_WBITS)
+		return opener.decompress(body, max_bytes)
+	except zlib.error:
+		return body
+
+
 def fetch(url: str, method: str = "GET", max_bytes: int = MAX_BYTES, max_redirects: int = MAX_REDIRECTS) -> Page:
 	"""Busca `url` seguindo até `max_redirects` redirecionamentos seguros. Corpo cortado em `max_bytes`."""
 	session = _session()
@@ -201,7 +213,7 @@ def fetch(url: str, method: str = "GET", max_bytes: int = MAX_BYTES, max_redirec
 						if not chunk:
 							break
 						body += chunk
-					body = body[:max_bytes]
+					body = _decoded(body[:max_bytes], response.headers.get("Content-Encoding"), max_bytes)
 				return Page(url, response.status_code, response.headers, body, redirects)
 			finally:
 				response.close()
