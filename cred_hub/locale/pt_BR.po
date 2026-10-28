@@ -1588,3 +1588,6 @@ msgstr "Domínio da empresa provável"
 
 msgid "Probable company status"
 msgstr "Situação da empresa provável"
+
+msgid "company website"
+msgstr "site da empresa"

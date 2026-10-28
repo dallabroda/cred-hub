@@ -22,7 +22,7 @@ from cred_hub.email_company import score
 SETTINGS = "FCRM Settings"
 SETTING_FIELD = "email_company_discovery"
 SUGGESTED, CONFIRMED, DISMISSED = "Suggested", "Confirmed", "Dismissed"
-SOURCES = {"rdap": "Registro.br", "organization": "organization already registered"}
+SOURCES = {"rdap": "Registro.br", "organization": "organization already registered", "site": "company website"}
 
 
 def custom_fields():

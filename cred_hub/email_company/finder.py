@@ -5,8 +5,9 @@ Cascata, que para no primeiro resultado:
    existe na empresa com o site nesse domínio.
 2. (credtech#185) RDAP do Registro.br (só .br): CNPJ do titular pessoa jurídica; dígitos conferidos; Organização com
    esse CNPJ, se já existir; senão confirmação na consulta de CNPJ do cred_hub e confiança alta/média/baixa.
-O resultado é aplicado no card (Fase 4, credtech#187: cred_hub.email_company.apply). A leitura do site (Fase 3)
-fica para depois.
+3. (credtech#186) Leitura leve do site (até 3 páginas: JSON-LD e CNPJ escrito no texto), também para domínios
+   fora do .br, conferida na Receita como o RDAP.
+O resultado é aplicado no card (Fase 4, credtech#187: cred_hub.email_company.apply).
 
 Roda em fila depois que o lead entra: nunca atrasa nem derruba a entrada do lead.
 """
@@ -17,7 +18,7 @@ from frappe.utils import now_datetime
 
 from cred_hub.cnpj import client as cnpj_client
 from cred_hub.cnpj.mapping import is_valid_cnpj
-from cred_hub.email_company import rdap, safe_http, score
+from cred_hub.email_company import rdap, safe_http, score, site
 from cred_hub.email_company.domain import email_domain, url_domain
 
 CACHE_DAYS = 30
@@ -74,10 +75,40 @@ def discover(email: str, company_name: str | None = None) -> dict | None:
 	organization = find_organization(domains)
 	if organization:
 		return {**result, "organization": organization, "confidence": score.HIGH, "source": "organization"}
-	found = from_rdap(domain, site.get("final_domain"), company_name)
+	found = from_rdap(domain, site.get("final_domain"), company_name) or from_site(
+		domain, site.get("final_domain"), company_name
+	)
 	if found:
 		return {**result, **found}
 	return {**result, "organization": None, "confidence": None, "source": None}
+
+
+def from_site(domain: str, final_domain: str | None, company_name: str | None) -> dict | None:
+	"""CNPJ publicado no site da empresa (credtech#186), conferido na Receita como o do RDAP."""
+	site_domain = final_domain or domain
+	found = site_cnpj(site_domain)
+	if not found:
+		return None
+	cnpj = found["cnpj"]
+	result = {"cnpj": cnpj, "source": "site", "site_url": found.get("url"), "site_detail": found.get("site_detail")}
+	organization = find_organization(set(), cnpj)
+	if organization:
+		return {**result, "organization": organization, "confidence": score.HIGH}
+	company = receita(cnpj)
+	if not company:
+		return None
+	return {**result, "organization": None, "company": company, "confidence": score.confidence(company, site_domain, company_name)}
+
+
+def site_cnpj(domain: str) -> dict | None:
+	"""CNPJ do site, com cache de 30 dias; sem CNPJ ou fora do ar, tenta de novo no dia seguinte."""
+	key = f"{CACHE_PREFIX}site_cnpj:{domain}"
+	cached = frappe.cache.get_value(key)
+	if cached is not None:
+		return cached or None
+	found = site.find_cnpj(domain)
+	frappe.cache.set_value(key, found or {}, expires_in_sec=(CACHE_DAYS * 86400) if found else FAILURE_CACHE_HOURS * 3600)
+	return found
 
 
 def from_rdap(domain: str, final_domain: str | None, company_name: str | None) -> dict | None:

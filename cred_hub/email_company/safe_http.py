@@ -11,6 +11,7 @@
 import ipaddress
 import socket
 import time
+import zlib
 from urllib.parse import urljoin, urlsplit
 
 import requests
@@ -139,7 +140,11 @@ class _SafeAdapter(HTTPAdapter):
 def _session() -> requests.Session:
 	session = requests.Session()
 	session.trust_env = False  # sem HTTP(S)_PROXY nem .netrc do ambiente
-	session.headers.update({"User-Agent": USER_AGENT, "Accept-Language": "pt-BR,pt;q=0.9"})
+	# sem compressão: o corpo é lido cru (read1) e contado em bytes; o que vier comprimido mesmo assim é aberto em
+	# _decoded (credtech#186: a Fase 3 lê o texto da página)
+	session.headers.update(
+		{"User-Agent": USER_AGENT, "Accept-Language": "pt-BR,pt;q=0.9", "Accept-Encoding": "identity"}
+	)
 	adapter = _SafeAdapter(max_retries=0)
 	session.mount("http://", adapter)
 	session.mount("https://", adapter)
@@ -158,6 +163,18 @@ class Page:
 	def text(self) -> str:
 		charset = requests.utils.get_encoding_from_headers(self.headers) or "utf-8"
 		return self.body.decode(charset, errors="replace")
+
+
+def _decoded(body: bytes, encoding: str | None, max_bytes: int) -> bytes:
+	"""Abre gzip/deflate (corpo possivelmente cortado no limite); outra compressão fica como veio."""
+	encoding = (encoding or "").strip().lower()
+	if encoding not in ("gzip", "x-gzip", "deflate"):
+		return body
+	try:
+		opener = zlib.decompressobj(16 + zlib.MAX_WBITS if "gzip" in encoding else zlib.MAX_WBITS)
+		return opener.decompress(body, max_bytes)
+	except zlib.error:
+		return body
 
 
 def fetch(url: str, method: str = "GET", max_bytes: int = MAX_BYTES, max_redirects: int = MAX_REDIRECTS) -> Page:
@@ -196,7 +213,7 @@ def fetch(url: str, method: str = "GET", max_bytes: int = MAX_BYTES, max_redirec
 						if not chunk:
 							break
 						body += chunk
-					body = body[:max_bytes]
+					body = _decoded(body[:max_bytes], response.headers.get("Content-Encoding"), max_bytes)
 				return Page(url, response.status_code, response.headers, body, redirects)
 			finally:
 				response.close()
