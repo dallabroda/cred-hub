@@ -24,8 +24,13 @@ LANGUAGE = "pt-BR"
 TIME_ZONE = "America/Sao_Paulo"
 CURRENCY = "BRL"
 
-EMAIL_ACCOUNT = "Cred Hub"
-WELCOME = "Cred Hub - Welcome"
+# Nome do produto nos e-mails (remetente "HubTech CRM <no-reply@...>") e no sistema (renomeado em 27/10/2026)
+PRODUCT_NAME = "HubTech CRM"
+EMAIL_ACCOUNT = PRODUCT_NAME
+WELCOME = "HubTech CRM - Welcome"
+# Nomes de antes da troca: renomeados na próxima execução (pode repetir)
+OLD_EMAIL_ACCOUNT = "Cred Hub"
+OLD_WELCOME = "Cred Hub - Welcome"
 
 # Os nomes continuam em inglês no banco e no código (o Frappe CRM depende deles); só a tela muda, conforme o
 # idioma de cada usuário. Status de lead e etapas padrão são "translated_doctype" no Frappe CRM.
@@ -48,21 +53,9 @@ TRANSLATIONS = {
 }
 
 # pt-BR por padrão; inglês para quem escolheu inglês (o idioma é do usuário)
-WELCOME_SUBJECT = "{% if doc.language == 'en' %}Welcome to Cred Hub{% else %}Boas-vindas ao Cred Hub{% endif %}"
-WELCOME_MESSAGE = """{% set url = frappe.utils.get_url("/crm") %}
-{% if doc.language == 'en' %}
-<p>Hi {{ doc.first_name or "" }},</p>
-<p>Your Cred Hub account is ready.</p>
-<p><a href="{{ url }}">Open Cred Hub</a> and sign in with Google, Microsoft or GitHub using this e-mail, or with your password.</p>
-<p>If you can't see your company's data yet, ask your company's administrator to give you access.</p>
-<p>CredTech team</p>
-{% else %}
-<p>Olá, {{ doc.first_name or "" }}!</p>
-<p>Sua conta no Cred Hub está pronta.</p>
-<p><a href="{{ url }}">Acesse o Cred Hub</a> e entre com Google, Microsoft ou GitHub usando este e-mail, ou com a sua senha.</p>
-<p>Se ainda não aparecerem os dados da sua empresa, peça acesso ao administrador da sua empresa.</p>
-<p>Equipe CredTech</p>
-{% endif %}"""
+# Texto em inglês traduzido pelo .po (pt-BR é o idioma das empresas); o corpo é o template do e-mail
+WELCOME_SUBJECT = "{{ _('Welcome to HubTech CRM') }}"
+WELCOME_MESSAGE = '{% include "templates/emails/hubtech_welcome.html" %}'
 
 SOCIAL_REDIRECT_URL = "/api/method/frappe.integrations.oauth2_logins.custom/auth0"
 # Nome do registro (não muda depois de criado), nome no botão, conexão do Auth0, ícone. Todos voltam pela mesma
@@ -94,13 +87,15 @@ def apply_from_env(commit=True):
 			"client_id": env["AUTH0_CLIENT_ID"],
 			"client_secret": env["AUTH0_CLIENT_SECRET"],
 		}
-	return apply(email=email, auth0=auth0, commit=commit)
+	return apply(email=email, auth0=auth0, company=env.get("COMPANY_NAME"), commit=commit)
 
 
-def apply(email=None, auth0=None, commit=True):
+def apply(email=None, auth0=None, company=None, commit=True):
 	from cred_hub.billing import ensure_trial
 
 	done = [brazil_defaults(), access_by_invite_only(), translations(), ensure_trial()]
+	if company:
+		done.append(company_name(company))
 	if email:
 		done.append(email_setup(email))
 	if auth0:
@@ -174,7 +169,8 @@ def _address(sender):
 
 
 def email_setup(cfg):
-	"""Conta de envio "Cred Hub" (Brevo), boas-vindas a todo usuário novo e nome "Cred Hub" nos e-mails."""
+	"""Conta de envio "HubTech CRM" (Brevo), boas-vindas a todo usuário novo e nome "HubTech CRM" nos e-mails."""
+	_rename_old_names()
 	name = frappe.db.get_value("Email Account", {"email_account_name": EMAIL_ACCOUNT})
 	doc = frappe.get_doc("Email Account", name) if name else frappe.new_doc("Email Account")
 	doc.update(
@@ -222,8 +218,32 @@ def email_setup(cfg):
 		welcome.insert(ignore_permissions=True, set_name=WELCOME)
 	else:
 		welcome.save(ignore_permissions=True)
-	frappe.db.set_single_value("System Settings", "app_name", "Cred Hub")
+	frappe.db.set_single_value("System Settings", "app_name", PRODUCT_NAME)
 	return f"e-mail ({doc.email_id})"
+
+
+def company_name(name):
+	"""Nome da empresa (Configurações > Marca), usado no convite ("Ana convidou você para <empresa>").
+	Vem do cadastro (COMPANY_NAME); não troca um nome que o admin já escolheu."""
+	if not frappe.db.get_single_value("FCRM Settings", "brand_name"):
+		frappe.db.set_single_value("FCRM Settings", "brand_name", name.strip()[:140])
+	return f"empresa ({frappe.db.get_single_value('FCRM Settings', 'brand_name')})"
+
+
+def welcome_subject():
+	"""Hook welcome_email do Frappe: assunto do e-mail de boas-vindas com o link para criar a senha."""
+	return frappe._("Welcome to HubTech CRM")
+
+
+def _rename_old_names():
+	"""A conta "Cred Hub" e a notificação "Cred Hub - Welcome" ganham o nome novo, mantendo senha e histórico."""
+	old = frappe.db.get_value("Email Account", {"email_account_name": OLD_EMAIL_ACCOUNT})
+	if old and not frappe.db.exists("Email Account", {"email_account_name": EMAIL_ACCOUNT}):
+		frappe.db.set_value("Email Account", old, "email_account_name", EMAIL_ACCOUNT)
+		if old != EMAIL_ACCOUNT:
+			frappe.rename_doc("Email Account", old, EMAIL_ACCOUNT, force=True)
+	if frappe.db.exists("Notification", OLD_WELCOME) and not frappe.db.exists("Notification", WELCOME):
+		frappe.rename_doc("Notification", OLD_WELCOME, WELCOME, force=True)
 
 
 def social_login(cfg):

@@ -1,0 +1,16 @@
+{#- Overrides Frappe's welcome e-mail with the link to create the password (user created with "Send Welcome
+    Email", or invitation accepted by the admin). Args: first_name, user, link, site_url. -#}
+{% from "templates/emails/hubtech_macros.html" import card with context %}
+{{ card(
+	eyebrow=_("Welcome"),
+	heading=_("Your HubTech CRM account is ready"),
+	greeting=_("Hi, {0}!").format(first_name | e),
+	paragraphs=[
+		_("An account was created for you on HubTech CRM, where your team organizes cards and tasks in funnels."),
+		_("To sign in, first create your password."),
+	],
+	details=[(_("Address"), site_url), (_("Your login"), user | e)],
+	action_text=_("Create my password"),
+	action_url=link,
+	note=_("If you were not expecting this account, you can ignore this e-mail."),
+) }}

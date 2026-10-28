@@ -1,0 +1,3 @@
+{#- Overrides Frappe's wrapper for every e-mail (notifications, invitations, alerts): cred_hub is installed after
+    frappe and crm, so its templates come first. -#}
+{% include "templates/emails/hubtech_layout.html" %}
