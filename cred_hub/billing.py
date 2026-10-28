@@ -130,7 +130,13 @@ def user_limit(plan=None):
 
 
 def active_users(exclude=None):
-	filters = {"enabled": 1, "user_type": "System User", "name": ("not in", (*HIDDEN_USERS, exclude or ""))}
+	# Usuários técnicos das chaves da API não ocupam vaga (credtech#175)
+	filters = {
+		"enabled": 1,
+		"user_type": "System User",
+		"name": ("not in", (*HIDDEN_USERS, exclude or "")),
+		"credhub_api_key": ("is", "not set"),
+	}
 	return frappe.get_all("User", filters=filters, pluck="name", order_by="creation asc")
 
 
@@ -151,7 +157,7 @@ def _enforced():
 
 def validate_user(doc, method=None):
 	"""doc_event User.validate: criar, reativar ou promover um usuário de sistema precisa de vaga no plano."""
-	if not _enforced() or doc.name in HIDDEN_USERS or frappe.flags.credhub_billing_sync:
+	if not _enforced() or doc.name in HIDDEN_USERS or frappe.flags.credhub_billing_sync or doc.get("credhub_api_key"):
 		return
 	if not doc.enabled or doc.user_type != "System User":
 		return
