@@ -506,9 +506,10 @@ def _save_plan(plan, **values):
 # Pausar e reativar
 
 
-def pause_over_limit(reason):
+def pause_over_limit(reason, pay_url=None):
 	"""Pausa os usuários acima do limite, dos mais recentes para os mais antigos (o criador da empresa fica), e avisa
-	os administradores do motivo (um de PAUSE_REASONS) e de como reativar."""
+	os administradores do motivo (um de PAUSE_REASONS) e de como reativar. `pay_url`: a fatura que, paga, devolve os
+	pausados (sem ela, no atraso da mensalidade vale a fatura em aberto do plano)."""
 	users = active_users()
 	excess = len(users) - user_limit()
 	paused = list(reversed(users[-excess:] if excess > 0 else []))
@@ -516,10 +517,10 @@ def pause_over_limit(reason):
 		_set_user(name, enabled=0, paused=1)
 	invitations = _expire_invitations_over_limit()
 	if paused:
-		_paused_notice(reason, paused, invitations)
+		_paused_notice(reason, paused, invitations, pay_url)
 
 
-def _paused_notice(reason, paused, invitations):
+def _paused_notice(reason, paused, invitations, pay_url=None):
 	"""E-mail aos administradores ativos quando alguém é pausado (decisão do dono, 27/10/2026)."""
 	plan = _plan()
 	admins = set(frappe.get_all("Has Role", filters={"role": "System Manager", "parenttype": "User"}, pluck="parent"))
@@ -528,7 +529,8 @@ def _paused_notice(reason, paused, invitations):
 		return
 	names = [frappe.db.get_value("User", name, "full_name") or name for name in paused]
 	# Fatura em aberto: pagar devolve os pausados (restore_paused na confirmação do Asaas)
-	pay_url = plan.invoice_url if reason in ("past_due", "upgrade_unpaid") else None
+	if reason == "past_due":
+		pay_url = pay_url or plan.invoice_url
 	frappe.sendmail(
 		recipients=recipients,
 		subject=_("HubTech CRM: 1 user was paused")
@@ -722,8 +724,9 @@ def _apply_upgrade_payment(plan, event, payment_id):
 	if not payment_id or payment_id == plan.applied_upgrade_payment_id:
 		return  # o Asaas manda CONFIRMED e depois RECEIVED para o mesmo pagamento
 	if event == "PAYMENT_OVERDUE":
-		if payment_id == plan.upgrade_payment_id and _asaas("GET", f"/payments/{payment_id}").get("status") == "OVERDUE":
-			_upgrade_overdue(plan)
+		payment = _asaas("GET", f"/payments/{payment_id}") if payment_id == plan.upgrade_payment_id else {}
+		if payment.get("status") == "OVERDUE":
+			_upgrade_overdue(plan, payment)
 			frappe.db.commit()
 		return
 	if event not in ("PAYMENT_CONFIRMED", "PAYMENT_RECEIVED"):
@@ -760,13 +763,13 @@ def _apply_upgrade_payment(plan, event, payment_id):
 	frappe.db.commit()
 
 
-def _upgrade_overdue(plan):
+def _upgrade_overdue(plan, payment):
 	"""Prazo da diferença venceu: as vagas voltam às pagas e os usuários novos (os mais recentes) são pausados.
-	A cobrança continua aberta: pagando, eles voltam."""
+	A cobrança continua aberta: pagando, eles voltam (o e-mail leva o link dela, não o da mensalidade)."""
 	if cint(plan.extra_users) <= cint(plan.upgrade_base_users):
 		return
 	_save_plan(plan, extra_users=cint(plan.upgrade_base_users))
-	pause_over_limit("upgrade_unpaid")
+	pause_over_limit("upgrade_unpaid", payment.get("invoiceUrl"))
 
 
 def daily_check():
@@ -796,7 +799,7 @@ def daily_check():
 		if payment.get("status") in CONFIRMED:
 			_apply_upgrade_payment(plan, "PAYMENT_CONFIRMED", plan.upgrade_payment_id)
 		else:
-			_upgrade_overdue(plan)
+			_upgrade_overdue(plan, payment)
 	if not in_trial(plan):
 		# Virada do teste e fim da tolerância da 1ª fatura contratada no teste; nos outros dias não há excesso
 		pause_over_limit("past_due" if _trial_contract(plan) else "trial")
