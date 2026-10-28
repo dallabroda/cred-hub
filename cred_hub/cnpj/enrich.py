@@ -64,6 +64,31 @@ def enrich_doc(doctype, name, cnpj):
 	if partners:
 		resumo += " " + _("{0} sócio(s) cadastrado(s) como contato.").format(partners)
 	doc.add_comment("Comment", resumo)
+	if doctype == "CRM Organization":
+		use_legal_name(doc, data.get("legal_name"))
+
+
+def use_legal_name(doc, legal_name: str | None):
+	"""A organização com CNPJ passa a se chamar pela razão social da Receita (decisão do dono, 28/10/2026): razão
+	social e nome fantasia saíram das telas e o nome da organização é o único nome. Os cards e contatos ligados
+	acompanham a troca. Se outra organização já tem esse nome, fica o nome que o usuário cadastrou."""
+	legal_name = (legal_name or "").strip()
+	if not legal_name or legal_name == doc.name:
+		return
+	if frappe.db.exists("CRM Organization", legal_name):
+		doc.add_comment(
+			"Comment",
+			_("O nome não foi trocado para a razão social {0}: já existe outra organização com esse nome.").format(legal_name),
+		)
+		return
+	old = doc.name
+	frappe.rename_doc("CRM Organization", old, legal_name, force=True, show_alert=False)
+	frappe.db.set_value("CRM Organization", legal_name, "organization_name", legal_name, update_modified=False)
+	# a organização do contato é texto (company_name), não vínculo: o rename não troca sozinho
+	frappe.db.set_value("Contact", {"company_name": old}, "company_name", legal_name, update_modified=False)
+	frappe.get_doc("CRM Organization", legal_name).add_comment(
+		"Comment", _("Nome trocado de {0} para a razão social da Receita.").format(old)
+	)
 
 
 def _finish_without_data(doc, message, retry=False):

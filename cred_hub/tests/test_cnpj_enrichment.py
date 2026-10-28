@@ -34,8 +34,10 @@ class TestCnpjEnrichment(IntegrationTestCase):
 	def test_enrich_organization_and_partners(self, _fetch):
 		org = self._org()
 		enrich.enrich_doc("CRM Organization", org.name, "11222333000181")
-		org.reload()
-		self.assertEqual(org.legal_name, "EMPRESA EXEMPLO LTDA")
+		# com CNPJ, a organização passa a se chamar pela razão social (decisão do dono, 28/10/2026)
+		self.assertFalse(frappe.db.exists("CRM Organization", "Exemplo Teste Cred Hub"))
+		org = frappe.get_doc("CRM Organization", "EMPRESA EXEMPLO LTDA")
+		self.assertEqual((org.legal_name, org.organization_name), ("EMPRESA EXEMPLO LTDA", "EMPRESA EXEMPLO LTDA"))
 		self.assertEqual(org.share_capital, 205431960490.52)
 		self.assertEqual((org.state, org.city, org.neighborhood), ("SC", "FLORIANOPOLIS", "CENTRO"))
 		self.assertEqual((org.company_size, org.is_mei), ("Other size", "No"))
@@ -52,7 +54,12 @@ class TestCnpjEnrichment(IntegrationTestCase):
 		enrich.enrich_doc("CRM Organization", org.name, "11222333000181")
 		self.assertEqual(frappe.db.count("Contact", {"company_name": org.name}), 1)
 		# ...e reaproveita o mesmo endereço
-		self.assertEqual(frappe.db.count("Address", {"address_title": f"{org.organization_name} (Receita)"}), 1)
+		receita = frappe.get_all(
+			"Dynamic Link",
+			filters={"parenttype": "Address", "link_doctype": "CRM Organization", "link_name": org.name},
+			pluck="parent",
+		)
+		self.assertEqual(len(set(receita)), 1)
 
 	@patch.object(client, "fetch", return_value=from_opencnpj(OPENCNPJ))
 	def test_manual_address_is_kept(self, _fetch):
@@ -61,7 +68,7 @@ class TestCnpjEnrichment(IntegrationTestCase):
 		                         "address_line1": "Rua A, 1", "city": "Curitiba", "country": "Brazil"}).insert()
 		org.db_set("address", manual.name)
 		enrich.enrich_doc("CRM Organization", org.name, "11222333000181")
-		self.assertEqual(frappe.db.get_value("CRM Organization", org.name, "address"), manual.name)
+		self.assertEqual(frappe.db.get_value("CRM Organization", "EMPRESA EXEMPLO LTDA", "address"), manual.name)
 
 	def test_years_between(self):
 		self.assertEqual(enrich.years_between("2025-03-26", "2026-03-25"), 0)

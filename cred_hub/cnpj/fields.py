@@ -86,8 +86,6 @@ DETAILS_ADDRESS_FIELDS = ["state", "city", "neighborhood"]
 # Ordem dos campos na seção do painel lateral do CRM
 SIDE_PANEL_FIELDS = [
 	"cnpj",
-	"legal_name",
-	"trade_name",
 	"registration_status",
 	"main_cnae",
 	"legal_nature",
