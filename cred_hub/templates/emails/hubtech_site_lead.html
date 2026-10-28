@@ -8,12 +8,12 @@
 {%- set owner = frappe.db.get_value("User", doc.assigned_to, "full_name") if doc.assigned_to else None -%}
 {%- set form = "<b>" ~ (source | e) ~ "</b>" if source else "" -%}
 {%- if doc.status == "Created" -%}
-	{%- set intro = _("A lead arrived from the site form {0} and is already in the funnel.").format(form) if source else _("A lead arrived from the site and is already in the funnel.") -%}
+	{%- set intro = _("A contact arrived from the site form {0} and is already in the funnel.").format(form) if source else _("A contact arrived from the site and is already in the funnel.") -%}
 {%- else -%}
 	{%- set intro = _("Someone who already has an open card sent the form {0} again: the answers went to the card.").format(form) if source else _("Someone who already has an open card sent a site form again: the answers went to the card.") -%}
 {%- endif -%}
 {{ card(
-	eyebrow=_("New lead") if doc.status == "Created" else _("Returning lead"),
+	eyebrow=_("New contact") if doc.status == "Created" else _("Returning contact"),
 	heading=((lead.first_name or "") ~ " " ~ (lead.last_name or "")) | trim | e,
 	paragraphs=[intro],
 	details=[
