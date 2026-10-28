@@ -114,7 +114,7 @@ class TestApiKeys(IntegrationTestCase):
 	def test_pause_over_limit_never_pauses_technical_user(self):
 		technical = self.technical()
 		with patch.object(billing, "user_limit", return_value=0):
-			billing.pause_over_limit()
+			billing.pause_over_limit("downgrade")
 		self.assertEqual(frappe.db.get_value("User", technical, ["enabled", "credhub_paused"]), (1, 0))
 
 	def test_plan_and_trial_reminder_ignore_technical_user(self):
