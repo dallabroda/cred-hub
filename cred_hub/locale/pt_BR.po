@@ -1121,31 +1121,31 @@ msgid "This user belongs to an API key and cannot sign in."
 msgstr "Este usuário pertence a uma chave da API e não pode entrar."
 
 msgid "Cards: read"
-msgstr "Cards: leitura"
+msgstr "Cards: ler"
 
 msgid "Cards: write"
-msgstr "Cards: escrita"
+msgstr "Cards: escrever"
 
 msgid "Contacts: read"
-msgstr "Contatos: leitura"
+msgstr "Contatos: ler"
 
 msgid "Contacts: write"
-msgstr "Contatos: escrita"
+msgstr "Contatos: escrever"
 
 msgid "Organizations: read"
-msgstr "Empresas: leitura"
+msgstr "Empresas: ler"
 
 msgid "Organizations: write"
-msgstr "Empresas: escrita"
+msgstr "Empresas: escrever"
 
-msgid "Leads: create"
-msgstr "Leads: criar"
+msgid "Incoming contacts: create"
+msgstr "Contatos de entrada: criar"
 
 msgid "Pipelines: read"
-msgstr "Funis: leitura"
+msgstr "Funis: ler"
 
 msgid "Fields and rules (admin)"
-msgstr "Campos e regras (admin)"
+msgstr "Campos e regras das etapas (admin)"
 
 msgid "Cred Hub API Key"
 msgstr "Chave da API"

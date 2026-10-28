@@ -41,7 +41,7 @@ SCOPES = {
 	"contacts_write": "Contacts: write",
 	"organizations_read": "Organizations: read",
 	"organizations_write": "Organizations: write",
-	"leads_write": "Leads: create",
+	"leads_write": "Incoming contacts: create",
 	"pipelines_read": "Pipelines: read",
 	"fields_admin": "Fields and rules (admin)",
 }

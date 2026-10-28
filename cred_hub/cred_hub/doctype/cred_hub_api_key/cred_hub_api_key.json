@@ -117,7 +117,7 @@
   {
    "fieldname": "leads_write",
    "fieldtype": "Check",
-   "label": "Leads: create"
+   "label": "Incoming contacts: create"
   },
   {
    "fieldname": "pipelines_read",
