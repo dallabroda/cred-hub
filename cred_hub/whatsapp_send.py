@@ -105,7 +105,7 @@ def _options(deal, phone):
 	return connection, token, number, inboxes, agent
 
 
-@frappe.whitelist(methods=["GET"])
+@frappe.whitelist()
 def get_whatsapp_options(deal: str, phone: str) -> dict:
 	"""O que a janela "Enviar WhatsApp" mostra: as caixas que o vendedor pode usar e, em cada uma, se dá para
 	escrever livre ou só com modelo."""
