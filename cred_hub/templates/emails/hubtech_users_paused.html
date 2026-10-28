@@ -1,0 +1,34 @@
+{#- Users paused by the plan, to every active admin (cred_hub.billing._paused_notice).
+    Args: name, reason (trial, past_due, upgrade_unpaid, downgrade, canceled), users (full names), invitations,
+    free, price, grace_days, pay_url, plan_url. -#}
+{% from "templates/emails/hubtech_macros.html" import card with context %}
+{%- set why = {
+	"trial": _("The HubTech CRM free trial with unlimited users ended. The plan now includes {0} free user plus the extra users you contract, at {1} per user per month.").format(free, price),
+	"past_due": _("The monthly invoice is still unpaid after {0} days of tolerance, so the plan went back to {1} free user.").format(grace_days, free),
+	"upgrade_unpaid": _("The charge for the users you added was not paid by its due date, so the plan went back to the users already paid."),
+	"downgrade": _("The plan now has fewer users, as you scheduled."),
+	"canceled": _("The subscription was canceled. The plan now includes {0} free user.").format(free),
+}[reason] -%}
+{%- set one = users | length == 1 -%}
+{%- if pay_url -%}
+	{%- set back = _("Pay the open invoice: as soon as the payment is confirmed, this user comes back by itself.") if one
+		else _("Pay the open invoice: as soon as the payment is confirmed, they come back by themselves.") -%}
+{%- elif one -%}
+	{%- set back = _("To bring this user back, contract an extra user in Settings > Users and plan: as soon as the payment is confirmed, the user comes back by itself. Or choose who stays: deactivate a user you no longer need and reactivate the paused one.") -%}
+{%- else -%}
+	{%- set back = _("To bring them back, contract extra users in Settings > Users and plan: as soon as the payment is confirmed, they come back by themselves, oldest first. Or choose who stays: deactivate a user you no longer need and reactivate the paused one.") -%}
+{%- endif -%}
+{%- set paragraphs = [why, _("This user can no longer sign in. Nothing was deleted: their cards, contacts and history stay.") if one
+	else _("These users can no longer sign in. Nothing was deleted: their cards, contacts and history stay.")] -%}
+{%- if invitations -%}
+	{%- set paragraphs = paragraphs + [_("Pending invitations over the limit are no longer valid: {0}. Invite again when there is a free seat.").format("<b>" ~ invitations ~ "</b>")] -%}
+{%- endif -%}
+{{ card(
+	eyebrow=_("Users and plan"),
+	heading=_("1 user was paused") if users | length == 1 else _("{0} users were paused").format(users | length),
+	greeting=_("Hi, {0}!").format(name | e) if name else _("Hi!"),
+	paragraphs=paragraphs + [back],
+	details=[(_("Paused"), users | map("e") | join(", "))],
+	action_text=_("Pay the invoice") if pay_url else _("See users and plan"),
+	action_url=pay_url or plan_url,
+) }}

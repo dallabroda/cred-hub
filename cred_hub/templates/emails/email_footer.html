@@ -1,0 +1,5 @@
+{#- Overrides Frappe's footer: the layout already has CredTech, contact and legal links, so only the signature
+    of the sending account, the unsubscribe link and the open-tracking pixel stay here. -#}
+{%- if email_account_footer %}<div>{{ email_account_footer }}</div>{% endif %}
+<!--unsubscribe link here-->
+<div><!--email_open_check--></div>
