@@ -1,8 +1,11 @@
 """Descobrir a empresa (CNPJ) pelo domínio do e-mail do lead (épico credtech#183).
 
-Fase 1 (credtech#184): saneamento do domínio, domínio final pelo redirecionamento do site, atalho por Organização que
-já existe na empresa, fila assíncrona e cache. As fontes de CNPJ (RDAP e site, Fases 2 e 3) e a aplicação no card
-(Fase 4) entram nesta mesma cascata; até lá o resultado só é calculado e guardado no cache.
+Cascata, que para no primeiro resultado:
+1. (credtech#184) domínio do e-mail sem os pessoais; domínio final pelo redirecionamento do site; Organização que já
+   existe na empresa com o site nesse domínio.
+2. (credtech#185) RDAP do Registro.br (só .br): CNPJ do titular pessoa jurídica; dígitos conferidos; Organização com
+   esse CNPJ, se já existir; senão confirmação na consulta de CNPJ do cred_hub e confiança alta/média/baixa.
+A leitura do site (Fase 3) e a aplicação no card (Fase 4) entram depois; até lá o resultado só é calculado.
 
 Roda em fila depois que o lead entra: nunca atrasa nem derruba a entrada do lead.
 """
@@ -11,7 +14,9 @@ import frappe
 import requests
 from frappe.utils import cint, now_datetime
 
-from cred_hub.email_company import safe_http
+from cred_hub.cnpj import client as cnpj_client
+from cred_hub.cnpj.mapping import is_valid_cnpj
+from cred_hub.email_company import rdap, safe_http, score
 from cred_hub.email_company.domain import email_domain, url_domain
 
 CACHE_DAYS = 30
@@ -59,8 +64,70 @@ def discover(email: str, company_name: str | None = None) -> dict | None:
 	result = {"domain": domain, "final_domain": site.get("final_domain"), "company_name": company_name}
 	organization = find_organization(domains)
 	if organization:
-		return {**result, "organization": organization, "confidence": "high", "source": "organization"}
+		return {**result, "organization": organization, "confidence": score.HIGH, "source": "organization"}
+	found = from_rdap(domain, site.get("final_domain"), company_name)
+	if found:
+		return {**result, **found}
 	return {**result, "organization": None, "confidence": None, "source": None}
+
+
+def from_rdap(domain: str, final_domain: str | None, company_name: str | None) -> dict | None:
+	"""CNPJ do titular do domínio .br, conferido na Receita. O domínio final do site vem primeiro."""
+	for candidate in dict.fromkeys(d for d in (final_domain, domain) if rdap.is_br(d)):
+		holder = rdap_holder(candidate)
+		if not holder or not is_valid_cnpj(holder["cnpj"]):
+			continue
+		cnpj = holder["cnpj"]
+		found = {"cnpj": cnpj, "source": "rdap", "rdap_domain": candidate}
+		organization = find_organization(set(), cnpj)
+		if organization:
+			return {**found, "organization": organization, "confidence": score.HIGH}
+		company = receita(cnpj)
+		if not company:
+			continue
+		return {
+			**found,
+			"organization": None,
+			"company": company,
+			"confidence": score.confidence(company, candidate, company_name),
+		}
+	return None
+
+
+def rdap_holder(domain: str) -> dict | None:
+	"""Titular do domínio, com cache de 30 dias (também quando não há titular PJ). Fora do ar: sem cache."""
+	key = f"{CACHE_PREFIX}rdap:{domain}"
+	cached = frappe.cache.get_value(key)
+	if cached is not None:
+		return cached or None
+	try:
+		holder = rdap.lookup(domain)
+	except rdap.RdapUnavailable:
+		return None
+	frappe.cache.set_value(key, holder or {}, expires_in_sec=CACHE_DAYS * 86400)
+	return holder
+
+
+def receita(cnpj: str) -> dict | None:
+	"""Razão social, fantasia e situação pela consulta de CNPJ que o cred_hub já usa (cache de 30 dias).
+	Só o necessário para a confiança: sócios e demais dados ficam para o enriquecimento da Organização."""
+	key = f"{CACHE_PREFIX}cnpj:{cnpj}"
+	cached = frappe.cache.get_value(key)
+	if cached is not None:
+		return cached or None
+	try:
+		data = cnpj_client.fetch(cnpj)
+	except cnpj_client.CnpjNotFound:
+		data = None
+	except cnpj_client.CnpjUnavailable:
+		return None
+	company = (
+		{k: data.get(k) or "" for k in ("legal_name", "trade_name", "registration_status", "city", "state")}
+		if data
+		else {}
+	)
+	frappe.cache.set_value(key, company, expires_in_sec=CACHE_DAYS * 86400)
+	return company or None
 
 
 def site_info(domain: str) -> dict:
