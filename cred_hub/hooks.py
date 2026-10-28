@@ -55,6 +55,8 @@ doc_events = {
 		"after_insert": "cred_hub.cnpj.card.after_insert",
 	},
 	"CRM Lead": {
+		# Empresa pelo domínio do e-mail (credtech#183): em fila, nunca atrasa a entrada do lead
+		"after_insert": "cred_hub.email_company.finder.on_lead_insert",
 		"validate": "cred_hub.cnpj.events.validate",
 		"on_update": ["cred_hub.cnpj.events.on_update", "cred_hub.company.events.on_update"],
 	},
