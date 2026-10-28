@@ -433,7 +433,11 @@ def provision(signup):
 			_create_site(site)
 		# Links dos e-mails (boas-vindas, senha) com o endereço da empresa, também fora de requisição
 		_bench(["--site", site, "set-config", "host_name", f"https://{site}"])
-		_bench(["--site", site, "execute", "cred_hub.site_setup.apply_from_env"], env=_site_secrets())
+		# O nome da empresa vai para Configurações > Marca (aparece no convite dos usuários)
+		_bench(
+			["--site", site, "execute", "cred_hub.site_setup.apply_from_env"],
+			env={**_site_secrets(), "COMPANY_NAME": doc.company_name},
+		)
 		_bench(
 			[
 				"--site",

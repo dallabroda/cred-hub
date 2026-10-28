@@ -45,3 +45,10 @@ class TestSiteSetup(IntegrationTestCase):
 		for var in ("SMTP_ADDRESS", "SMTP_PASSWORD", "AUTH0_DOMAIN", "AUTH0_CLIENT_SECRET"):
 			self.assertNotIn(var, frappe.local.conf)
 		self.assertEqual(len(site_setup.apply_from_env(commit=False)), 4)  # sem segredos: só os padrões (com o fim do teste grátis)
+
+	def test_company_name_from_signup_only_when_empty(self):
+		frappe.db.set_single_value("FCRM Settings", "brand_name", "")
+		site_setup.apply(company="Viva Imóveis", commit=False)
+		self.assertEqual(frappe.db.get_single_value("FCRM Settings", "brand_name"), "Viva Imóveis")
+		site_setup.apply(company="Outro nome", commit=False)  # o admin pode ter mudado: não troca
+		self.assertEqual(frappe.db.get_single_value("FCRM Settings", "brand_name"), "Viva Imóveis")

@@ -87,13 +87,15 @@ def apply_from_env(commit=True):
 			"client_id": env["AUTH0_CLIENT_ID"],
 			"client_secret": env["AUTH0_CLIENT_SECRET"],
 		}
-	return apply(email=email, auth0=auth0, commit=commit)
+	return apply(email=email, auth0=auth0, company=env.get("COMPANY_NAME"), commit=commit)
 
 
-def apply(email=None, auth0=None, commit=True):
+def apply(email=None, auth0=None, company=None, commit=True):
 	from cred_hub.billing import ensure_trial
 
 	done = [brazil_defaults(), access_by_invite_only(), translations(), ensure_trial()]
+	if company:
+		done.append(company_name(company))
 	if email:
 		done.append(email_setup(email))
 	if auth0:
@@ -218,6 +220,14 @@ def email_setup(cfg):
 		welcome.save(ignore_permissions=True)
 	frappe.db.set_single_value("System Settings", "app_name", PRODUCT_NAME)
 	return f"e-mail ({doc.email_id})"
+
+
+def company_name(name):
+	"""Nome da empresa (Configurações > Marca), usado no convite ("Ana convidou você para <empresa>").
+	Vem do cadastro (COMPANY_NAME); não troca um nome que o admin já escolheu."""
+	if not frappe.db.get_single_value("FCRM Settings", "brand_name"):
+		frappe.db.set_single_value("FCRM Settings", "brand_name", name.strip()[:140])
+	return f"empresa ({frappe.db.get_single_value('FCRM Settings', 'brand_name')})"
 
 
 def welcome_subject():
