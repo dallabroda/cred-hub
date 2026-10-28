@@ -78,13 +78,15 @@ class TestEmailCompany(IntegrationTestCase):
 		with patch.object(safe_http, "fetch", return_value=self.page("https://acme-teste.com.br/")) as fetch:
 			finder.discover("ana@acme-teste.com.br")
 			finder.discover("rui@acme-teste.com.br")
-		self.assertEqual(fetch.call_count, 1)
+		# o domínio final e a leitura do site (credtech#186), cada um uma vez só por domínio
+		self.assertEqual(fetch.call_count, 2)
 
 	def test_unreachable_site_also_cached(self):
 		with patch.object(safe_http, "fetch", side_effect=OSError("timeout")) as fetch:
 			finder.discover("ana@fora-do-ar.com.br")
 			finder.discover("rui@fora-do-ar.com.br")
-		self.assertEqual(fetch.call_count, 3)  # https, https://www e http, uma vez só
+		# domínio final: https, https://www e http; leitura do site (credtech#186): https e https://www; uma vez só
+		self.assertEqual(fetch.call_count, 5)
 
 	# ---------- Fase 2: RDAP + Receita + confiança (credtech#185) ----------
 
