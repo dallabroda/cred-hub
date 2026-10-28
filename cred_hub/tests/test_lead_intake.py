@@ -221,3 +221,13 @@ class TestLeadIntake(IntegrationTestCase):
 		if card.lead:
 			self.assertEqual(lead_intake.automatic_entries("CRM Lead", card.lead)[0]["label"], source.label)
 		self.assertEqual(lead_intake.automatic_entries("Contact", "x"), [])
+
+	def test_card_source_is_the_registered_source(self):
+		# credtech#188: "Site: fale com a gente", não só "Site"
+		source, key = self.source("webhook")
+		self.post(source, {"fields": {"first_name": "Ivo", "email": "ivo@example.com"}}, {"X-CredHub-Key": key})
+		self.assertEqual(self.card().source, f"Webhook: {source.label}")
+		self.assertTrue(frappe.db.exists("CRM Lead Source", f"Webhook: {source.label}"))
+		named = frappe.get_doc(lead_intake.SOURCE, source.name)
+		named.db_set("label", "Webhook: parceiro")
+		self.assertEqual(lead_intake._lead_source(named), "Webhook: parceiro")  # sem repetir o tipo

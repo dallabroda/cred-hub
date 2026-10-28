@@ -372,8 +372,17 @@ def _ingest(source, values, answers, external_id):
 
 
 def _lead_source(source):
-	"""Origem do lead (CRM Lead Source) pelo tipo; cria a origem se ainda não existir."""
-	label = TYPE_LABELS[source.type]
+	"""Origem do card (CRM Lead Source) com o nome da origem cadastrada, ex.: "Site: fale com a gente"
+	(pedido do dono, credtech#188). O tipo vai na frente quando o nome não o traz."""
+	kind, label = TYPE_LABELS[source.type], (source.label or "").strip()
+	if not label:
+		return card_source(kind)
+	return card_source(label if label.lower().startswith(kind.lower()) else f"{kind}: {label}")
+
+
+def card_source(label):
+	"""Cria (se faltar) e devolve a Origem (CRM Lead Source) com esse nome."""
+	label = label[:140]
 	if not frappe.db.exists("CRM Lead Source", label):
 		frappe.get_doc({"doctype": "CRM Lead Source", "source_name": label}).insert(ignore_permissions=True)
 	return label
