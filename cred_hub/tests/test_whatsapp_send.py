@@ -30,9 +30,10 @@ INBOXES = {
 class FakeChat:
 	"""API do SmartChat: responde por caminho e guarda o que foi enviado."""
 
-	def __init__(self, role="agent", conversations=None):
+	def __init__(self, role="agent", conversations=None, stored_phone=PHONE):
 		self.role = role
 		self.conversations = conversations or []
+		self.stored_phone = stored_phone
 		self.calls = []
 
 	def __call__(self, method, path, token, **kwargs):
@@ -45,7 +46,7 @@ class FakeChat:
 			# o vendedor é membro só da caixa Comercial (7) e da QR Vendas (12)
 			return {"payload": [{"id": 41}] if path.endswith(("/7", "/12")) else [{"id": 42}]}
 		if path.endswith("/contacts/search"):
-			return {"payload": [{"id": 55, "phone_number": PHONE}]}
+			return {"payload": [{"id": 55, "phone_number": self.stored_phone}]}
 		if path.endswith("/contacts/55/conversations"):
 			return {"payload": self.conversations}
 		if path.endswith("/contacts"):
@@ -188,3 +189,17 @@ class TestWhatsappSend(IntegrationTestCase):
 		self.chat()
 		with self.assertRaises(frappe.ValidationError):
 			whatsapp_send.send_whatsapp(phone=PHONE, inbox_id=12, text="Oi")
+
+	def test_contact_saved_without_the_9_is_reused(self):
+		"""O número do cliente salvo sem o 9 no Cred Chat não vira um segundo contato nem uma segunda conversa."""
+		fake = self.chat(conversations=[{"id": 300, "inbox_id": 7, "can_reply": True}], stored_phone="+554888887777")
+		result = whatsapp_send.send_whatsapp(self.deal, PHONE, 7, text="Oi de novo")
+		self.assertEqual(result["conversation_id"], 300)
+		self.assertFalse([p for m, p, j in fake.calls if m == "POST" and p.endswith("/contacts")])
+		search = next(p for m, p, j in fake.calls if p.endswith("/contacts/search"))
+		self.assertTrue(search)
+
+	def test_phone_variants_cover_the_9_only_for_mobiles(self):
+		self.assertEqual(welcome._phone_variants("+5548988887777"), {"+5548988887777", "+554888887777"})
+		self.assertEqual(welcome._phone_variants("+554888887777"), {"+554888887777", "+5548988887777"})
+		self.assertEqual(welcome._phone_variants("+554833334444"), {"+554833334444"})

@@ -71,8 +71,7 @@ def _allowed(account_id, token, agent, inboxes):
 
 
 def _existing_contact(account_id, token, phone):
-	found = welcome._call("GET", f"/api/v1/accounts/{cint(account_id)}/contacts/search", token, params={"q": phone.lstrip("+")})
-	return next((c["id"] for c in found.get("payload") or [] if c.get("phone_number") == phone), None)
+	return welcome._find_contact(cint(account_id), token, phone)
 
 
 def _conversations(account_id, token, contact_id):

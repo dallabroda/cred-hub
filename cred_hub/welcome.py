@@ -328,12 +328,33 @@ def _e164(phone):
 	return phonenumbers.format_number(number, phonenumbers.PhoneNumberFormat.E164) if phonenumbers.is_valid_number(number) else None
 
 
+def _phone_variants(phone):
+	"""O mesmo celular brasileiro com e sem o 9 na frente: contatos antigos do WhatsApp chegam sem ele, e comparar o
+	número exato criava um segundo contato (e uma segunda conversa no mesmo chat do cliente, credtech#258)."""
+	digits = (phone or "").lstrip("+")
+	variants = {"+" + digits}
+	if digits.startswith("55") and len(digits) == 13 and digits[4] == "9":
+		variants.add("+" + digits[:4] + digits[5:])
+	elif digits.startswith("55") and len(digits) == 12 and digits[4] in "6789":
+		variants.add("+" + digits[:4] + "9" + digits[4:])
+	return variants
+
+
+def _find_contact(account_id, token, phone):
+	"""Contato do Cred Chat com este número (com ou sem o 9), preferindo o número exato."""
+	variants = _phone_variants(phone)
+	# a busca do Cred Chat compara pedaços do número: os 8 últimos dígitos são iguais nas duas formas
+	found = _call("GET", f"/api/v1/accounts/{account_id}/contacts/search", token, params={"q": phone[-8:]})
+	matches = [c for c in found.get("payload") or [] if c.get("phone_number") in variants]
+	exact = next((c for c in matches if c.get("phone_number") == phone), None)
+	return (exact or (matches[0] if matches else {})).get("id")
+
+
 def _contact(account_id, token, name, phone):
 	"""Contato do Cred Chat com este número: o que já existe ou um novo."""
-	found = _call("GET", f"/api/v1/accounts/{account_id}/contacts/search", token, params={"q": phone.lstrip("+")})
-	for contact in found.get("payload") or []:
-		if contact.get("phone_number") == phone:
-			return contact["id"]
+	existing = _find_contact(account_id, token, phone)
+	if existing:
+		return existing
 	created = _call("POST", f"/api/v1/accounts/{account_id}/contacts", token, json={"name": name, "phone_number": phone})
 	payload = created.get("payload") or {}
 	return (payload.get("contact") or payload)["id"]
