@@ -24,7 +24,10 @@ def get_context(context):
 	context.privacy_url = PRIVACY_URL
 	# Quem chegou sem conta: pelo login social do hub (de=chave com e-mail e nome) ou de outra empresa (sem_conta=1)
 	context.prefill = get_prefill(frappe.form_dict.get("de"))
-	context.no_account = bool(context.prefill) or bool(frappe.form_dict.get("sem_conta"))
+	# O e-mail vindo do "Teste grátis" do site (from_site) não é "entrou sem conta"
+	context.no_account = bool(context.prefill and not context.prefill.get("from_site")) or bool(
+		frappe.form_dict.get("sem_conta")
+	)
 	# Textos do JavaScript, já traduzidos no idioma do visitante
 	context.messages = {
 		"checking": _("Checking..."),
