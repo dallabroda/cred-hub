@@ -8,7 +8,7 @@ do site central (hub), para criar a própria empresa:
   do hub avisando que, para entrar naquela empresa, é preciso convite;
 - tela de login do hub (hook `login_signup_url`): link "Criar minha empresa";
 - "Teste grátis" do site (credtech#278): `social_signup` abre o login social do hub direto no provedor e
-  `start_signup` leva o e-mail digitado no site para o /cadastro já preenchido.
+  `start_signup` guarda o e-mail digitado no site e devolve o endereço do /cadastro já preenchido.
 """
 
 import frappe
@@ -22,6 +22,8 @@ PREFILL_KEY = "credhub_signup_prefill:{}"
 PREFILL_SECONDS = 30 * 60
 # Botões do site → Social Login Key do hub (todas pelo Auth0; a "auth0" é a do Google)
 SOCIAL_KEYS = {"google": "auth0", "microsoft": "microsoft", "github": "github"}
+# Site institucional que chama o start_signup e lê a resposta (CORS)
+SITE_ORIGINS = ("https://credtechdigital.com.br", "https://www.credtechdigital.com.br")
 
 
 def login_signup_url():
@@ -61,17 +63,22 @@ def social_signup(provider=None):
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 @rate_limit(limit=30, seconds=60 * 60)
 def start_signup(email=None):
-	"""E-mail digitado no "Teste grátis" do site: abre o /cadastro com ele preenchido, sem pôr o e-mail no endereço."""
+	"""E-mail digitado no "Teste grátis" do site: devolve o endereço do /cadastro com ele preenchido, sem pôr o e-mail
+	no endereço. O site chama por fetch sem cookies (assim quem já está logado no hub não cai na checagem de CSRF)
+	e vai para o `location` devolvido."""
+	origin = frappe.get_request_header("Origin")
+	if origin in SITE_ORIGINS:
+		frappe.local.response_headers.set("Access-Control-Allow-Origin", origin)
 	if not signup_open():
-		return _redirect("/login")
+		return {"location": "/login"}
 	email = (email or "").strip().lower()[:140]
 	if not validate_email_address(email):
-		return _redirect("/cadastro")
+		return {"location": "/cadastro"}
 	key = frappe.generate_hash(length=24)
 	frappe.cache.set_value(
 		PREFILL_KEY.format(key), {"email": email, "from_site": 1}, expires_in_sec=PREFILL_SECONDS
 	)
-	return _redirect(f"/cadastro?de={key}")
+	return {"location": f"/cadastro?de={key}"}
 
 
 def _redirect(location):

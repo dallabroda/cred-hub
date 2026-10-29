@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
+from werkzeug.datastructures import Headers
 
 from cred_hub import signup
 
@@ -208,14 +209,22 @@ class TestSignup(IntegrationTestCase):
 	def test_site_email_opens_prefilled_signup(self):
 		from cred_hub import signup_access
 
-		signup_access.start_signup.__wrapped__(" Ana@Example.com ")
-		location = frappe.local.response["location"]
+		frappe.local.response_headers = Headers()
+		with patch.object(signup_access.frappe, "get_request_header", return_value=None):
+			location = signup_access.start_signup.__wrapped__(" Ana@Example.com ")["location"]
+			self.assertEqual(signup_access.start_signup.__wrapped__("nao-e-email"), {"location": "/cadastro"})
 		self.assertTrue(location.startswith("/cadastro?de="))
 		self.assertNotIn("example", location)  # o e-mail fica no servidor
 		prefill = signup_access.get_prefill(location.split("=", 1)[1])
 		self.assertEqual(dict(prefill), {"email": "ana@example.com", "from_site": 1})
-		signup_access.start_signup.__wrapped__("nao-e-email")
-		self.assertEqual(frappe.local.response["location"], "/cadastro")
+		# Só o site institucional lê a resposta
+		with patch.object(signup_access.frappe, "get_request_header", return_value="https://credtechdigital.com.br"):
+			signup_access.start_signup.__wrapped__("ana@example.com")
+		self.assertEqual(frappe.local.response_headers.get("Access-Control-Allow-Origin"), "https://credtechdigital.com.br")
+		frappe.local.response_headers = Headers()
+		with patch.object(signup_access.frappe, "get_request_header", return_value="https://evil.example"):
+			signup_access.start_signup.__wrapped__("ana@example.com")
+		self.assertIsNone(frappe.local.response_headers.get("Access-Control-Allow-Origin"))
 
 	def test_one_company_per_email(self):
 		doc, token = self.request()
