@@ -626,8 +626,8 @@ msgid "name@company.com"
 msgstr "nome@empresa.com.br"
 
 #: cred_hub/www/cadastro/index.html
-msgid "Free for up to 2 users. From the third user on, R$ 60 per user per month."
-msgstr "Grátis até 2 usuários. A partir do terceiro, R$ 60 por usuário por mês."
+msgid "14 days with unlimited users. Then 1 user is free and each extra user costs R$ 60 per month."
+msgstr "14 dias com usuários ilimitados. Depois, 1 usuário grátis e R$ 60 por mês por usuário a mais."
 
 #: cred_hub/www/cadastro/index.html
 msgid "I accept the {0} and the {1}."
@@ -1591,6 +1591,15 @@ msgstr "Situação da empresa provável"
 
 msgid "company website"
 msgstr "site da empresa"
+
+msgid "Choose a card or a contact."
+msgstr "Escolha um card ou um contato."
+
+msgid "This number is not one of the contact's phones."
+msgstr "Este número não é um dos telefones do contato."
+
+msgid "WhatsApp sent"
+msgstr "WhatsApp enviado"
 
 msgid "Tell us which telephony company you use."
 msgstr "Diga qual é a empresa de telefonia que você usa."
