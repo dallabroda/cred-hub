@@ -29,11 +29,11 @@ TECHNICAL_ROLES = ("Sales User", "Pipeline Owner", API_ROLE)
 PREFIX = "hub_"
 MAX_KEYS = 10
 LOG_DAYS = 90
-# Rate limit por chave, por minuto (decisão do dono, credtech#175)
-CALLS_PER_MINUTE = 120
-WRITES_PER_MINUTE = 20
+# Rate limit por chave, por minuto (decisão do dono, credtech#175, expandido credtech#288)
+CALLS_PER_MINUTE = 300
+WRITES_PER_MINUTE = 60
 
-# Escopos: (campo da chave, rótulo). Leitura é GET; escrita é criar e alterar. Excluir não existe na 1ª versão.
+# Escopos: (campo da chave, rótulo). Leitura é GET; escrita é criar e alterar. Excluir exige allow_delete.
 SCOPES = {
 	"cards_read": "Cards: read",
 	"cards_write": "Cards: write",
@@ -44,6 +44,16 @@ SCOPES = {
 	"leads_write": "Incoming contacts: create",
 	"pipelines_read": "Pipelines: read",
 	"fields_admin": "Fields and rules (admin)",
+	"allow_delete": "Records: allow DELETE (Cards, Contacts, Organizations, Files, Notes, Tasks)",
+	"files_read": "Files and Documents: read and download",
+	"files_write": "Files and Documents: upload",
+	"notes_read": "Notes: read",
+	"notes_write": "Notes: create and edit",
+	"comments_read": "Timeline comments: read",
+	"comments_write": "Timeline comments: add",
+	"tasks_read": "Tasks: read",
+	"tasks_write": "Tasks: create and edit",
+	"sync_deletes": "Incremental sync: read deleted records log",
 }
 
 # /api/resource/<doctype> e /api/v2/document/<doctype>: escopo de leitura e de escrita
@@ -54,7 +64,13 @@ RESOURCES = {
 	"CRM Lead": (None, "leads_write"),
 	"CRM Deal Status": ("pipelines_read", None),
 	"CRM Pipeline": ("pipelines_read", None),
+	"File": ("files_read", "files_write"),
+	"FCRM Note": ("notes_read", "notes_write"),
+	"CRM Task": ("tasks_read", "tasks_write"),
 }
+
+# Doctypes protegidos que nunca podem ser excluídos via API Key mesmo com allow_delete
+PROTECTED_AGAINST_DELETE = {"CRM Pipeline", "CRM Deal Status", "Cred Hub API Key", "User"}
 
 # /api/method/<rota>: escopo exigido. Escrita é decidida pela rota, não pelo verbo HTTP.
 METHODS = {
@@ -72,6 +88,15 @@ METHODS = {
 	"crm.api.forms.get_form_schema": "cards_read",
 	# Campos da organização, segunda organização e contato que a etapa mostra no card (Fase 5, credtech#182)
 	"crm.api.forms.get_card_blocks": "cards_read",
+	# Vínculos de contatos ao card
+	"crm.api.card_contacts.get_card_contacts": "cards_read",
+	# Upload de arquivos
+	"upload_file": "files_write",
+	# Comentários / Timeline
+	"frappe.desk.form.utils.add_comment": "comments_write",
+	"cred_hub.timeline.get_comments": "comments_read",
+	# Sincronização incremental com exclusões
+	"cred_hub.sync.get_deleted_records": "sync_deletes",
 }
 WRITE_METHODS = {name for name, scope in METHODS.items() if scope.endswith("_write") or scope == "fields_admin"}
 # frappe.client.* só para leitura, com o doctype conferido contra RESOURCES
@@ -117,7 +142,7 @@ def authenticate():
 	key = frappe.db.get_value(
 		KEY,
 		{"key_id": key_id} if key_id else {"name": ""},
-		["name", "secret_hash", "status", "expires_on", "technical_user", "allowed_ips"],
+		["name", "secret_hash", "status", "expires_on", "technical_user", "allowed_ips", "custom_rate_limit"],
 		as_dict=True,
 	)
 	if not key or not secret or not hmac.compare_digest(key.secret_hash or "", _hash(secret)):
@@ -127,7 +152,7 @@ def authenticate():
 	if not _ip_allowed(key.allowed_ips, frappe.local.request_ip):
 		raise frappe.AuthenticationError
 	write = _check_route(key.name)
-	_rate_limit(key.name, write)
+	_rate_limit(key.name, write, key.custom_rate_limit)
 	# set_user zera o form_dict (os argumentos da chamada); o OAuth do Frappe faz o mesmo cuidado
 	form_dict = frappe.local.form_dict
 	frappe.set_user(key.technical_user)
@@ -195,9 +220,12 @@ def _deny():
 
 
 def _route():
-	"""(kind, target, verbo): kind é resource, method, other (barrado) ou None fora da API."""
+	"""(kind, target, verbo): kind é resource, method, file_download, other (barrado) ou None fora da API."""
 	path = unquote(frappe.request.path or "")
 	verb = (frappe.request.method or "GET").upper()
+	if path.startswith("/private/files/") or path.startswith("/files/"):
+		parts = path.strip("/").split("/")
+		return "file_download", parts[-1] if len(parts) > 1 else "", verb
 	for prefix, kind in (
 		("/api/resource/", "resource"),
 		("/api/v2/document/", "resource"),
@@ -217,13 +245,20 @@ def _check_route(key_name: str) -> bool:
 	"""Confere a rota contra os escopos da chave e devolve se é escrita. Fora da lista: 403."""
 	kind, target, verb = _route()
 	scopes = _scopes(key_name)
+	if kind == "file_download":
+		if "files_read" in scopes and verb in ("GET", "HEAD"):
+			return False
+		_deny()
 	if kind == "resource":
 		read, write = RESOURCES.get(target, (None, None))
 		if verb in ("GET", "HEAD"):
-			if read in scopes:
+			if read and read in scopes:
 				return False
-		elif verb in ("POST", "PUT", "PATCH") and write in scopes:
+		elif verb in ("POST", "PUT", "PATCH") and write and write in scopes:
 			return True
+		elif verb == "DELETE":
+			if target not in PROTECTED_AGAINST_DELETE and write and write in scopes and "allow_delete" in scopes:
+				return True
 		_deny()
 	if kind == "method":
 		if target in CLIENT_READS:
@@ -256,9 +291,14 @@ def _check_save_pipeline(key_name: str):
 		_deny()
 
 
-def _rate_limit(key_name: str, write: bool):
+def _rate_limit(key_name: str, write: bool, custom_limit: int | None = None):
 	minute = now_datetime().strftime("%Y%m%d%H%M")
-	limits = [(CALLS_PER_MINUTE, "all")] + ([(WRITES_PER_MINUTE, "write")] if write else [])
+	if custom_limit is None:
+		custom_limit = cint(frappe.db.get_value(KEY, key_name, "custom_rate_limit"))
+	custom = cint(custom_limit)
+	total_limit = custom if custom > 0 else CALLS_PER_MINUTE
+	write_limit = max(custom // 5, WRITES_PER_MINUTE) if custom > 0 else WRITES_PER_MINUTE
+	limits = [(total_limit, "all")] + ([(write_limit, "write")] if write else [])
 	for limit, counter in limits:
 		cache_key = frappe.cache.make_key(f"credhub_api:{key_name}:{counter}:{minute}")
 		count = frappe.cache.incrby(cache_key, 1)
@@ -395,6 +435,7 @@ def _key_info(doc) -> dict:
 		"scopes": [scope for scope in SCOPES if cint(doc.get(scope))],
 		"pipelines": [row.pipeline for row in doc.pipelines],
 		"allowed_ips": doc.allowed_ips,
+		"custom_rate_limit": doc.get("custom_rate_limit"),
 		"expires_on": doc.expires_on,
 		"created_by": doc.owner,
 		"created_on": doc.creation,
@@ -418,7 +459,14 @@ def get_api_keys() -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
-def create_api_key(label: str, scopes, pipelines=None, allowed_ips: str | None = None, expires_on: str | None = None) -> dict:
+def create_api_key(
+	label: str,
+	scopes,
+	pipelines=None,
+	allowed_ips: str | None = None,
+	expires_on: str | None = None,
+	custom_rate_limit: int | None = None,
+) -> dict:
 	"""Cria a chave e devolve o token completo UMA vez (só o hash fica gravado)."""
 	_only_admin()
 	label = (label or "").strip()
@@ -442,6 +490,7 @@ def create_api_key(label: str, scopes, pipelines=None, allowed_ips: str | None =
 			"status": "Active",
 			"technical_user": user,
 			"allowed_ips": allowed_ips,
+			"custom_rate_limit": cint(custom_rate_limit) if custom_rate_limit else None,
 			"expires_on": expires_on or None,
 			"pipelines": [{"pipeline": p} for p in pipelines],
 			**values,
@@ -452,7 +501,15 @@ def create_api_key(label: str, scopes, pipelines=None, allowed_ips: str | None =
 
 
 @frappe.whitelist(methods=["POST"])
-def update_api_key(name: str, label=None, scopes=None, pipelines=None, allowed_ips=None, expires_on=None) -> dict:
+def update_api_key(
+	name: str,
+	label=None,
+	scopes=None,
+	pipelines=None,
+	allowed_ips=None,
+	expires_on=None,
+	custom_rate_limit=None,
+) -> dict:
 	"""Renomeia e muda escopos, funis, IPs e validade: vale na próxima chamada."""
 	_only_admin()
 	doc = frappe.get_doc(KEY, name)
@@ -471,6 +528,8 @@ def update_api_key(name: str, label=None, scopes=None, pipelines=None, allowed_i
 		doc.allowed_ips = allowed_ips
 	if expires_on is not None:
 		doc.expires_on = expires_on or None
+	if custom_rate_limit is not None:
+		doc.custom_rate_limit = cint(custom_rate_limit) if custom_rate_limit else None
 	_check_card_pipelines({s: cint(doc.get(s)) for s in SCOPES}, [r.pipeline for r in doc.pipelines])
 	doc.save(ignore_permissions=True)
 	_sync_pipelines(doc.technical_user, [r.pipeline for r in doc.pipelines])

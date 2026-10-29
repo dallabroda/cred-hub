@@ -341,3 +341,124 @@ class TestApiKeys(IntegrationTestCase):
 		log = frappe.get_all(api_keys.LOG, {"api_key": created["name"]}, ["route", "reference_doctype", "status_code"])
 		self.assertEqual(len(log), 1)
 		self.assertEqual((log[0].route, log[0].reference_doctype, log[0].status_code), ("POST /api/resource/CRM Deal", "CRM Deal", 200))
+
+	# ---------- Enterprise API Capabilities (credtech#288) ----------
+
+	def test_delete_requires_write_and_allow_delete(self):
+		# Sem allow_delete: barrado mesmo com cards_write
+		token_no_delete = self.create(scopes=("cards_read", "cards_write"))["token"]
+		with self.assertRaises(frappe.PermissionError):
+			self.call(token_no_delete, "/api/resource/CRM Deal/CARD-1", "DELETE")
+
+		# Sem cards_write: barrado mesmo com allow_delete
+		token_no_write = self.create(scopes=("cards_read", "allow_delete"))["token"]
+		with self.assertRaises(frappe.PermissionError):
+			self.call(token_no_write, "/api/resource/CRM Deal/CARD-1", "DELETE")
+
+		# Com ambos: permitido e marcado como escrita
+		token_allowed = self.create(scopes=("cards_read", "cards_write", "allow_delete"))["token"]
+		self.call(token_allowed, "/api/resource/CRM Deal/CARD-1", "DELETE")
+		self.assertTrue(frappe.local.credhub_api_key["write"])
+
+		# Outros recursos permitidos para DELETE com o escopo de escrita correspondente
+		for resource, scope in (
+			("Contact", "contacts_write"),
+			("CRM Organization", "organizations_write"),
+			("File", "files_write"),
+			("FCRM Note", "notes_write"),
+			("CRM Task", "tasks_write"),
+		):
+			with self.subTest(resource=resource):
+				t = self.create(scopes=(scope, "allow_delete"))["token"]
+				self.call(t, f"/api/resource/{resource}/NAME-1", "DELETE")
+				self.assertTrue(frappe.local.credhub_api_key["write"])
+
+	def test_delete_blocked_on_protected_doctypes(self):
+		all_scopes = list(api_keys.SCOPES.keys())
+		token = self.create(scopes=all_scopes)["token"]
+		for protected in ("CRM Pipeline", "CRM Deal Status", "Cred Hub API Key", "User"):
+			with self.subTest(doctype=protected), self.assertRaises(frappe.PermissionError):
+				self.call(token, f"/api/resource/{protected}/X", "DELETE")
+
+	def test_files_download_and_upload(self):
+		token_read = self.create(scopes=("files_read",))["token"]
+		self.call(token_read, "/private/files/relatorio.pdf", "GET")
+		self.call(token_read, "/files/avatar.png", "HEAD")
+		self.call(token_read, "/api/resource/File")
+		self.call(token_read, "/api/method/frappe.client.get_list", form={"doctype": "File"})
+
+		# Download não aceita POST
+		with self.assertRaises(frappe.PermissionError):
+			self.call(token_read, "/private/files/relatorio.pdf", "POST")
+
+		# Upload exige files_write
+		with self.assertRaises(frappe.PermissionError):
+			self.call(token_read, "/api/method/upload_file", "POST")
+		with self.assertRaises(frappe.PermissionError):
+			self.call(token_read, "/api/resource/File", "POST")
+
+		token_write = self.create(scopes=("files_read", "files_write"))["token"]
+		self.call(token_write, "/api/method/upload_file", "POST")
+		self.assertTrue(frappe.local.credhub_api_key["write"])
+		self.call(token_write, "/api/resource/File", "POST")
+		self.assertTrue(frappe.local.credhub_api_key["write"])
+
+	def test_comments_and_notes(self):
+		token_read = self.create(scopes=("comments_read", "notes_read"))["token"]
+		self.call(token_read, "/api/method/cred_hub.timeline.get_comments", "GET", form={"reference_doctype": "CRM Deal", "reference_name": "CARD-1"})
+		self.call(token_read, "/api/resource/FCRM Note")
+		self.call(token_read, "/api/method/frappe.client.get_list", form={"doctype": "FCRM Note"})
+
+		with self.assertRaises(frappe.PermissionError):
+			self.call(token_read, "/api/method/frappe.desk.form.utils.add_comment", "POST")
+		with self.assertRaises(frappe.PermissionError):
+			self.call(token_read, "/api/resource/FCRM Note", "POST")
+
+		token_write = self.create(scopes=("comments_write", "notes_write"))["token"]
+		self.call(token_write, "/api/method/frappe.desk.form.utils.add_comment", "POST")
+		self.assertTrue(frappe.local.credhub_api_key["write"])
+		self.call(token_write, "/api/resource/FCRM Note", "POST")
+		self.assertTrue(frappe.local.credhub_api_key["write"])
+
+	def test_tasks_resource(self):
+		token_read = self.create(scopes=("tasks_read",))["token"]
+		self.call(token_read, "/api/resource/CRM Task")
+		self.call(token_read, "/api/method/frappe.client.get_list", form={"doctype": "CRM Task"})
+		with self.assertRaises(frappe.PermissionError):
+			self.call(token_read, "/api/resource/CRM Task", "POST")
+
+		token_write = self.create(scopes=("tasks_read", "tasks_write"))["token"]
+		self.call(token_write, "/api/resource/CRM Task", "POST")
+		self.assertTrue(frappe.local.credhub_api_key["write"])
+
+	def test_sync_deleted_records(self):
+		token = self.create(scopes=("sync_deletes",))["token"]
+		self.call(token, "/api/method/cred_hub.sync.get_deleted_records", "GET", form={"doctype": "CRM Deal"})
+
+		token_no_sync = self.create(scopes=("cards_read",))["token"]
+		with self.assertRaises(frappe.PermissionError):
+			self.call(token_no_sync, "/api/method/cred_hub.sync.get_deleted_records", "GET", form={"doctype": "CRM Deal"})
+
+	def test_card_contacts_route(self):
+		token = self.create(scopes=("cards_read",))["token"]
+		self.call(token, "/api/method/crm.api.card_contacts.get_card_contacts", "GET", form={"deal": "CARD-1"})
+
+		token_no_cards = self.create(scopes=("contacts_read",))["token"]
+		with self.assertRaises(frappe.PermissionError):
+			self.call(token_no_cards, "/api/method/crm.api.card_contacts.get_card_contacts", "GET", form={"deal": "CARD-1"})
+
+	def test_custom_rate_limit(self):
+		created = self.create(scopes=("cards_read",), custom_rate_limit=5)
+		self.assertEqual(created["custom_rate_limit"], 5)
+		token = created["token"]
+		for _ in range(5):
+			self.call(token, "/api/resource/CRM Deal")
+		with self.assertRaises(frappe.RateLimitExceededError):
+			self.call(token, "/api/resource/CRM Deal")
+
+	def test_update_custom_rate_limit(self):
+		created = self.create(scopes=("cards_read",))
+		self.assertIsNone(created["custom_rate_limit"])
+		updated = api_keys.update_api_key(created["name"], custom_rate_limit=800)
+		self.assertEqual(updated["custom_rate_limit"], 800)
+		self.assertEqual(frappe.db.get_value(api_keys.KEY, created["name"], "custom_rate_limit"), 800)
