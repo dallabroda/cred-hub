@@ -27,8 +27,9 @@ SITE_ORIGINS = ("https://credtechdigital.com.br", "https://www.credtechdigital.c
 
 
 def login_signup_url():
+	# "Não tem uma conta? Cadastre-se" do login leva ao cadastro do site, já no HubTech (Figma, credtech#280)
 	if signup_open():
-		return "/cadastro"
+		return f"https://{_domain()}/signup/?produto=hubtech"
 	return None
 
 

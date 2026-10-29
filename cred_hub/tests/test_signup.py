@@ -177,6 +177,13 @@ class TestSignup(IntegrationTestCase):
 		with self.assertRaises(frappe.RateLimitExceededError):
 			self.request()
 
+	def test_login_sign_up_link_goes_to_the_site(self):
+		from cred_hub import signup_access
+
+		self.assertEqual(
+			signup_access.login_signup_url(), "https://credtechdigital.com.br/signup/?produto=hubtech"
+		)
+
 	def test_signup_closed_until_opened(self):
 		from cred_hub import signup_access
 
