@@ -6,15 +6,22 @@ do site central (hub), para criar a própria empresa:
 - login com Google/Microsoft/GitHub de um e-mail sem conta (hook `oauth_without_account` do frappe):
   no hub, abre /cadastro com o e-mail e o nome já preenchidos; no site de uma empresa, abre o cadastro
   do hub avisando que, para entrar naquela empresa, é preciso convite;
-- tela de login do hub (hook `login_signup_url`): link "Criar minha empresa".
+- tela de login do hub (hook `login_signup_url`): link "Criar minha empresa";
+- "Teste grátis" do site (credtech#278): `social_signup` abre o login social do hub direto no provedor e
+  `start_signup` leva o e-mail digitado no site para o /cadastro já preenchido.
 """
 
 import frappe
+from frappe.rate_limiter import rate_limit
+from frappe.utils import validate_email_address
+from frappe.utils.oauth import get_oauth2_authorize_url
 
 from cred_hub.signup import _domain, signup_open
 
 PREFILL_KEY = "credhub_signup_prefill:{}"
 PREFILL_SECONDS = 30 * 60
+# Botões do site → Social Login Key do hub (todas pelo Auth0; a "auth0" é a do Google)
+SOCIAL_KEYS = {"google": "auth0", "microsoft": "microsoft", "github": "github"}
 
 
 def login_signup_url():
@@ -38,6 +45,38 @@ def oauth_without_account(email, data):
 		expires_in_sec=PREFILL_SECONDS,
 	)
 	return f"/cadastro?de={key}"
+
+
+@frappe.whitelist(allow_guest=True, methods=["GET"])
+def social_signup(provider=None):
+	"""Google/Microsoft/GitHub do site. O link do provedor precisa de um `state` de uso único, criado na hora
+	(o mesmo que a tela de login cria); por isso o site aponta para cá e não direto para o Auth0. Quem não tem
+	conta volta pelo `oauth_without_account` para o /cadastro preenchido; quem tem, entra."""
+	key = SOCIAL_KEYS.get(provider)
+	if not signup_open() or not key or not frappe.db.get_value("Social Login Key", key, "enable_social_login"):
+		return _redirect("/login")
+	return _redirect(get_oauth2_authorize_url(key, None))
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
+@rate_limit(limit=30, seconds=60 * 60)
+def start_signup(email=None):
+	"""E-mail digitado no "Teste grátis" do site: abre o /cadastro com ele preenchido, sem pôr o e-mail no endereço."""
+	if not signup_open():
+		return _redirect("/login")
+	email = (email or "").strip().lower()[:140]
+	if not validate_email_address(email):
+		return _redirect("/cadastro")
+	key = frappe.generate_hash(length=24)
+	frappe.cache.set_value(
+		PREFILL_KEY.format(key), {"email": email, "from_site": 1}, expires_in_sec=PREFILL_SECONDS
+	)
+	return _redirect(f"/cadastro?de={key}")
+
+
+def _redirect(location):
+	frappe.local.response["type"] = "redirect"
+	frappe.local.response["location"] = location
 
 
 def get_prefill(key):
