@@ -154,3 +154,37 @@ class TestWhatsappSend(IntegrationTestCase):
 		self.assertFalse(whatsapp_send.get_whatsapp_options(self.deal, PHONE)["connected"])
 		with self.assertRaises(frappe.ValidationError):
 			whatsapp_send.send_whatsapp(self.deal, PHONE, 7, text="Oi")
+
+	# credtech#258: o mesmo envio a partir da página do contato
+	def contact(self, phone=PHONE):
+		return (
+			frappe.get_doc({"doctype": "Contact", "first_name": "Cliente", "phone_nos": [{"phone": phone, "is_primary_mobile_no": 1}]})
+			.insert(ignore_permissions=True)
+			.name
+		)
+
+	def test_contact_sends_through_the_inbox_and_keeps_a_note(self):
+		fake = self.chat(conversations=[{"id": 300, "inbox_id": 7, "can_reply": True}])
+		contact = self.contact()
+		self.assertEqual([i["id"] for i in whatsapp_send.get_whatsapp_options(contact=contact, phone=PHONE)["inboxes"]], [7, 12])
+		result = whatsapp_send.send_whatsapp(contact=contact, phone=PHONE, inbox_id=7, text="Oi pelo contato")
+		self.assertEqual(result["conversation_id"], 300)
+		self.assertIn(("POST", "/api/v1/accounts/3/conversations/300/assignments", {"assignee_id": 41}), fake.calls)
+		notes = frappe.get_all(
+			"FCRM Note", filters={"reference_doctype": "Contact", "reference_docname": contact}, pluck="content"
+		)
+		self.assertTrue(any("Oi pelo contato" in n and 'target="_blank"' in n for n in notes))
+
+	def test_contact_only_sends_to_its_own_numbers(self):
+		self.chat()
+		contact = self.contact()
+		options = whatsapp_send.get_whatsapp_options(contact=contact, phone="+5548911112222")
+		self.assertEqual(options["inboxes"], [])
+		self.assertIn("not one of the contact", options["error"])
+		with self.assertRaises(frappe.ValidationError):
+			whatsapp_send.send_whatsapp(contact=contact, phone="+5548911112222", inbox_id=12, text="Oi")
+
+	def test_without_card_or_contact_nothing_is_sent(self):
+		self.chat()
+		with self.assertRaises(frappe.ValidationError):
+			whatsapp_send.send_whatsapp(phone=PHONE, inbox_id=12, text="Oi")

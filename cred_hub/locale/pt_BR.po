@@ -1591,3 +1591,12 @@ msgstr "Situação da empresa provável"
 
 msgid "company website"
 msgstr "site da empresa"
+
+msgid "Choose a card or a contact."
+msgstr "Escolha um card ou um contato."
+
+msgid "This number is not one of the contact's phones."
+msgstr "Este número não é um dos telefones do contato."
+
+msgid "WhatsApp sent"
+msgstr "WhatsApp enviado"
