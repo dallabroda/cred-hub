@@ -203,3 +203,15 @@ class TestWhatsappSend(IntegrationTestCase):
 		self.assertEqual(welcome._phone_variants("+5548988887777"), {"+5548988887777", "+554888887777"})
 		self.assertEqual(welcome._phone_variants("+554888887777"), {"+554888887777", "+5548988887777"})
 		self.assertEqual(welcome._phone_variants("+554833334444"), {"+554833334444"})
+
+	def test_contact_starting_a_new_conversation_keeps_the_note_on_the_contact(self):
+		"""Conversa nova pelo contato: a anotação fica no contato do HubTech, não no id do contato do SmartChat."""
+		fake = self.chat()
+		contact = self.contact()
+		result = whatsapp_send.send_whatsapp(contact=contact, phone=PHONE, inbox_id=12, text="Primeira mensagem")
+		self.assertEqual(result["conversation_id"], 900)
+		created = next(j for m, p, j in fake.calls if m == "POST" and p.endswith("/conversations"))
+		self.assertEqual(created["contact_id"], 55)
+		self.assertTrue(
+			frappe.db.exists("FCRM Note", {"reference_doctype": "Contact", "reference_docname": contact})
+		)

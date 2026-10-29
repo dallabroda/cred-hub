@@ -184,12 +184,12 @@ def send_whatsapp(
 				json={**message, "message_type": "outgoing"},
 			)
 		else:
-			contact = welcome._contact(account_id, token, (name or "").strip() or number, number)
+			chat_contact = welcome._contact(account_id, token, (name or "").strip() or number, number)
 			created = welcome._call(
 				"POST",
 				f"/api/v1/accounts/{account_id}/conversations",
 				token,
-				json={"contact_id": contact, "inbox_id": cint(inbox["id"]), "message": message},
+				json={"contact_id": chat_contact, "inbox_id": cint(inbox["id"]), "message": message},
 			)
 			conversation_id = created.get("id")
 		welcome._call(
