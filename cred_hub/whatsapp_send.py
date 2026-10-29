@@ -11,6 +11,9 @@ boas-vindas (#53):
 - a conversa fica atribuída ao vendedor e o card ganha um comentário com a caixa, o texto e o link da conversa.
 
 A API do SmartChat não deixa escolher o remetente: a mensagem sai em nome do usuário da chave da conexão.
+
+Também a partir do contato (credtech#258): o número precisa ser um dos telefones do contato e o envio fica registrado
+como anotação dele.
 """
 
 import json
@@ -68,8 +71,7 @@ def _allowed(account_id, token, agent, inboxes):
 
 
 def _existing_contact(account_id, token, phone):
-	found = welcome._call("GET", f"/api/v1/accounts/{cint(account_id)}/contacts/search", token, params={"q": phone.lstrip("+")})
-	return next((c["id"] for c in found.get("payload") or [] if c.get("phone_number") == phone), None)
+	return welcome._find_contact(cint(account_id), token, phone)
 
 
 def _conversations(account_id, token, contact_id):
@@ -85,11 +87,31 @@ def _conversations(account_id, token, contact_id):
 	return latest
 
 
-def _options(deal, phone):
-	frappe.get_doc("CRM Deal", deal).check_permission("read")
+def _reference(deal, contact):
+	"""O card ou o contato de onde sai a mensagem; quem envia precisa poder ver o registro."""
+	if deal:
+		doc = frappe.get_doc("CRM Deal", deal)
+	elif contact:
+		doc = frappe.get_doc("Contact", contact)
+	else:
+		frappe.throw(_("Choose a card or a contact."))
+	doc.check_permission("read")
+	return doc
+
+
+def _contact_numbers(contact):
+	numbers = [contact.mobile_no, contact.phone, *(row.phone for row in contact.get("phone_nos") or [])]
+	return {welcome._e164(n) for n in numbers if n} - {None}
+
+
+def _options(deal, phone, contact=None):
+	reference = _reference(deal, contact)
 	number = welcome._e164(phone)
 	if not number:
 		raise welcome.ChatError(_("This contact has no valid mobile number."))
+	# Do contato só sai para um telefone dele: a tela não escolhe um número qualquer
+	if reference.doctype == "Contact" and number not in _contact_numbers(reference):
+		raise welcome.ChatError(_("This number is not one of the contact's phones."))
 	connection, token = welcome._connection()
 	if not connection:
 		return None, None, number, [], None
@@ -106,11 +128,11 @@ def _options(deal, phone):
 
 
 @frappe.whitelist()
-def get_whatsapp_options(deal: str, phone: str) -> dict:
+def get_whatsapp_options(deal: str | None = None, phone: str = "", contact: str | None = None) -> dict:
 	"""O que a janela "Enviar WhatsApp" mostra: as caixas que o vendedor pode usar e, em cada uma, se dá para
 	escrever livre ou só com modelo."""
 	try:
-		result = _options(deal, phone)
+		result = _options(deal, phone, contact)
 	except welcome.ChatError as e:
 		return {"connected": True, "error": str(e), "inboxes": []}
 	connection, _token, number, inboxes, _agent_ = result
@@ -121,19 +143,20 @@ def get_whatsapp_options(deal: str, phone: str) -> dict:
 
 @frappe.whitelist(methods=["POST"])
 def send_whatsapp(
-	deal: str,
-	phone: str,
-	inbox_id: int,
+	deal: str | None = None,
+	phone: str = "",
+	inbox_id: int = 0,
 	name: str | None = None,
 	text: str | None = None,
 	template_name: str | None = None,
 	template_language: str | None = None,
 	variables: str | dict | None = None,
+	contact: str | None = None,
 ) -> dict:
 	"""Manda a mensagem pela caixa escolhida, atribui a conversa ao vendedor e registra no card. Tudo é conferido de
 	novo aqui: a caixa precisa ser do vendedor e o texto livre só passa com a janela aberta."""
 	try:
-		connection, token, number, inboxes, agent = _options(deal, phone)
+		connection, token, number, inboxes, agent = _options(deal, phone, contact)
 	except welcome.ChatError as e:
 		frappe.throw(str(e))
 	if not connection:
@@ -161,12 +184,12 @@ def send_whatsapp(
 				json={**message, "message_type": "outgoing"},
 			)
 		else:
-			contact = welcome._contact(account_id, token, (name or "").strip() or number, number)
+			chat_contact = welcome._contact(account_id, token, (name or "").strip() or number, number)
 			created = welcome._call(
 				"POST",
 				f"/api/v1/accounts/{account_id}/conversations",
 				token,
-				json={"contact_id": contact, "inbox_id": cint(inbox["id"]), "message": message},
+				json={"contact_id": chat_contact, "inbox_id": cint(inbox["id"]), "message": message},
 			)
 			conversation_id = created.get("id")
 		welcome._call(
@@ -179,12 +202,24 @@ def send_whatsapp(
 		frappe.throw(str(e))
 
 	url = f"{welcome._chat_url()}/app/accounts/{account_id}/conversations/{cint(conversation_id)}"
-	frappe.get_doc("CRM Deal", deal).add_comment(
-		"Comment",
+	record = (
 		_("WhatsApp sent to {0} through the SmartChat inbox {1}:").format(number, inbox["name"])
 		+ f"<br>{frappe.utils.escape_html(message['content'])}<br>"
-		+ f'<a href="{url}" target="_blank">{_("Open the conversation in SmartChat")}</a>',
+		+ f'<a href="{url}" target="_blank" rel="noopener noreferrer">{_("Open the conversation in SmartChat")}</a>'
 	)
+	if deal:
+		frappe.get_doc("CRM Deal", deal).add_comment("Comment", record)
+	else:
+		# O contato não tem linha do tempo: o envio fica como anotação dele (aba Anotações, credtech#214)
+		frappe.get_doc(
+			{
+				"doctype": "FCRM Note",
+				"title": _("WhatsApp sent"),
+				"content": record,
+				"reference_doctype": "Contact",
+				"reference_docname": contact,
+			}
+		).insert(ignore_permissions=True)
 	return {"conversation_id": conversation_id, "conversation_url": url}
 
 

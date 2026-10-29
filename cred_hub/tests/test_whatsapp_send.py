@@ -30,9 +30,10 @@ INBOXES = {
 class FakeChat:
 	"""API do SmartChat: responde por caminho e guarda o que foi enviado."""
 
-	def __init__(self, role="agent", conversations=None):
+	def __init__(self, role="agent", conversations=None, stored_phone=PHONE):
 		self.role = role
 		self.conversations = conversations or []
+		self.stored_phone = stored_phone
 		self.calls = []
 
 	def __call__(self, method, path, token, **kwargs):
@@ -45,7 +46,7 @@ class FakeChat:
 			# o vendedor é membro só da caixa Comercial (7) e da QR Vendas (12)
 			return {"payload": [{"id": 41}] if path.endswith(("/7", "/12")) else [{"id": 42}]}
 		if path.endswith("/contacts/search"):
-			return {"payload": [{"id": 55, "phone_number": PHONE}]}
+			return {"payload": [{"id": 55, "phone_number": self.stored_phone}]}
 		if path.endswith("/contacts/55/conversations"):
 			return {"payload": self.conversations}
 		if path.endswith("/contacts"):
@@ -154,3 +155,63 @@ class TestWhatsappSend(IntegrationTestCase):
 		self.assertFalse(whatsapp_send.get_whatsapp_options(self.deal, PHONE)["connected"])
 		with self.assertRaises(frappe.ValidationError):
 			whatsapp_send.send_whatsapp(self.deal, PHONE, 7, text="Oi")
+
+	# credtech#258: o mesmo envio a partir da página do contato
+	def contact(self, phone=PHONE):
+		return (
+			frappe.get_doc({"doctype": "Contact", "first_name": "Cliente", "phone_nos": [{"phone": phone, "is_primary_mobile_no": 1}]})
+			.insert(ignore_permissions=True)
+			.name
+		)
+
+	def test_contact_sends_through_the_inbox_and_keeps_a_note(self):
+		fake = self.chat(conversations=[{"id": 300, "inbox_id": 7, "can_reply": True}])
+		contact = self.contact()
+		self.assertEqual([i["id"] for i in whatsapp_send.get_whatsapp_options(contact=contact, phone=PHONE)["inboxes"]], [7, 12])
+		result = whatsapp_send.send_whatsapp(contact=contact, phone=PHONE, inbox_id=7, text="Oi pelo contato")
+		self.assertEqual(result["conversation_id"], 300)
+		self.assertIn(("POST", "/api/v1/accounts/3/conversations/300/assignments", {"assignee_id": 41}), fake.calls)
+		notes = frappe.get_all(
+			"FCRM Note", filters={"reference_doctype": "Contact", "reference_docname": contact}, pluck="content"
+		)
+		self.assertTrue(any("Oi pelo contato" in n and 'target="_blank"' in n for n in notes))
+
+	def test_contact_only_sends_to_its_own_numbers(self):
+		self.chat()
+		contact = self.contact()
+		options = whatsapp_send.get_whatsapp_options(contact=contact, phone="+5548911112222")
+		self.assertEqual(options["inboxes"], [])
+		self.assertIn("not one of the contact", options["error"])
+		with self.assertRaises(frappe.ValidationError):
+			whatsapp_send.send_whatsapp(contact=contact, phone="+5548911112222", inbox_id=12, text="Oi")
+
+	def test_without_card_or_contact_nothing_is_sent(self):
+		self.chat()
+		with self.assertRaises(frappe.ValidationError):
+			whatsapp_send.send_whatsapp(phone=PHONE, inbox_id=12, text="Oi")
+
+	def test_contact_saved_without_the_9_is_reused(self):
+		"""O número do cliente salvo sem o 9 no Cred Chat não vira um segundo contato nem uma segunda conversa."""
+		fake = self.chat(conversations=[{"id": 300, "inbox_id": 7, "can_reply": True}], stored_phone="+554888887777")
+		result = whatsapp_send.send_whatsapp(self.deal, PHONE, 7, text="Oi de novo")
+		self.assertEqual(result["conversation_id"], 300)
+		self.assertFalse([p for m, p, j in fake.calls if m == "POST" and p.endswith("/contacts")])
+		search = next(p for m, p, j in fake.calls if p.endswith("/contacts/search"))
+		self.assertTrue(search)
+
+	def test_phone_variants_cover_the_9_only_for_mobiles(self):
+		self.assertEqual(welcome._phone_variants("+5548988887777"), {"+5548988887777", "+554888887777"})
+		self.assertEqual(welcome._phone_variants("+554888887777"), {"+554888887777", "+5548988887777"})
+		self.assertEqual(welcome._phone_variants("+554833334444"), {"+554833334444"})
+
+	def test_contact_starting_a_new_conversation_keeps_the_note_on_the_contact(self):
+		"""Conversa nova pelo contato: a anotação fica no contato do HubTech, não no id do contato do SmartChat."""
+		fake = self.chat()
+		contact = self.contact()
+		result = whatsapp_send.send_whatsapp(contact=contact, phone=PHONE, inbox_id=12, text="Primeira mensagem")
+		self.assertEqual(result["conversation_id"], 900)
+		created = next(j for m, p, j in fake.calls if m == "POST" and p.endswith("/conversations"))
+		self.assertEqual(created["contact_id"], 55)
+		self.assertTrue(
+			frappe.db.exists("FCRM Note", {"reference_doctype": "Contact", "reference_docname": contact})
+		)
