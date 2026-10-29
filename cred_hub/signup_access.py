@@ -6,7 +6,7 @@ do site central (hub), para criar a própria empresa:
 - login com Google/Microsoft/GitHub de um e-mail sem conta (hook `oauth_without_account` do frappe):
   no hub, abre /cadastro com o e-mail e o nome já preenchidos; no site de uma empresa, abre o cadastro
   do hub avisando que, para entrar naquela empresa, é preciso convite;
-- tela de login do hub (hook `login_signup_url`): link "Criar minha empresa";
+- tela de login do hub (hook `login_signup_url`): link "Cadastre-se", para o cadastro do site (credtech#280);
 - "Teste grátis" do site (credtech#278): `social_signup` abre o login social do hub direto no provedor e
   `start_signup` guarda o e-mail digitado no site e devolve o endereço do /cadastro já preenchido.
 """
