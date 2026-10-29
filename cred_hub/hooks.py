@@ -51,8 +51,10 @@ doc_events = {
 		"on_update": ["cred_hub.cnpj.events.on_update", "cred_hub.company.events.on_update"],
 	},
 	# Card criado de um lead com CNPJ: o CNPJ vai para a Organização do card (épico #66)
+	# Mudança de etapa do funil dispara esteira progressiva de crédito se configurado (credtech#260)
 	"CRM Deal": {
 		"after_insert": "cred_hub.cnpj.card.after_insert",
+		"on_update": ["cred_hub.credit_check.events.on_deal_update"],
 	},
 	"CRM Lead": {
 		# Empresa pelo domínio do e-mail (credtech#183): em fila, nunca atrasa a entrada do lead

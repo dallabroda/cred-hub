@@ -1609,3 +1609,33 @@ msgstr "Os pedidos não estão disponíveis agora. Escreva para contato@credtech
 
 msgid "We could not send your request. Write to contato@credtechdigital.com.br."
 msgstr "Não conseguimos enviar o seu pedido. Escreva para contato@credtechdigital.com.br."
+
+msgid "Credit Risk Verdict"
+msgstr "Parecer de Risco de Crédito"
+
+msgid "Credit Report"
+msgstr "Relatório de Crédito"
+
+msgid "Latest Credit Report"
+msgstr "Último Relatório de Crédito"
+
+msgid "Not Checked"
+msgstr "Pendente de Consulta"
+
+msgid "Pre-Approved"
+msgstr "Aprovado no Pré-Filtro"
+
+msgid "Warning"
+msgstr "Atenção"
+
+msgid "Rejected"
+msgstr "Reprovado no Pré-Filtro"
+
+msgid "Cred Hub Credit Settings"
+msgstr "Configurações de Bureaus de Crédito"
+
+msgid "Cred Hub Credit Report"
+msgstr "Relatório de Crédito e Conformidade"
+
+msgid "Credit & Legal Bureaus"
+msgstr "Bureaus de Crédito e Jurídico"

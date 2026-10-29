@@ -1,0 +1,161 @@
+{
+ "actions": [],
+ "creation": "2026-10-29 20:00:00.000000",
+ "description": "Configurações da esteira progressiva de crédito, processos judiciais e fiscal (credtech#260).",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "enabled",
+  "section_escavador",
+  "escavador_enabled",
+  "escavador_token",
+  "section_infosimples",
+  "infosimples_enabled",
+  "infosimples_token",
+  "section_automation",
+  "auto_trigger_stage",
+  "check_second_organization",
+  "section_tolerances",
+  "max_lawsuits_defendant",
+  "max_lawsuit_value",
+  "block_on_bankruptcy",
+  "max_pgfn_debt",
+  "block_on_cndt",
+  "block_on_protest",
+  "section_bureaus_finais",
+  "serasa_enabled",
+  "assertiva_enabled"
+ ],
+ "fields": [
+  {
+   "default": "0",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Ativar Esteira de Análise de Risco"
+  },
+  {
+   "fieldname": "section_escavador",
+   "fieldtype": "Section Break",
+   "label": "Escavador API (Processos Judiciais Unificados)"
+  },
+  {
+   "default": "0",
+   "fieldname": "escavador_enabled",
+   "fieldtype": "Check",
+   "label": "Ativar Escavador"
+  },
+  {
+   "fieldname": "escavador_token",
+   "fieldtype": "Password",
+   "label": "Token de Acesso Escavador (Bearer)"
+  },
+  {
+   "fieldname": "section_infosimples",
+   "fieldtype": "Section Break",
+   "label": "Infosimples API (Dívida PGFN, CNDs e Protestos)"
+  },
+  {
+   "default": "0",
+   "fieldname": "infosimples_enabled",
+   "fieldtype": "Check",
+   "label": "Ativar Infosimples"
+  },
+  {
+   "fieldname": "infosimples_token",
+   "fieldtype": "Password",
+   "label": "Token de Acesso Infosimples"
+  },
+  {
+   "fieldname": "section_automation",
+   "fieldtype": "Section Break",
+   "label": "Gatilhos Automáticos no Funil"
+  },
+  {
+   "fieldname": "auto_trigger_stage",
+   "fieldtype": "Link",
+   "label": "Etapa do Funil para Disparo Automático",
+   "options": "CRM Deal Status"
+  },
+  {
+   "default": "1",
+   "fieldname": "check_second_organization",
+   "fieldtype": "Check",
+   "label": "Consultar também a Segunda Organização (Sacado)"
+  },
+  {
+   "fieldname": "section_tolerances",
+   "fieldtype": "Section Break",
+   "label": "Régua de Corte e Tolerância de Risco"
+  },
+  {
+   "default": "0",
+   "fieldname": "max_lawsuits_defendant",
+   "fieldtype": "Int",
+   "label": "Máximo de Processos como Réu Tolerados"
+  },
+  {
+   "default": "0",
+   "fieldname": "max_lawsuit_value",
+   "fieldtype": "Currency",
+   "label": "Valor Máximo de Causa Tolerado (R$)"
+  },
+  {
+   "default": "1",
+   "fieldname": "block_on_bankruptcy",
+   "fieldtype": "Check",
+   "label": "Reprovar Imediatamente se houver Falência / Recuperação"
+  },
+  {
+   "default": "0",
+   "fieldname": "max_pgfn_debt",
+   "fieldtype": "Currency",
+   "label": "Valor Máximo em Dívida Ativa da União (PGFN) Tolerado (R$)"
+  },
+  {
+   "default": "1",
+   "fieldname": "block_on_cndt",
+   "fieldtype": "Check",
+   "label": "Reprovar se constar no BNDT (Trabalhista)"
+  },
+  {
+   "default": "1",
+   "fieldname": "block_on_protest",
+   "fieldtype": "Check",
+   "label": "Reprovar se houver Protestos em Cartório (CENPROT)"
+  },
+  {
+   "fieldname": "section_bureaus_finais",
+   "fieldtype": "Section Break",
+   "label": "Bureaus Finais (Sob Demanda)"
+  },
+  {
+   "default": "0",
+   "fieldname": "serasa_enabled",
+   "fieldtype": "Check",
+   "label": "Habilitar Serasa Experian (Relato PJ)"
+  },
+  {
+   "default": "0",
+   "fieldname": "assertiva_enabled",
+   "fieldtype": "Check",
+   "label": "Habilitar Assertiva Localize"
+  }
+ ],
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-10-29 20:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Cred Hub",
+ "name": "Cred Hub Credit Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "read": 1,
+   "write": 1,
+   "role": "System Manager"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
