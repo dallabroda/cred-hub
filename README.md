@@ -65,7 +65,7 @@ Busca pelo telefone com a mesma regra da entrada de leads (número nacional, sem
 
 ### Limite de usuários e cobrança dos extras (`billing`)
 
-2 usuários grátis por empresa; extras a R$ 60/mês pelo Asaas, no padrão de mercado (aumento libera na hora e cobra a diferença por link com 3 dias; diminuição vale no próximo vencimento; 3 dias de tolerância antes de pausar). **Desligado por padrão:** só vale com `credhub_billing: 1` no common_site_config; desligado, não há limite, a tela some e o Asaas não é chamado. Variáveis: `ASAAS_API_KEY`, `ASAAS_ENVIRONMENT`, `CREDHUB_ASAAS_WEBHOOK_TOKEN`; `credhub_unlimited_users: 1` deixa uma empresa sem limite.
+14 dias de teste com usuários ilimitados, contados da criação da empresa; depois, 1 usuário grátis por empresa e extras a R$ 60/mês pelo Asaas, no padrão de mercado (aumento libera na hora e cobra a diferença por link com 3 dias; diminuição vale no próximo vencimento; 3 dias de tolerância antes de pausar). **Desligado por padrão:** só vale com `credhub_billing: 1` no common_site_config; desligado, não há limite, a tela some e o Asaas não é chamado. Variáveis: `ASAAS_API_KEY`, `ASAAS_ENVIRONMENT`, `CREDHUB_ASAAS_WEBHOOK_TOKEN`; `credhub_unlimited_users: 1` deixa uma empresa sem limite.
 
 ## Instalação
 

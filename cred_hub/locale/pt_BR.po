@@ -626,8 +626,8 @@ msgid "name@company.com"
 msgstr "nome@empresa.com.br"
 
 #: cred_hub/www/cadastro/index.html
-msgid "Free for up to 2 users. From the third user on, R$ 60 per user per month."
-msgstr "Grátis até 2 usuários. A partir do terceiro, R$ 60 por usuário por mês."
+msgid "14 days with unlimited users. Then 1 user is free and each extra user costs R$ 60 per month."
+msgstr "14 dias com usuários ilimitados. Depois, 1 usuário grátis e R$ 60 por mês por usuário a mais."
 
 #: cred_hub/www/cadastro/index.html
 msgid "I accept the {0} and the {1}."
