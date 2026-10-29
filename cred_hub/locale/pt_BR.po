@@ -1600,3 +1600,12 @@ msgstr "Este número não é um dos telefones do contato."
 
 msgid "WhatsApp sent"
 msgstr "WhatsApp enviado"
+
+msgid "Tell us which telephony company you use."
+msgstr "Diga qual é a empresa de telefonia que você usa."
+
+msgid "Requests are not available right now. Write to contato@credtechdigital.com.br."
+msgstr "Os pedidos não estão disponíveis agora. Escreva para contato@credtechdigital.com.br."
+
+msgid "We could not send your request. Write to contato@credtechdigital.com.br."
+msgstr "Não conseguimos enviar o seu pedido. Escreva para contato@credtechdigital.com.br."
