@@ -12,6 +12,10 @@
   "section_infosimples",
   "infosimples_enabled",
   "infosimples_token",
+  "section_directd",
+  "directd_enabled",
+  "directd_token",
+  "min_directd_score",
   "section_automation",
   "auto_trigger_stage",
   "check_second_organization",
@@ -65,6 +69,32 @@
    "fieldname": "infosimples_token",
    "fieldtype": "Password",
    "label": "Token de Acesso Infosimples"
+  },
+  {
+   "fieldname": "section_directd",
+   "fieldtype": "Section Break",
+   "label": "DirectD (Score QUOD, Protestos Nacional e Processos Judiciais)"
+  },
+  {
+   "default": "0",
+   "description": "Um único token DirectD habilita os 3 produtos de Crédito/Processos usados aqui: Score de Crédito (QUOD), Protestos Nacional (IEPTB, todo o Brasil) e Processos Judiciais Simplificada.",
+   "fieldname": "directd_enabled",
+   "fieldtype": "Check",
+   "label": "Ativar DirectD"
+  },
+  {
+   "depends_on": "eval:doc.directd_enabled",
+   "fieldname": "directd_token",
+   "fieldtype": "Password",
+   "label": "Token de Acesso DirectD"
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:doc.directd_enabled",
+   "description": "0 = não reprova por score, só registra como informação. Score do Quod vai de 0 a 1000 (faixas: até 600 risco alto, 601-700 médio, 701-1000 baixo).",
+   "fieldname": "min_directd_score",
+   "fieldtype": "Int",
+   "label": "Score DirectD Mínimo Tolerado (0 = não reprova)"
   },
   {
    "fieldname": "section_automation",

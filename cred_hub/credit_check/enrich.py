@@ -19,6 +19,13 @@ from frappe import _
 from frappe.utils import add_days, today
 
 from cred_hub.cnpj.mapping import format_cnpj, is_valid_cnpj, only_digits
+from cred_hub.credit_check.clients.directd import (
+	fetch_lawsuits_directd,
+	fetch_protests_nacional,
+	fetch_score,
+	merge_lawsuit_sources,
+	merge_protest_sources,
+)
 from cred_hub.credit_check.clients.escavador import fetch_lawsuits
 from cred_hub.credit_check.clients.infosimples import fetch_fiscal_and_protests
 from cred_hub.credit_check.rules import (
@@ -30,6 +37,9 @@ from cred_hub.credit_check.rules import (
 CACHE_DAYS = 30
 ESCAVADOR_ESTIMATED_COST = 0.50
 INFOSIMPLES_ESTIMATED_COST = 0.70
+DIRECTD_SCORE_ESTIMATED_COST = 1.98
+DIRECTD_PROTESTS_ESTIMATED_COST = 2.95
+DIRECTD_PROCESSOS_ESTIMATED_COST = 1.50
 
 EMPTY_ESCAVADOR_DATA = {"total_count": 0, "defendant_count": 0, "highest_value": 0.0, "has_bankruptcy_recovery": False}
 EMPTY_INFOSIMPLES_DATA = {
@@ -38,6 +48,8 @@ EMPTY_INFOSIMPLES_DATA = {
 	"cndt": {"is_regular": True, "status": "Regular", "pdf_url": ""},
 	"cenprot": {"has_protests": False, "protests_count": 0},
 }
+EMPTY_DIRECTD_SCORE_DATA = {"score": None, "faixa_score": "", "motivos": [], "indicadores_negocio": []}
+EMPTY_DIRECTD_PROTESTS_DATA = {"has_protests": False, "protests_count": 0, "total_value": 0.0, "cartorios_distintos": 0, "cidades_distintas": 0}
 
 
 @dataclass
@@ -68,6 +80,9 @@ def get_credit_settings() -> dict[str, Any]:
 		"escavador_token": doc.get_password("escavador_token") if doc.get("escavador_token") else "",
 		"infosimples_enabled": bool(doc.get("infosimples_enabled")),
 		"infosimples_token": doc.get_password("infosimples_token") if doc.get("infosimples_token") else "",
+		"directd_enabled": bool(doc.get("directd_enabled")),
+		"directd_token": doc.get_password("directd_token") if doc.get("directd_token") else "",
+		"min_directd_score": int(doc.get("min_directd_score") or 0),
 		"auto_trigger_stage": doc.get("auto_trigger_stage") or "",
 		"check_second_organization": bool(doc.get("check_second_organization")),
 		"max_lawsuits_defendant": int(doc.get("max_lawsuits_defendant") or 0),
@@ -103,6 +118,38 @@ def _build_providers(settings: dict[str, Any]) -> list[ProviderCheck]:
 			empty_result=EMPTY_INFOSIMPLES_DATA,
 			estimated_cost=INFOSIMPLES_ESTIMATED_COST,
 			data_slot="infosimples",
+		),
+		# DirectD — só os 3 produtos de Crédito/Processos pedidos pelo dono (29/10/2026), não o
+		# catálogo inteiro. Um único toggle/token habilita os três.
+		ProviderCheck(
+			key="directd_score",
+			label="DirectD Score (QUOD)",
+			enabled=bool(settings.get("directd_enabled")),
+			token=settings.get("directd_token") or "",
+			fetch=fetch_score,
+			empty_result=EMPTY_DIRECTD_SCORE_DATA,
+			estimated_cost=DIRECTD_SCORE_ESTIMATED_COST,
+			data_slot="directd_score",
+		),
+		ProviderCheck(
+			key="directd_protestos",
+			label="DirectD Protestos Nacional",
+			enabled=bool(settings.get("directd_enabled")),
+			token=settings.get("directd_token") or "",
+			fetch=fetch_protests_nacional,
+			empty_result=EMPTY_DIRECTD_PROTESTS_DATA,
+			estimated_cost=DIRECTD_PROTESTS_ESTIMATED_COST,
+			data_slot="directd_protestos",
+		),
+		ProviderCheck(
+			key="directd_processos",
+			label="DirectD Processos Judiciais",
+			enabled=bool(settings.get("directd_enabled")),
+			token=settings.get("directd_token") or "",
+			fetch=fetch_lawsuits_directd,
+			empty_result=EMPTY_ESCAVADOR_DATA,
+			estimated_cost=DIRECTD_PROCESSOS_ESTIMATED_COST,
+			data_slot="directd_processos",
 		),
 	]
 
@@ -184,12 +231,22 @@ def run_background_check(
 				)
 				failures.append(_("{0}: query failed ({1})").format(provider.label, str(e)[:150]))
 
+	# Combina as fontes de processos e de protestos (Escavador+DirectD, Infosimples+DirectD) da
+	# forma mais conservadora, antes de avaliar o risco — nunca perde um sinal que só uma das
+	# fontes tenha encontrado.
+	merged_lawsuits = merge_lawsuit_sources(results["escavador"], results["directd_processos"])
+	merged_infosimples = dict(results["infosimples"])
+	merged_infosimples["cenprot"] = merge_protest_sources(
+		results["infosimples"].get("cenprot") or {}, results["directd_protestos"]
+	)
+
 	# Avaliação de risco — qualquer falha num provedor habilitado força o parecer 'Error'
 	evaluation = evaluate_credit_risk(
-		results["escavador"],
-		results["infosimples"],
+		merged_lawsuits,
+		merged_infosimples,
 		settings,
 		provider_failures=failures,
+		directd_score_data=results["directd_score"],
 	)
 	verdict = evaluation.get("verdict") or VERDICT_ERROR
 	summary = evaluation.get("summary") or ""
@@ -230,7 +287,14 @@ def run_background_check(
 		"cenprot_protests_count": metrics.get("cenprot_protests_count") or 0,
 		"total_cost": total_cost,
 		"raw_details_json": json.dumps(
-			{"escavador": results["escavador"], "infosimples": results["infosimples"], "failures": failures},
+			{
+				"escavador": results["escavador"],
+				"infosimples": results["infosimples"],
+				"directd_score": results["directd_score"],
+				"directd_protestos": results["directd_protestos"],
+				"directd_processos": results["directd_processos"],
+				"failures": failures,
+			},
 			ensure_ascii=False,
 		),
 	})

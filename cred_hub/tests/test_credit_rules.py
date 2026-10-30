@@ -129,6 +129,27 @@ def test_evaluate_credit_risk_rejected_by_protests():
 	assert any("protestado" in r for r in eval_res["reasons"])
 
 
+def test_evaluate_credit_risk_directd_score_rejects_below_floor():
+	clean_escavador = {"total_count": 0, "defendant_count": 0, "highest_value": 0.0, "has_bankruptcy_recovery": False}
+	clean_infosimples = {
+		"pgfn": {"total_debt": 0.0},
+		"cndt": {"is_regular": True},
+		"cenprot": {"has_protests": False},
+	}
+	directd_score_data = {"score": 350, "faixa_score": "Alto risco"}
+
+	# Sem piso configurado (0): não reprova por score sozinho
+	eval_res_no_floor = evaluate_credit_risk(clean_escavador, clean_infosimples, directd_score_data=directd_score_data)
+	assert eval_res_no_floor["verdict"] == VERDICT_PRE_APPROVED
+
+	# Com piso 600: reprova
+	eval_res_floor = evaluate_credit_risk(
+		clean_escavador, clean_infosimples, {"min_directd_score": 600}, directd_score_data=directd_score_data
+	)
+	assert eval_res_floor["verdict"] == VERDICT_REJECTED
+	assert any("Score de crédito" in r for r in eval_res_floor["reasons"])
+
+
 def test_evaluate_credit_risk_never_fails_open_on_provider_failure():
 	"""Mesmo com dados 'limpos', uma falha de provedor nunca pode virar Pre-Approved (credtech#302)."""
 	clean_escavador = {"total_count": 0, "defendant_count": 0, "highest_value": 0.0, "has_bankruptcy_recovery": False}

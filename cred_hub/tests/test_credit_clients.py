@@ -3,6 +3,14 @@
 from unittest.mock import MagicMock, patch
 import pytest
 
+from cred_hub.credit_check.clients.directd import (
+	DirectDAuthError,
+	fetch_protests_nacional,
+	fetch_score,
+	merge_lawsuit_sources,
+	merge_protest_sources,
+	parse_directd_processos_payload,
+)
 from cred_hub.credit_check.clients.escavador import (
 	EscavadorAuthError,
 	EscavadorRateLimitError,
@@ -152,3 +160,82 @@ def test_fetch_fiscal_and_protests_aggregate(mock_cenprot, mock_cndt, mock_cnd, 
 	assert res["cnpj"] == "12345678000199"
 	assert res["pgfn"]["total_debt"] == 0.0
 	assert len(res["errors"]) == 0
+
+
+def test_directd_score_missing_token():
+	with pytest.raises(DirectDAuthError):
+		fetch_score("12345678000199", "")
+
+
+@patch("cred_hub.credit_check.clients.directd.requests.get")
+def test_directd_score_success(mock_get):
+	mock_resp = MagicMock()
+	mock_resp.status_code = 200
+	mock_resp.ok = True
+	mock_resp.json.return_value = {
+		"retorno": {"pessoaJuridica": {"score": 820, "faixaScore": "Baixo risco", "motivos": []}}
+	}
+	mock_get.return_value = mock_resp
+
+	res = fetch_score("12345678000199", "token")
+	assert res["score"] == 820
+	assert res["faixa_score"] == "Baixo risco"
+
+
+@patch("cred_hub.credit_check.clients.directd.requests.get")
+def test_directd_protestos_nacional_success(mock_get):
+	mock_resp = MagicMock()
+	mock_resp.status_code = 200
+	mock_resp.ok = True
+	mock_resp.json.return_value = {
+		"retorno": {
+			"constamProtestos": True,
+			"numeroTotalProtestos": 2,
+			"valorTotalProtestos": "1.500,00",
+		}
+	}
+	mock_get.return_value = mock_resp
+
+	res = fetch_protests_nacional("12345678000199", "token")
+	assert res["has_protests"] is True
+	assert res["protests_count"] == 2
+	assert res["total_value"] == 1500.0
+
+
+def test_directd_processos_payload_parsing():
+	payload = {
+		"retorno": {
+			"totalProcessos": 1,
+			"processos": [
+				{
+					"numeroProcesso": "0012345-67.2024.8.26.0100",
+					"classe": "Execução Fiscal",
+					"assuntoPrincipal": "Cobrança",
+					"status": "Em andamento",
+					"valorAcao": 80000.0,
+					"partes": [{"polo": "PASSIVO", "documento": "12345678000199"}],
+				}
+			],
+		}
+	}
+	res = parse_directd_processos_payload(payload, "12345678000199")
+	assert res["total_count"] == 1
+	assert res["defendant_count"] == 1
+	assert res["highest_value"] == 80000.0
+	assert len(res["critical_lawsuits"]) == 1
+
+
+def test_merge_lawsuit_sources_is_conservative():
+	a = {"total_count": 1, "defendant_count": 1, "highest_value": 5000.0, "has_bankruptcy_recovery": False, "critical_lawsuits": []}
+	b = {"total_count": 0, "defendant_count": 0, "highest_value": 0.0, "has_bankruptcy_recovery": True, "critical_lawsuits": []}
+	merged = merge_lawsuit_sources(a, b)
+	assert merged["defendant_count"] == 1
+	assert merged["has_bankruptcy_recovery"] is True
+
+
+def test_merge_protest_sources_is_conservative():
+	a = {"has_protests": False, "protests_count": 0}
+	b = {"has_protests": True, "protests_count": 3}
+	merged = merge_protest_sources(a, b)
+	assert merged["has_protests"] is True
+	assert merged["protests_count"] == 3

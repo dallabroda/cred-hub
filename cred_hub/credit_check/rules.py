@@ -20,6 +20,7 @@ def evaluate_credit_risk(
 	infosimples_data: dict[str, Any],
 	settings: dict[str, Any] | None = None,
 	provider_failures: list[str] | None = None,
+	directd_score_data: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
 	"""Avalia os dados judiciais e fiscais retornando o parecer e as justificativas.
 
@@ -45,6 +46,7 @@ def evaluate_credit_risk(
 				"cndt_pdf": "",
 				"cenprot_has_protest": None,
 				"cenprot_protests_count": None,
+				"directd_score": None,
 			},
 		}
 
@@ -55,6 +57,7 @@ def evaluate_credit_risk(
 	max_pgfn_debt = float(cfg.get("max_pgfn_debt", 0.0))
 	block_on_cndt = bool(cfg.get("block_on_cndt", True))
 	block_on_protest = bool(cfg.get("block_on_protest", True))
+	min_directd_score = int(cfg.get("min_directd_score", 0))
 
 	reasons: list[str] = []
 	warnings: list[str] = []
@@ -130,6 +133,16 @@ def evaluate_credit_risk(
 	if not cnd_fed_regular:
 		warnings.append(f"CND Federal com pendências: {cnd_fed.get('status') or 'Positiva'}.")
 
+	# 7. Score de Crédito (DirectD / Quod) — só reprova se o cliente configurou um piso (> 0)
+	directd_score = None
+	if directd_score_data and directd_score_data.get("score") is not None:
+		directd_score = int(directd_score_data["score"])
+		if min_directd_score > 0 and directd_score < min_directd_score:
+			is_rejected = True
+			reasons.append(f"Score de crédito DirectD ({directd_score}) abaixo do piso tolerado ({min_directd_score}).")
+		elif min_directd_score > 0:
+			warnings.append(f"Score de crédito DirectD: {directd_score} (faixa: {directd_score_data.get('faixa_score') or '—'}).")
+
 	# Determinação do veredito final
 	if is_rejected:
 		verdict = VERDICT_REJECTED
@@ -158,6 +171,7 @@ def evaluate_credit_risk(
 			"cndt_pdf": cndt.get("pdf_url", ""),
 			"cenprot_has_protest": has_protest,
 			"cenprot_protests_count": protest_count,
+			"directd_score": directd_score,
 		},
 	}
 
@@ -189,11 +203,13 @@ def format_timeline_summary(evaluation: dict[str, Any], cnpj_formatted: str) -> 
 
 	lines = [
 		f"{icon} **{badge}** (CNPJ {cnpj_formatted})",
-		f"• **Processos Judiciais (Escavador):** {metrics.get('lawsuits_defendant', 0)} como réu (total: {metrics.get('lawsuits_total', 0)}). Falência/Recuperação: {'Sim ⚠️' if metrics.get('has_bankruptcy') else 'Não'}.",
+		f"• **Processos Judiciais:** {metrics.get('lawsuits_defendant', 0)} como réu (total: {metrics.get('lawsuits_total', 0)}). Falência/Recuperação: {'Sim ⚠️' if metrics.get('has_bankruptcy') else 'Não'}.",
 		f"• **Dívida Ativa da União (PGFN):** R$ {metrics.get('pgfn_debt', 0.0):,.2f}.",
 		f"• **Certidão Trabalhista (CNDT):** {metrics.get('cndt_status')}.",
 		f"• **Protestos em Cartório (CENPROT):** {'Sim (' + str(metrics.get('cenprot_protests_count', 0)) + ')' if metrics.get('cenprot_has_protest') else 'Nenhum'}.",
 	]
+	if metrics.get("directd_score") is not None:
+		lines.append(f"• **Score de Crédito (DirectD/Quod):** {metrics['directd_score']}.")
 
 	if reasons:
 		lines.append(f"**Motivos de restrição:** {'; '.join(reasons)}")
