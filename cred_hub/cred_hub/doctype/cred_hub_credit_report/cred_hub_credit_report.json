@@ -36,6 +36,7 @@
   "section_audit",
   "total_cost",
   "client_total_cost",
+  "dossie_pdf_url",
   "raw_details_json"
  ],
  "fields": [
@@ -230,6 +231,13 @@
    "fieldname": "client_total_cost",
    "fieldtype": "Currency",
    "label": "Preço a Cobrar do Cliente (R$)",
+   "read_only": 1
+  },
+  {
+   "description": "PDF gerado pelo print format 'Cred Hub - Dossiê de Crédito', anexado também nos Anexos da Organização.",
+   "fieldname": "dossie_pdf_url",
+   "fieldtype": "Data",
+   "label": "Link do Dossiê (PDF)",
    "read_only": 1
   },
   {

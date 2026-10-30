@@ -9,6 +9,7 @@ import frappe
 from frappe import _
 from frappe.utils import now_datetime
 
+from cred_hub.billing import InsufficientCreditsError, spend_credits, wallet_balance
 from cred_hub.credit_check.clients.directd import DirectDAuthError, DirectDError
 from cred_hub.credit_check.clients.escavador import fetch_lawsuits
 from cred_hub.credit_check.clients.infosimples import query_pgfn
@@ -20,7 +21,7 @@ from cred_hub.credit_check.clients.serasa import (
 	trigger_serasa_relato,
 )
 from cred_hub.credit_check.enrich import get_credit_settings, run_background_check
-from cred_hub.credit_check.premium_bureaus import PREMIUM_BUREAUS
+from cred_hub.credit_check.premium_bureaus import PREMIUM_BUREAUS, PlatformDirectDNotConfigured, platform_directd_token
 
 # Custo real aproximado de cada chamada de teste de conexão — cobrado mesmo numa consulta de teste
 TEST_CONNECTION_COST = {
@@ -102,6 +103,37 @@ def get_report_details(report_name: str) -> dict[str, Any]:
 	}
 
 
+DOSSIE_PRINT_FORMAT = "Cred Hub - Dossiê de Crédito"
+
+
+@frappe.whitelist()
+def generate_dossie_pdf(organization_name: str, report_name: str | None = None) -> dict[str, Any]:
+	"""Gera o dossiê de crédito em PDF (dados estruturados por seção) a partir do relatório mais
+	recente da Organização (ou de um relatório específico) e anexa nos Anexos da Organização."""
+	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
+	_check_deal_and_org_permission(None, organization_name)
+
+	if not report_name:
+		report_name = frappe.db.get_value("CRM Organization", organization_name, "credit_report")
+	if not report_name or not frappe.db.exists("Cred Hub Credit Report", report_name):
+		frappe.throw(_("Run the credit analysis before generating the dossier."))
+
+	report = frappe.get_doc("Cred Hub Credit Report", report_name)
+	if report.organization != organization_name:
+		frappe.throw(_("This report does not belong to this organization."))
+
+	pdf_bytes = frappe.get_print("Cred Hub Credit Report", report_name, DOSSIE_PRINT_FORMAT, as_pdf=True)
+
+	from frappe.utils.file_manager import save_file
+
+	cnpj_slug = (report.cnpj or "").replace(".", "").replace("/", "").replace("-", "")
+	filename = f"Dossie-Credito-{cnpj_slug}-{report.checked_on}.pdf"
+	file_doc = save_file(filename, pdf_bytes, "CRM Organization", organization_name, is_private=1)
+
+	report.db_set("dossie_pdf_url", file_doc.file_url, update_modified=False)
+	return {"file_url": file_doc.file_url, "file_name": file_doc.file_name}
+
+
 @frappe.whitelist()
 def test_provider_connection(provider: str, token: str, cnpj: str, confirm_cost: bool = False) -> dict[str, Any]:
 	"""Valida se o token informado conecta com sucesso ao provedor.
@@ -141,14 +173,16 @@ def test_provider_connection(provider: str, token: str, cnpj: str, confirm_cost:
 			frappe.throw(_("Infosimples connection test failed: {0}").format(str(e)))
 
 
-def _log_premium_bureau_query(bureau: str, deal, cnpj: str, cost: float, client_price: float, status: str, raw: dict[str, Any]) -> None:
+def _log_premium_bureau_query(
+	bureau: str, organization_name: str | None, deal_name: str | None, cnpj: str, cost: float, client_price: float, status: str, raw: dict[str, Any]
+) -> None:
 	"""Grava a auditoria da consulta ao bureau Premium: custo pago ao fornecedor e preço cobrado
 	do cliente, pra reconciliação de cobrança."""
 	frappe.get_doc({
 		"doctype": "Cred Hub Premium Bureau Query",
 		"bureau": bureau,
-		"organization": deal.organization,
-		"deal": deal.name,
+		"organization": organization_name,
+		"deal": deal_name,
 		"cnpj": cnpj,
 		"requested_by": frappe.session.user,
 		"requested_on": now_datetime(),
@@ -160,27 +194,40 @@ def _log_premium_bureau_query(bureau: str, deal, cnpj: str, cost: float, client_
 
 
 @frappe.whitelist()
-def request_bureau_final(deal_name: str, bureau: str = "serasa") -> dict[str, Any]:
+def request_bureau_final(
+	deal_name: str | None = None, organization_name: str | None = None, bureau: str = "serasa"
+) -> dict[str, Any]:
 	"""Dispara a consulta a um bureau final (Serasa ou um bureau Premium da DirectD), garantindo
-	pré-aprovação no pré-filtro de baixo custo antes de gastar."""
+	pré-aprovação no pré-filtro de baixo custo antes de gastar. Pode ser disparado a partir de um
+	Card OU direto da Organização (a análise de crédito é da empresa, não do negócio específico) —
+	passe pelo menos um dos dois."""
 	frappe.only_for(["System Manager", "Sales Manager"])
-	_check_deal_and_org_permission(deal_name, None)
+	if not deal_name and not organization_name:
+		frappe.throw(_("Inform a deal or an organization."))
+	_check_deal_and_org_permission(deal_name, organization_name)
 
-	deal = frappe.get_doc("CRM Deal", deal_name)
-	if not deal.credit_verdict:
-		frappe.throw(_("This deal has not gone through the credit pre-analysis yet."))
-
-	org_cnpj = frappe.db.get_value("CRM Organization", deal.organization, "cnpj") if deal.organization else ""
-	if not org_cnpj:
+	deal = frappe.get_doc("CRM Deal", deal_name) if deal_name else None
+	if deal and not organization_name:
+		organization_name = deal.organization
+	if not organization_name:
 		frappe.throw(_("The deal must be linked to an organization with a valid CNPJ."))
 
-	settings_doc = frappe.get_single("Cred Hub Credit Settings")
+	# O veredito do card (se veio de um) tem prioridade; sem card, usa o veredito da própria
+	# Organização (CRM Organization já tem credit_verdict/credit_report próprios).
+	credit_verdict = deal.credit_verdict if deal else frappe.db.get_value("CRM Organization", organization_name, "credit_verdict")
+	if not credit_verdict or credit_verdict == "Not Checked":
+		frappe.throw(_("This organization has not gone through the credit pre-analysis yet."))
+
+	org_cnpj = frappe.db.get_value("CRM Organization", organization_name, "cnpj")
+	if not org_cnpj:
+		frappe.throw(_("The organization needs a valid CNPJ."))
 
 	if bureau == "serasa":
+		settings_doc = frappe.get_single("Cred Hub Credit Settings")
 		endpoint_url = settings_doc.get("serasa_endpoint_url") or ""
 		serasa_token = settings_doc.get_password("serasa_token") if settings_doc.get("serasa_token") else ""
 		try:
-			result = trigger_serasa_relato(org_cnpj, frappe.session.user, deal.credit_verdict, endpoint_url, serasa_token)
+			result = trigger_serasa_relato(org_cnpj, frappe.session.user, credit_verdict, endpoint_url, serasa_token)
 		except BureauGateBlocked as e:
 			frappe.throw(str(e))
 		except SerasaNotConfigured as e:
@@ -188,8 +235,9 @@ def request_bureau_final(deal_name: str, bureau: str = "serasa") -> dict[str, An
 		except SerasaError as e:
 			frappe.throw(_("Serasa query failed: {0}").format(str(e)))
 
-		_log_premium_bureau_query(bureau, deal, org_cnpj, 0.0, 0.0, result.get("status") or "", result)
-		deal.add_comment(
+		_log_premium_bureau_query(bureau, organization_name, deal_name, org_cnpj, 0.0, 0.0, result.get("status") or "", result)
+		comment_target = deal or frappe.get_doc("CRM Organization", organization_name)
+		comment_target.add_comment(
 			"Comment",
 			_("Final bureau query ({0}) requested by {1}. Provider status: {2}.").format(
 				bureau.upper(), frappe.session.user, result.get("status")
@@ -202,21 +250,37 @@ def request_bureau_final(deal_name: str, bureau: str = "serasa") -> dict[str, An
 		frappe.throw(_("Unknown bureau: {0}").format(bureau))
 
 	try:
-		assert_pre_approved_for_bureau(deal.credit_verdict, org_cnpj)
+		assert_pre_approved_for_bureau(credit_verdict, org_cnpj)
 	except BureauGateBlocked as e:
 		frappe.throw(str(e))
 
-	token = settings_doc.get_password(registry.credential_setting) if settings_doc.get(registry.credential_setting) else ""
-	if not token:
-		frappe.throw(_("{0} is not configured: set up the DirectD token in Credit & Legal Bureaus settings first.").format(registry.label))
+	# Saldo de créditos checado ANTES de gastar com a DirectD — nunca a CredTech paga sem o cliente
+	# ter saldo pra cobrir (ver billing.py:spend_credits).
+	balance = wallet_balance()
+	if balance < registry.client_price:
+		frappe.throw(
+			_("Insufficient credits: balance is R$ {0}, this costs R$ {1}. Add credits to continue.").format(
+				f"{balance:.2f}", f"{registry.client_price:.2f}"
+			),
+			InsufficientCreditsError,
+		)
+
+	try:
+		token = platform_directd_token()
+	except PlatformDirectDNotConfigured as e:
+		frappe.throw(str(e))
 
 	try:
 		result = registry.fetch(org_cnpj, token)
 	except (DirectDAuthError, DirectDError) as e:
 		frappe.throw(_("{0} query failed: {1}").format(registry.label, str(e)))
 
-	_log_premium_bureau_query(bureau, deal, org_cnpj, registry.cost, registry.client_price, "Concluído", result.get("raw") or result)
-	deal.add_comment(
+	spend_credits(registry.client_price, description=f"{registry.label} — {org_cnpj}")
+	_log_premium_bureau_query(
+		bureau, organization_name, deal_name, org_cnpj, registry.cost, registry.client_price, "Concluído", result.get("raw") or result
+	)
+	comment_target = deal or frappe.get_doc("CRM Organization", organization_name)
+	comment_target.add_comment(
 		"Comment",
 		_("Final bureau query ({0}) requested by {1}. Cost: R$ {2:.2f}, billed to client: R$ {3:.2f}.").format(
 			registry.label, frappe.session.user, registry.cost, registry.client_price
