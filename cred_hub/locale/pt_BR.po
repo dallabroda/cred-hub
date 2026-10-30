@@ -1703,3 +1703,465 @@ msgstr "Consulta ao bureau final ({0}) solicitada por {1}. Status do provedor: {
 
 msgid "insufficient credits for Infosimples/DirectD: balance R$ {0}, needed R$ {1}. Add credits to continue."
 msgstr "créditos insuficientes para Infosimples/DirectD: saldo R$ {0}, necessário R$ {1}. Adicione créditos para continuar."
+# Bureaus: Assertiva Localize e CENPROT (credtech#290)
+msgid "Assertiva refused the CPF or CNPJ (HTTP 400)."
+msgstr "A Assertiva recusou o CPF ou CNPJ (HTTP 400)."
+
+msgid "Assertiva denied the query: no balance or the module is not in your contract (HTTP 403)."
+msgstr "A Assertiva negou a consulta: sem saldo ou o módulo não está no seu contrato (HTTP 403)."
+
+msgid "Assertiva refused the query parameters (HTTP 422)."
+msgstr "A Assertiva recusou os parâmetros da consulta (HTTP 422)."
+
+msgid "Assertiva refused the query (HTTP {0})."
+msgstr "A Assertiva recusou a consulta (HTTP {0})."
+
+msgid "Assertiva is unavailable right now. Try again in a few minutes."
+msgstr "A Assertiva está indisponível agora. Tente de novo em alguns minutos."
+
+msgid "Fill the Assertiva Client ID and Client Secret in the settings."
+msgstr "Preencha o Client ID e o Client Secret da Assertiva nas configurações."
+
+msgid "Assertiva did not return an access token."
+msgstr "A Assertiva não devolveu o token de acesso."
+
+msgid "Could not reach Assertiva. Try again in a few minutes."
+msgstr "Não foi possível falar com a Assertiva. Tente de novo em alguns minutos."
+
+msgid "Assertiva refused the Client ID or Client Secret (HTTP {0})."
+msgstr "A Assertiva recusou o Client ID ou o Client Secret (HTTP {0})."
+
+msgid "Assertiva refused the Client ID or Client Secret (HTTP 401)."
+msgstr "A Assertiva recusou o Client ID ou o Client Secret (HTTP 401)."
+
+msgid "Assertiva answered with an invalid response."
+msgstr "A Assertiva respondeu com um retorno inválido."
+
+msgid "Fill the CENPROT username and password in the settings."
+msgstr "Preencha o usuário e a senha da CENPROT nas configurações."
+
+msgid "Could not reach CENPROT. Try again in a few minutes."
+msgstr "Não foi possível falar com a CENPROT. Tente de novo em alguns minutos."
+
+msgid "CENPROT refused the login: {0}"
+msgstr "A CENPROT recusou o login: {0}"
+
+msgid "no message"
+msgstr "sem mensagem"
+
+msgid "CENPROT answered with an invalid response (HTTP {0})."
+msgstr "A CENPROT respondeu com um retorno inválido (HTTP {0})."
+
+msgid "Assertiva did not find this CNPJ."
+msgstr "A Assertiva não localizou este CNPJ."
+
+msgid "Assertiva accepted the credentials."
+msgstr "A Assertiva aceitou as credenciais."
+
+msgid "Assertiva Localize is off. An admin turns it on in Settings > Integrations > Bureaus."
+msgstr "A Assertiva Localize está desligada. Um admin liga em Configurações > Integrações > Bureaus."
+
+msgid "Fill a valid CNPJ in the organization first."
+msgstr "Preencha antes um CNPJ válido na organização."
+
+msgid "Assertiva Localize: {0} contact(s) created and {1} updated, {2} phone(s) ({3} with WhatsApp) and {4} e-mail(s)."
+msgstr "Assertiva Localize: {0} contato(s) criado(s) e {1} atualizado(s), {2} telefone(s) ({3} com WhatsApp) e {4} e-mail(s)."
+
+msgid "Saved result, at no cost."
+msgstr "Resultado salvo, sem custo."
+
+msgid "{0} paid query(ies)."
+msgstr "{0} consulta(s) paga(s)."
+
+msgid "Protocol {0}."
+msgstr "Protocolo {0}."
+
+msgid "{0}: the contact could not be saved."
+msgstr "{0}: não foi possível salvar o contato."
+
+msgid "The card needs an organization with CNPJ, or a primary contact with CPF, to be the debtor."
+msgstr "O card precisa de uma organização com CNPJ, ou de um contato principal com CPF, para ser o devedor."
+
+msgid "street"
+msgstr "rua"
+
+msgid "ZIP code (CEP)"
+msgstr "CEP"
+
+msgid "city"
+msgstr "cidade"
+
+msgid "state (UF)"
+msgstr "UF"
+
+msgid "neighborhood"
+msgstr "bairro"
+
+msgid "name"
+msgstr "nome"
+
+msgid "CPF or CNPJ"
+msgstr "CPF ou CNPJ"
+
+msgid "Title sent to protest."
+msgstr "Título enviado a protesto."
+
+msgid "CENPROT accepted the login."
+msgstr "A CENPROT aceitou o login."
+
+msgid "Commercial agreement"
+msgstr "Acordo comercial"
+
+msgid "CENPROT is off. An admin turns it on in Settings > Integrations > Bureaus."
+msgstr "A CENPROT está desligada. Um admin liga em Configurações > Integrações > Bureaus."
+
+msgid "Fill the title number and our number."
+msgstr "Preencha o número do título e o nosso número."
+
+msgid "Fill the title amount (or the card value)."
+msgstr "Preencha o valor do título (ou o valor do card)."
+
+msgid "Fill the issue date."
+msgstr "Preencha a data de emissão."
+
+msgid "Fill the due date."
+msgstr "Preencha o vencimento."
+
+msgid "This card was not sent to protest."
+msgstr "Este card não foi enviado a protesto."
+
+msgid "no answer"
+msgstr "sem resposta"
+
+msgid "Only overdue titles go to protest: the due date must be before today."
+msgstr "Só título vencido vai a protesto: o vencimento precisa ser antes de hoje."
+
+msgid "Protest of {0}: the registry status changed from {1} to {2}."
+msgstr "Protesto de {0}: o status no cartório mudou de {1} para {2}."
+
+msgid "CENPROT accepted the {0} of the title: {1}"
+msgstr "A CENPROT aceitou o pedido de {0} do título: {1}"
+
+msgid "Debtor address without: {0}."
+msgstr "Endereço do devedor sem: {0}."
+
+msgid "Creditor in the settings without: {0}."
+msgstr "Credor nas configurações sem: {0}."
+
+msgid "This title is already at the registry (status {0})."
+msgstr "Este título já está no cartório (status {0})."
+
+msgid "CENPROT refused the title: {0}"
+msgstr "A CENPROT recusou o título: {0}"
+
+msgid "CENPROT already had this title ({0}). Checking its status at the registry."
+msgstr "A CENPROT já tinha este título ({0}). Consultando o status no cartório."
+
+msgid "Title sent to protest at CENPROT: {0}"
+msgstr "Título enviado a protesto na CENPROT: {0}"
+
+msgid "CENPROT did not find the title: {0}"
+msgstr "A CENPROT não encontrou o título: {0}"
+
+msgid "A title in status {0} cannot be withdrawn or cancelled."
+msgstr "Título com status {0} não pode ser retirado nem cancelado."
+
+msgid "CENPROT refused the {0} of the title: {1}"
+msgstr "A CENPROT recusou o pedido de {0} do título: {1}"
+
+msgid "The title cannot go to protest yet"
+msgstr "O título ainda não pode ir a protesto"
+
+msgid "Protest of {0} was not sent: {1}"
+msgstr "O protesto de {0} não foi enviado: {1}"
+
+msgid "Protest of {0} was not withdrawn: {1}"
+msgstr "O protesto de {0} não foi retirado: {1}"
+
+msgid "The card could not move to {0} by itself: {1}"
+msgstr "O card não conseguiu ir sozinho para {0}: {1}"
+
+msgid "The title did not go to protest: {0}"
+msgstr "O título não foi a protesto: {0}"
+
+msgid "Cred Hub Provider Settings"
+msgstr "Configurações dos bureaus"
+
+msgid "Credentials and options of the Assertiva Localize and CENPROT integrations (credtech#290). Only admins."
+msgstr "Credenciais e opções das integrações Assertiva Localize e CENPROT (credtech#290). Só admins."
+
+msgid "Enable Assertiva Localize"
+msgstr "Ligar a Assertiva Localize"
+
+msgid "Find the partners of an organization with phones (WhatsApp) and e-mails. Each query is paid to Assertiva by your company."
+msgstr "Busca os sócios de uma organização com telefones (WhatsApp) e e-mails. Cada consulta é paga à Assertiva pela sua empresa."
+
+msgid "Assertiva Client ID"
+msgstr "Client ID da Assertiva"
+
+msgid "Assertiva Client Secret"
+msgstr "Client Secret da Assertiva"
+
+msgid "LGPD purpose of the queries"
+msgstr "Finalidade LGPD das consultas"
+
+msgid "Credit protection and collection"
+msgstr "Proteção ao crédito e cobrança"
+
+msgid "Identity confirmation and fraud prevention"
+msgstr "Confirmação de identidade e prevenção a fraude"
+
+msgid "Also look up each partner's phones and e-mails"
+msgstr "Buscar também telefones e e-mails de cada sócio"
+
+msgid "One more paid query per partner."
+msgstr "Uma consulta paga a mais por sócio."
+
+msgid "Reuse a query for (days)"
+msgstr "Reaproveitar a consulta por (dias)"
+
+msgid "Within this period the saved result is used at no cost, unless someone asks for a new paid query."
+msgstr "Nesse prazo vale o resultado salvo, sem custo, a não ser que alguém peça uma nova consulta paga."
+
+msgid "CENPROT (protest at the registry)"
+msgstr "CENPROT (protesto em cartório)"
+
+msgid "Enable CENPROT"
+msgstr "Ligar a CENPROT"
+
+msgid "Send overdue titles of the collection pipeline to protest and follow them at the registry. Your company's own IEPTB contract."
+msgstr "Envia a protesto os títulos vencidos do funil de cobrança e acompanha no cartório. Contrato da sua empresa com o IEPTB."
+
+msgid "CENPROT environment"
+msgstr "Ambiente da CENPROT"
+
+msgid "Homologation"
+msgstr "Homologação"
+
+msgid "CENPROT username"
+msgstr "Usuário da CENPROT"
+
+msgid "CENPROT password"
+msgstr "Senha da CENPROT"
+
+msgid "Presenter code"
+msgstr "Código do apresentante"
+
+msgid "Only when IEPTB gave one (tag apresentante)."
+msgstr "Só se o IEPTB passou um (tag apresentante)."
+
+msgid "Bearer code"
+msgstr "Código do portador"
+
+msgid "Only when IEPTB gave one (tag codPortador)."
+msgstr "Só se o IEPTB passou um (tag codPortador)."
+
+msgid "Bearer name"
+msgstr "Nome do portador"
+
+msgid "Creditor (who protests)"
+msgstr "Credor (quem protesta)"
+
+msgid "Creditor name"
+msgstr "Nome do credor"
+
+msgid "Creditor CPF or CNPJ"
+msgstr "CPF ou CNPJ do credor"
+
+msgid "Creditor street"
+msgstr "Rua do credor"
+
+msgid "Creditor number"
+msgstr "Número do credor"
+
+msgid "Creditor complement"
+msgstr "Complemento do credor"
+
+msgid "Creditor neighborhood"
+msgstr "Bairro do credor"
+
+msgid "Creditor city"
+msgstr "Cidade do credor"
+
+msgid "Creditor state (UF)"
+msgstr "UF do credor"
+
+msgid "Creditor ZIP code (CEP)"
+msgstr "CEP do credor"
+
+msgid "Title defaults"
+msgstr "Padrões do título"
+
+msgid "Default title type"
+msgstr "Espécie padrão do título"
+
+msgid "Endorsement"
+msgstr "Endosso"
+
+msgid "Mandate endorsement"
+msgstr "Endosso-mandato"
+
+msgid "Transfer endorsement"
+msgstr "Endosso translativo"
+
+msgid "Blank endorsement"
+msgstr "Endosso em branco"
+
+msgid "Titles have the debtor's acceptance"
+msgstr "Títulos com aceite do devedor"
+
+msgid "Collection pipeline"
+msgstr "Funil de cobrança"
+
+msgid "Created when CENPROT is enabled."
+msgstr "Criado quando a CENPROT é ligada."
+
+msgid "Send to the registry when a card enters the send stage"
+msgstr "Enviar ao cartório quando o card entra na etapa de envio"
+
+msgid "Send to the registry stage"
+msgstr "Etapa de envio ao cartório"
+
+msgid "At the registry stage"
+msgstr "Etapa no cartório"
+
+msgid "Notified by the registry stage"
+msgstr "Etapa intimado pelo cartório"
+
+msgid "Protested stage"
+msgstr "Etapa protestado"
+
+msgid "Paid at the registry stage"
+msgstr "Etapa pago no cartório"
+
+msgid "Agreement or withdrawn stage"
+msgstr "Etapa de acordo ou retirada"
+
+msgid "Moving a card here asks the registry to withdraw or cancel the protest."
+msgstr "Mover um card para cá pede ao cartório a retirada ou o cancelamento do protesto."
+
+msgid "Cred Hub Bureau Query"
+msgstr "Consulta a bureau"
+
+msgid "Every paid bureau query and registry operation (credtech#290): LGPD audit and the cache that avoids paying twice."
+msgstr "Toda consulta paga a bureau e toda operação no cartório (credtech#290): auditoria LGPD e o cache que evita pagar duas vezes."
+
+msgid "Result code"
+msgstr "Código de retorno"
+
+msgid "Asked by"
+msgstr "Pedida por"
+
+msgid "LGPD purpose"
+msgstr "Finalidade LGPD"
+
+msgid "Has WhatsApp"
+msgstr "Tem WhatsApp"
+
+msgid "Phone assertiveness"
+msgstr "Assertividade do telefone"
+
+msgid "Phone carrier"
+msgstr "Operadora do telefone"
+
+msgid "Share of the capital"
+msgstr "Participação no capital"
+
+msgid "Localize query on"
+msgstr "Consulta Localize em"
+
+msgid "Assertiva protocol"
+msgstr "Protocolo da Assertiva"
+
+msgid "Protest (CENPROT)"
+msgstr "Protesto (CENPROT)"
+
+msgid "Title type"
+msgstr "Espécie do título"
+
+msgid "Title number"
+msgstr "Número do título"
+
+msgid "Our number"
+msgstr "Nosso número"
+
+msgid "Title amount"
+msgstr "Valor do título"
+
+msgid "Balance to protest"
+msgstr "Saldo a protestar"
+
+msgid "Issue date"
+msgstr "Data de emissão"
+
+msgid "Due date"
+msgstr "Vencimento"
+
+msgid "Bearer declaration"
+msgstr "Declaração do portador"
+
+msgid "Registry status"
+msgstr "Status no cartório"
+
+msgid "Registry message"
+msgstr "Mensagem do cartório"
+
+msgid "Registry protocol"
+msgstr "Protocolo do cartório"
+
+msgid "Registry office"
+msgstr "Cartório"
+
+msgid "Protested CPF or CNPJ"
+msgstr "CPF ou CNPJ protestado"
+
+msgid "Sent to the registry on"
+msgstr "Enviado ao cartório em"
+
+msgid "Registry checked on"
+msgstr "Cartório consultado em"
+
+msgid "Empty: D for DMI/DSI, C for CCB/CBI, A for the others."
+msgstr "Vazio: D para DMI/DSI, C para CCB/CBI, A para as demais."
+
+msgid "Overdue / Friendly Notice"
+msgstr "Em Atraso / Notificação Amigável"
+
+msgid "Out-of-court Notice"
+msgstr "Intimação Extrajudicial (WhatsApp / E-mail)"
+
+msgid "Send to the Registry"
+msgstr "Envio a Cartório (Remessa CENPROT)"
+
+msgid "At the Registry"
+msgstr "Distribuído ao Cartório (Aguardando Intimação)"
+
+msgid "Notified by the Registry"
+msgstr "Intimado pelo Cartório (Tríduo Legal)"
+
+msgid "Protested"
+msgstr "Protesto Lavrado (Negativado)"
+
+msgid "Paid at the Registry"
+msgstr "Pago no Cartório (Recuperado com Sucesso)"
+
+msgid "Agreement / Withdrawn"
+msgstr "Acordo Comercial / Título Cancelado"
+
+msgid "Debt Collection"
+msgstr "Cobrança"
+
+msgid "One more paid query per partner, paid by your company. Off until an admin turns it on."
+msgstr "Uma consulta paga a mais por sócio, paga pela sua empresa. Desligado até um admin ligar."
+
+msgid "The registry charges fees for each protest. Off until an admin turns it on."
+msgstr "O cartório cobra custas de cada protesto. Desligado até um admin ligar."
+
+msgid "Withdraw or cancel when a card enters the agreement stage"
+msgstr "Retirar ou cancelar quando o card entra na etapa de acordo"
+
+msgid "Withdrawal and cancellation may have registry fees. Off until an admin turns it on."
+msgstr "Retirada e cancelamento podem ter custas do cartório. Desligado até um admin ligar."
+
+msgid "With the option above on, moving a card here asks the registry to withdraw or cancel the protest."
+msgstr "Com a opção acima ligada, mover um card para cá pede ao cartório a retirada ou o cancelamento do protesto."
