@@ -1,0 +1,163 @@
+{
+ "actions": [],
+ "creation": "2026-10-30 16:30:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "links": [],
+ "modified": "2026-10-30 16:30:00.000000",
+ "modified_by": "Administrator",
+ "module": "Cred Hub",
+ "owner": "Administrator",
+ "states": [],
+ "field_order": [
+  "label",
+  "webhook_url",
+  "status",
+  "secret",
+  "events_section",
+  "deal_created",
+  "deal_stage_changed",
+  "deal_won",
+  "deal_lost",
+  "deal_deleted",
+  "column_break_events",
+  "contact_created",
+  "contact_updated",
+  "pipelines_section",
+  "pipelines",
+  "audit_section",
+  "last_delivery_on",
+  "last_delivery_status",
+  "last_delivery_code"
+ ],
+ "fields": [
+  {
+   "fieldname": "label",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Webhook Name",
+   "reqd": 1
+  },
+  {
+   "fieldname": "webhook_url",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Webhook URL (Endpoint)",
+   "reqd": 1
+  },
+  {
+   "default": "Active",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Active\nDisabled",
+   "reqd": 1
+  },
+  {
+   "fieldname": "secret",
+   "fieldtype": "Password",
+   "label": "Secret Key (HMAC-SHA256)"
+  },
+  {
+   "fieldname": "events_section",
+   "fieldtype": "Section Break",
+   "label": "Event Subscriptions"
+  },
+  {
+   "default": "1",
+   "fieldname": "deal_created",
+   "fieldtype": "Check",
+   "label": "deal.created (Card criado)"
+  },
+  {
+   "default": "1",
+   "fieldname": "deal_stage_changed",
+   "fieldtype": "Check",
+   "label": "deal.stage_changed (Card mudou de etapa)"
+  },
+  {
+   "default": "1",
+   "fieldname": "deal_won",
+   "fieldtype": "Check",
+   "label": "deal.won (Negócio ganho)"
+  },
+  {
+   "default": "1",
+   "fieldname": "deal_lost",
+   "fieldtype": "Check",
+   "label": "deal.lost (Negócio perdido)"
+  },
+  {
+   "default": "0",
+   "fieldname": "deal_deleted",
+   "fieldtype": "Check",
+   "label": "deal.deleted (Card excluído)"
+  },
+  {
+   "fieldname": "column_break_events",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "contact_created",
+   "fieldtype": "Check",
+   "label": "contact.created (Contato criado)"
+  },
+  {
+   "default": "0",
+   "fieldname": "contact_updated",
+   "fieldtype": "Check",
+   "label": "contact.updated (Contato alterado)"
+  },
+  {
+   "fieldname": "pipelines_section",
+   "fieldtype": "Section Break",
+   "label": "Pipelines Filter (Vazio = Todos os Funis)"
+  },
+  {
+   "fieldname": "pipelines",
+   "fieldtype": "Table",
+   "label": "Authorized Pipelines",
+   "options": "Cred Hub Webhook Pipeline"
+  },
+  {
+   "fieldname": "audit_section",
+   "fieldtype": "Section Break",
+   "label": "Delivery Status"
+  },
+  {
+   "fieldname": "last_delivery_on",
+   "fieldtype": "Datetime",
+   "label": "Last Delivery On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_delivery_status",
+   "fieldtype": "Data",
+   "label": "Last Delivery Status",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_delivery_code",
+   "fieldtype": "Int",
+   "label": "Last HTTP Status Code",
+   "read_only": 1
+  }
+ ],
+ "name": "Cred Hub Webhook",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ]
+}

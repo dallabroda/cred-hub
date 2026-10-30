@@ -51,11 +51,23 @@ def deleted_since(doctype: str, since: str | None, pipelines: list[str], limit: 
 		where.append("JSON_VALUE(dd.data, '$.pipeline') in %(pipelines)s")
 	elif doctype in CARD_SCOPED:
 		kind, name = CARD_SCOPED[doctype]
-		where.append(
-			f"(ifnull(JSON_VALUE(dd.data, '$.{kind}'), '') != 'CRM Deal'"
-			f" or JSON_VALUE(dd.data, '$.{name}') in"
-			" (select deal.name from `tabCRM Deal` deal where deal.pipeline in %(pipelines)s))"
-		)
+		# Se for File, pode ser de Contato/Organização (que não têm funil), ou de CRM Deal
+		if doctype == "File":
+			where.append(
+				f"(JSON_VALUE(dd.data, '$.{kind}') in ('Contact', 'CRM Organization')"
+				f" or (JSON_VALUE(dd.data, '$.{kind}') = 'CRM Deal' and ("
+				f"JSON_VALUE(dd.data, '$.{name}') in (select deal.name from `tabCRM Deal` deal where deal.pipeline in %(pipelines)s)"
+				f" or JSON_VALUE(dd.data, '$.{name}') in (select del_deal.deleted_name from `tabDeleted Document` del_deal where del_deal.deleted_doctype = 'CRM Deal' and JSON_VALUE(del_deal.data, '$.pipeline') in %(pipelines)s)"
+				f")))"
+			)
+		else:
+			# FCRM Note e CRM Task: estritamente vinculados a CRM Deal dos funis da chave (vivo ou deletado)
+			where.append(
+				f"JSON_VALUE(dd.data, '$.{kind}') = 'CRM Deal' and ("
+				f"JSON_VALUE(dd.data, '$.{name}') in (select deal.name from `tabCRM Deal` deal where deal.pipeline in %(pipelines)s)"
+				f" or JSON_VALUE(dd.data, '$.{name}') in (select del_deal.deleted_name from `tabDeleted Document` del_deal where del_deal.deleted_doctype = 'CRM Deal' and JSON_VALUE(del_deal.data, '$.pipeline') in %(pipelines)s)"
+				f")"
+			)
 	return frappe.db.sql(
 		f"""select dd.name, dd.deleted_doctype, dd.deleted_name, dd.creation
 		from `tabDeleted Document` dd

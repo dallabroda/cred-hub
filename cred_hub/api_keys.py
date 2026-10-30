@@ -16,6 +16,7 @@ import hashlib
 import hmac
 import ipaddress
 import secrets
+from datetime import timedelta
 from urllib.parse import unquote
 
 import frappe
@@ -101,6 +102,8 @@ METHODS = {
 	"cred_hub.timeline.get_comments": "comments_read",
 	# Sincronização incremental com exclusões
 	"cred_hub.sync.get_deleted_records": "sync_deletes",
+	# Operações em lote (Batch API)
+	"cred_hub.bulk.bulk_upsert": "cards_write",
 }
 WRITE_METHODS = {name for name, scope in METHODS.items() if scope.endswith("_write") or scope == "fields_admin"}
 # frappe.client.* só para leitura, com o doctype conferido contra RESOURCES
@@ -115,7 +118,8 @@ class KeyNotAllowed(frappe.PermissionError):
 
 
 def _hash(secret: str) -> str:
-	return hashlib.sha256(secret.encode()).hexdigest()
+	site_secret = frappe.conf.get("secret_key") or getattr(frappe.local, "site", "") or "credhub"
+	return hmac.new(site_secret.encode(), secret.encode(), hashlib.sha256).hexdigest()
 
 
 def _new_secret():
@@ -149,8 +153,15 @@ def authenticate():
 		["name", "secret_hash", "status", "expires_on", "technical_user", "allowed_ips", "custom_rate_limit"],
 		as_dict=True,
 	)
-	if not key or not secret or not hmac.compare_digest(key.secret_hash or "", _hash(secret)):
+	if not key or not secret:
 		raise frappe.AuthenticationError
+	expected_hash = _hash(secret)
+	legacy_hash = hashlib.sha256(secret.encode()).hexdigest()
+	stored_hash = key.secret_hash or ""
+	if not (hmac.compare_digest(stored_hash, expected_hash) or hmac.compare_digest(stored_hash, legacy_hash)):
+		raise frappe.AuthenticationError
+	if stored_hash == legacy_hash and stored_hash != expected_hash:
+		frappe.db.set_value(KEY, key.name, "secret_hash", expected_hash, update_modified=False)
 	if key.status != "Active" or (key.expires_on and getdate(key.expires_on) < getdate(nowdate())):
 		raise frappe.AuthenticationError
 	if not _ip_allowed(key.allowed_ips, frappe.local.request_ip):
@@ -270,6 +281,16 @@ def _check_route(key_name: str) -> bool:
 			if RESOURCES.get(doctype, (None, None))[0] in scopes:
 				return False
 			_deny()
+		if target == "cred_hub.bulk.bulk_upsert":
+			doctype = frappe.local.form_dict.get("doctype")
+			req_scope = {
+				"CRM Deal": "cards_write",
+				"Contact": "contacts_write",
+				"CRM Organization": "organizations_write",
+			}.get(doctype)
+			if not req_scope or req_scope not in scopes:
+				_deny()
+			return True
 		scope = METHODS.get(target)
 		if scope and scope in scopes:
 			if target == "crm.api.pipeline.save_pipeline":
@@ -306,7 +327,12 @@ def _custom_rate_limit(value) -> int | None:
 
 
 def _rate_limit(key_name: str, write: bool, custom_limit: int | None = None):
-	minute = now_datetime().strftime("%Y%m%d%H%M")
+	now = now_datetime()
+	minute = now.strftime("%Y%m%d%H%M")
+	prev_minute = (now - timedelta(minutes=1)).strftime("%Y%m%d%H%M")
+	seconds_in_minute = now.second
+	weight_prev = max(0.0, (60.0 - seconds_in_minute) / 60.0)
+
 	if custom_limit is None:
 		custom_limit = cint(frappe.db.get_value(KEY, key_name, "custom_rate_limit"))
 	custom = min(cint(custom_limit), MAX_CUSTOM_RATE_LIMIT)
@@ -314,12 +340,15 @@ def _rate_limit(key_name: str, write: bool, custom_limit: int | None = None):
 	write_limit = max(1, min(WRITES_PER_MINUTE, custom // 5)) if custom > 0 else WRITES_PER_MINUTE
 	limits = [(total_limit, "all")] + ([(write_limit, "write")] if write else [])
 	for limit, counter in limits:
-		cache_key = frappe.cache.make_key(f"credhub_api:{key_name}:{counter}:{minute}")
-		count = frappe.cache.incrby(cache_key, 1)
-		if count == 1:
-			frappe.cache.expire(cache_key, 120)
-		if count > limit:
-			frappe.local.response_headers.set("Retry-After", "60")
+		cache_key_curr = frappe.cache.make_key(f"credhub_api:{key_name}:{counter}:{minute}")
+		cache_key_prev = frappe.cache.make_key(f"credhub_api:{key_name}:{counter}:{prev_minute}")
+		curr_count = frappe.cache.incrby(cache_key_curr, 1)
+		if curr_count == 1:
+			frappe.cache.expire(cache_key_curr, 180)
+		prev_count = cint(frappe.cache.get_value(cache_key_prev) or 0)
+		estimated_rate = (prev_count * weight_prev) + curr_count
+		if estimated_rate > limit:
+			frappe.local.response_headers.set("Retry-After", str(max(1, 60 - seconds_in_minute)))
 			raise frappe.RateLimitExceededError(_("Too many requests for this API key. Wait a minute and try again."))
 
 

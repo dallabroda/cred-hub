@@ -548,3 +548,139 @@ class TestApiKeys(IntegrationTestCase):
 		created = self.create(scopes=("cards_read",))
 		with self.assertRaises(frappe.ValidationError):
 			api_keys.update_api_key(created["name"], custom_rate_limit=100000)
+	def test_sync_deleted_notes_with_deleted_parent_and_orphan_isolation(self):
+		"""Notas excluídas exigem vínculo com card do funil (vivo ou excluído); órfãs nunca vazam."""
+		from cred_hub import sync
+
+		# Card excluído no funil da chave
+		frappe.get_doc(
+			{
+				"doctype": "Deleted Document",
+				"deleted_doctype": "CRM Deal",
+				"deleted_name": "CARD-ALREADY-DELETED",
+				"data": frappe.as_json({"pipeline": self.pipeline}),
+			}
+		).insert(ignore_permissions=True)
+
+		# Nota pertencente a esse card já excluído
+		frappe.get_doc(
+			{
+				"doctype": "Deleted Document",
+				"deleted_doctype": "FCRM Note",
+				"deleted_name": "NOTE-FROM-DELETED-CARD",
+				"data": frappe.as_json({"reference_doctype": "CRM Deal", "reference_docname": "CARD-ALREADY-DELETED"}),
+			}
+		).insert(ignore_permissions=True)
+
+		# Nota órfã (sem card)
+		frappe.get_doc(
+			{
+				"doctype": "Deleted Document",
+				"deleted_doctype": "FCRM Note",
+				"deleted_name": "NOTE-ORPHAN",
+				"data": frappe.as_json({"reference_doctype": None, "reference_docname": None}),
+			}
+		).insert(ignore_permissions=True)
+
+		# Nota vinculada a lead
+		frappe.get_doc(
+			{
+				"doctype": "Deleted Document",
+				"deleted_doctype": "FCRM Note",
+				"deleted_name": "NOTE-LEAD",
+				"data": frappe.as_json({"reference_doctype": "CRM Lead", "reference_docname": "LEAD-1"}),
+			}
+		).insert(ignore_permissions=True)
+
+		seen = {r["deleted_name"] for r in sync.deleted_since("FCRM Note", None, [self.pipeline])}
+		self.assertIn("NOTE-FROM-DELETED-CARD", seen)
+		self.assertNotIn("NOTE-ORPHAN", seen)
+		self.assertNotIn("NOTE-LEAD", seen)
+
+	def test_legacy_hash_upgrade(self):
+		"""Chave gravada com hash SHA-256 antigo autentica e atualiza para HMAC com chave de site."""
+		import hashlib
+		created = self.create()
+		_key_id, secret = api_keys._split_token(created["token"])
+		legacy_sha256 = hashlib.sha256(secret.encode()).hexdigest()
+		frappe.db.set_value(api_keys.KEY, created["name"], "secret_hash", legacy_sha256)
+
+		# Autentica normalmente
+		self.call(created["token"], "/api/resource/CRM Deal")
+
+		# Confere que o hash foi atualizado no banco
+		upgraded_hash = frappe.db.get_value(api_keys.KEY, created["name"], "secret_hash")
+		self.assertEqual(upgraded_hash, api_keys._hash(secret))
+		self.assertNotEqual(upgraded_hash, legacy_sha256)
+
+	def test_bulk_upsert_cards(self):
+		"""Operação em lote para cards com relatório individual de erros e savepoints."""
+		from cred_hub import bulk
+
+		token = self.create(scopes=("cards_read", "cards_write"))["token"]
+		records = [
+			{"pipeline": self.pipeline, "organization_name": "Batch Org 1"},
+			{"pipeline": self.pipeline, "organization_name": "Batch Org 2"},
+		]
+		self.call(token, "/api/method/cred_hub.bulk.bulk_upsert", "POST", form={"doctype": "CRM Deal", "records": frappe.as_json(records)})
+		res = bulk.bulk_upsert("CRM Deal", records)
+		self.assertEqual(res["total"], 2)
+		self.assertEqual(res["success"], 2)
+		self.assertEqual(res["failed"], 0)
+		self.assertTrue(frappe.db.exists("CRM Deal", res["results"][0]["name"]))
+		self.assertTrue(frappe.db.exists("CRM Deal", res["results"][1]["name"]))
+
+	def test_bulk_upsert_isolates_failures_with_savepoints(self):
+		"""Um erro no meio do lote não cancela os outros registros do lote."""
+		from cred_hub import bulk
+
+		token = self.create(scopes=("cards_read", "cards_write"))["token"]
+		records = [
+			{"pipeline": self.pipeline, "organization_name": "Valid Card"},
+			{"pipeline": "INVALID-PIPELINE", "organization_name": "Invalid Card"},
+		]
+		res = bulk.bulk_upsert("CRM Deal", records)
+		self.assertEqual(res["total"], 2)
+		self.assertEqual(res["success"], 1)
+		self.assertEqual(res["failed"], 1)
+		self.assertEqual(res["results"][0]["status"], "success")
+		self.assertEqual(res["results"][1]["status"], "error")
+
+	def test_bulk_upsert_permission_enforced(self):
+		"""Chave sem permissão de escrita recebe PermissionError no lote."""
+		from cred_hub import bulk
+
+		token_read_only = self.create(scopes=("cards_read",))["token"]
+		with self.assertRaises(frappe.PermissionError):
+			self.call(token_read_only, "/api/method/cred_hub.bulk.bulk_upsert", "POST", form={"doctype": "CRM Deal", "records": "[]"})
+
+	def test_webhooks_signature_and_delivery(self):
+		"""Webhooks assinam o payload com HMAC-SHA256 (X-HubTech-Signature)."""
+		from cred_hub import webhooks
+
+		wh = frappe.get_doc(
+			{
+				"doctype": "Cred Hub Webhook",
+				"label": "Test Webhook",
+				"webhook_url": "https://example.com/webhook",
+				"secret": "test_secret_key_123",
+				"status": "Active",
+				"deal_created": 1,
+				"pipelines": [{"pipeline": self.pipeline}],
+			}
+		).insert(ignore_permissions=True)
+
+		with patch("requests.post") as mock_post:
+			mock_post.return_value.ok = True
+			mock_post.return_value.status_code = 200
+			mock_post.return_value.text = "OK"
+
+			webhooks.send_webhook(wh.name, "deal.created", {"name": "CARD-TEST", "pipeline": self.pipeline})
+
+			self.assertTrue(mock_post.called)
+			_args, kwargs = mock_post.call_args
+			headers = kwargs["headers"]
+			self.assertIn("X-HubTech-Signature", headers)
+			self.assertTrue(headers["X-HubTech-Signature"].startswith("sha256="))
+			self.assertEqual(headers["X-HubTech-Event"], "deal.created")
+			self.assertIn("X-HubTech-Delivery", headers)
