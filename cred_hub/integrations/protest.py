@@ -3,13 +3,14 @@
 Ao ligar a CENPROT nas configurações, o site ganha o funil "Debt Collection" (Cobrança) com 8 etapas e os campos de
 protesto no formulário do card. Depois:
 
-- **Enviar a protesto** (botão do card, ou o card entrar na etapa de envio, se ligado): monta o título com o credor
+- **Enviar a protesto** (botão do card, ou o card entrar na etapa de envio, se o cliente ligou; desligado por
+  padrão, o cartório cobra custas): monta o título com o credor
   das configurações, o devedor da Organização do card (CNPJ e endereço da Receita) ou, sem CNPJ, o contato principal
   com CPF, e chama `EnviarTitulo`. Número do título e "nosso número" vazios recebem os dígitos do código do card.
   Só sai título vencido, e só quando ainda não está no cartório (status vazio, INEXISTENTE ou DEVOLVIDO).
 - **Atualizar status** (botão, e todo dia para os títulos em andamento): `ConsultarTitulo`; mudou o status, o card
   anda para a etapa correspondente, a linha do tempo registra e o responsável recebe uma notificação.
-- **Retirar ou cancelar** (botão, ou o card entrar na etapa de acordo): `OperacaoTitulo` com REMOCAO, DESISTENCIA
+- **Retirar ou cancelar** (botão, ou o card entrar na etapa de acordo, se o cliente ligou; desligado por padrão): `OperacaoTitulo` com REMOCAO, DESISTENCIA
   ou CANCELAMENTO conforme o status (manual, pág. 16).
 
 Toda chamada fica em Cred Hub Bureau Query. Falha da CENPROT nunca usa frappe.throw depois da chamada: o histórico
@@ -65,6 +66,8 @@ COLLECTION_STAGES = (
 	("Paid at the Registry", "Won", "green", 100, "stage_paid"),
 	("Agreement / Withdrawn", "Won", "teal", 100, "stage_agreement"),
 )
+# IP de saída do servidor do HubTech: o IEPTB só aceita chamadas de IPs cadastrados pelo cliente no contrato
+OUTBOUND_IP = "2.31.80.97"
 _TOKEN_KEY = "cred_hub:cenprot_token"
 TOKEN_SECONDS = 1800
 
@@ -563,6 +566,13 @@ def withdraw(deal: str, justification: str | None = None) -> dict:
 	return withdraw_title(_deal(deal, "write"), (justification or "").strip())
 
 
+@frappe.whitelist()
+def server_ip() -> dict:
+	"""O IP que o cliente cadastra no IEPTB (tela de Bureaus)."""
+	frappe.only_for("System Manager")
+	return {"ip": frappe.conf.get("credhub_outbound_ip") or OUTBOUND_IP}
+
+
 @frappe.whitelist(methods=["POST"])
 def test_connection() -> dict:
 	"""Só autentica (não envia nem consulta título)."""
@@ -581,7 +591,8 @@ def test_connection() -> dict:
 
 
 def on_deal_update(doc, method=None):
-	"""Card entrou na etapa de envio (e o envio automático está ligado) ou na de acordo: age em segundo plano."""
+	"""Card entrou na etapa de envio ou na de acordo, com a opção ligada: age em segundo plano. As duas opções
+	começam desligadas: o cartório cobra custas e quem decide gastar é o cliente (dono, 30/10/2026)."""
 	if doc.flags.cred_hub_protest or not doc.has_value_changed("status"):
 		return
 	settings = get_settings()
@@ -590,7 +601,7 @@ def on_deal_update(doc, method=None):
 	status = (doc.get("protest_status") or "").upper()
 	if doc.status == settings.stage_send and cint(settings.auto_send_on_stage) and status in SENDABLE:
 		job = "send_in_background"
-	elif doc.status == settings.stage_agreement and status in OPERATION_FOR_STATUS:
+	elif doc.status == settings.stage_agreement and cint(settings.auto_withdraw_on_stage) and status in OPERATION_FOR_STATUS:
 		job = "withdraw_in_background"
 	else:
 		return

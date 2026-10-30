@@ -357,3 +357,31 @@ class TestCollectionPipeline(IntegrationTestCase):
 		self.assertEqual(body.findtext("titulo/autoriza"), "S")
 		frappe.db.set_value("CRM Deal", deal.name, "protest_status", "PAGO")
 		self.assertFalse(protest.withdraw(deal.name)["ok"])
+
+	def test_agreement_stage_withdraws_only_when_the_client_turned_it_on(self):
+		deal = self.deal()
+		frappe.db.set_value("CRM Deal", deal.name, {"protest_status": "CONFIRMADO", "protest_sent_at": frappe.utils.now()})
+		deal.reload()
+
+		def jobs(enqueue):
+			return [c.args[0] for c in enqueue.call_args_list if c.args and "protest" in c.args[0]]
+
+		with patch("frappe.enqueue") as enqueue:
+			deal.status = self.stage("stage_agreement")
+			deal.save()
+		self.assertEqual(jobs(enqueue), [])
+
+		frappe.db.set_single_value(SETTINGS, "auto_withdraw_on_stage", 1)
+		frappe.clear_document_cache(SETTINGS, SETTINGS)
+		deal2 = self.deal()
+		frappe.db.set_value("CRM Deal", deal2.name, {"protest_status": "CONFIRMADO", "protest_sent_at": frappe.utils.now()})
+		deal2.reload()
+		with patch("frappe.enqueue") as enqueue:
+			deal2.status = self.stage("stage_agreement")
+			deal2.save()
+		self.assertEqual(jobs(enqueue), ["cred_hub.integrations.protest.withdraw_in_background"])
+
+	def test_paid_automations_start_off(self):
+		meta = frappe.get_meta(SETTINGS)
+		for field in ("assertiva_enabled", "assertiva_partner_lookup", "cenprot_enabled", "auto_send_on_stage", "auto_withdraw_on_stage"):
+			self.assertEqual(str(meta.get_field(field).default or "0"), "0", field)

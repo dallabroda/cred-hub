@@ -2057,3 +2057,18 @@ msgstr "Acordo Comercial / Título Cancelado"
 
 msgid "Debt Collection"
 msgstr "Cobrança"
+
+msgid "One more paid query per partner, paid by your company. Off until an admin turns it on."
+msgstr "Uma consulta paga a mais por sócio, paga pela sua empresa. Desligado até um admin ligar."
+
+msgid "The registry charges fees for each protest. Off until an admin turns it on."
+msgstr "O cartório cobra custas de cada protesto. Desligado até um admin ligar."
+
+msgid "Withdraw or cancel when a card enters the agreement stage"
+msgstr "Retirar ou cancelar quando o card entra na etapa de acordo"
+
+msgid "Withdrawal and cancellation may have registry fees. Off until an admin turns it on."
+msgstr "Retirada e cancelamento podem ter custas do cartório. Desligado até um admin ligar."
+
+msgid "With the option above on, moving a card here asks the registry to withdraw or cancel the protest."
+msgstr "Com a opção acima ligada, mover um card para cá pede ao cartório a retirada ou o cancelamento do protesto."

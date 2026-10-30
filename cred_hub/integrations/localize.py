@@ -1,8 +1,9 @@
 """Buscar contatos da Organização na Assertiva Localize (credtech#290, módulo 1).
 
 O botão "Buscar contatos (Localize)" da Organização consulta o CNPJ e cria ou atualiza um Contato por sócio pessoa
-física (CPF, cargo, participação). Com "Também buscar telefones e e-mails de cada sócio" ligado (padrão), cada sócio
-é consultado pelo CPF (uma consulta paga a mais por sócio) e o Contato recebe:
+física (CPF, cargo, participação). Com "Também buscar telefones e e-mails de cada sócio" ligado pelo cliente
+(desligado por padrão: quem paga decide, dono 30/10/2026), cada sócio é consultado pelo CPF (uma consulta paga a mais
+por sócio) e o Contato recebe:
 
 - os celulares e fixos, com o celular de WhatsApp de maior assertividade como celular principal (o celular que o
   contato já tinha continua principal se a Assertiva também o devolveu);

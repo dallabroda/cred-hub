@@ -40,6 +40,7 @@
   "collection_section",
   "collection_pipeline",
   "auto_send_on_stage",
+  "auto_withdraw_on_stage",
   "stage_send",
   "stage_at_registry",
   "stage_notified",
@@ -90,9 +91,9 @@
    "fieldname": "assertiva_partner_lookup",
    "fieldtype": "Check",
    "label": "Also look up each partner's phones and e-mails",
-   "default": "1",
+   "default": "0",
    "depends_on": "eval:doc.assertiva_enabled",
-   "description": "One more paid query per partner."
+   "description": "One more paid query per partner, paid by your company. Off until an admin turns it on."
   },
   {
    "fieldname": "assertiva_cache_days",
@@ -264,7 +265,15 @@
    "fieldname": "auto_send_on_stage",
    "fieldtype": "Check",
    "label": "Send to the registry when a card enters the send stage",
-   "default": "1"
+   "default": "0",
+   "description": "The registry charges fees for each protest. Off until an admin turns it on."
+  },
+  {
+   "fieldname": "auto_withdraw_on_stage",
+   "fieldtype": "Check",
+   "label": "Withdraw or cancel when a card enters the agreement stage",
+   "default": "0",
+   "description": "Withdrawal and cancellation may have registry fees. Off until an admin turns it on."
   },
   {
    "fieldname": "stage_send",
@@ -305,7 +314,7 @@
    "fieldtype": "Link",
    "label": "Agreement or withdrawn stage",
    "options": "CRM Deal Status",
-   "description": "Moving a card here asks the registry to withdraw or cancel the protest."
+   "description": "With the option above on, moving a card here asks the registry to withdraw or cancel the protest."
   }
  ],
  "issingle": 1,
