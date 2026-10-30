@@ -28,10 +28,21 @@
   "leads_write",
   "pipelines_read",
   "fields_admin",
+  "allow_delete",
+  "files_read",
+  "files_write",
+  "notes_read",
+  "notes_write",
+  "comments_read",
+  "comments_write",
+  "tasks_read",
+  "tasks_write",
+  "sync_deletes",
   "pipelines",
   "security_section",
   "allowed_ips",
   "expires_on",
+  "custom_rate_limit",
   "last_used_on",
   "last_used_ip"
  ],
@@ -130,6 +141,56 @@
    "label": "Fields and rules (admin)"
   },
   {
+   "fieldname": "allow_delete",
+   "fieldtype": "Check",
+   "label": "Records: allow DELETE"
+  },
+  {
+   "fieldname": "files_read",
+   "fieldtype": "Check",
+   "label": "Files and Documents: read and download"
+  },
+  {
+   "fieldname": "files_write",
+   "fieldtype": "Check",
+   "label": "Files and Documents: upload"
+  },
+  {
+   "fieldname": "notes_read",
+   "fieldtype": "Check",
+   "label": "Notes: read"
+  },
+  {
+   "fieldname": "notes_write",
+   "fieldtype": "Check",
+   "label": "Notes: create and edit"
+  },
+  {
+   "fieldname": "comments_read",
+   "fieldtype": "Check",
+   "label": "Timeline comments: read"
+  },
+  {
+   "fieldname": "comments_write",
+   "fieldtype": "Check",
+   "label": "Timeline comments: add"
+  },
+  {
+   "fieldname": "tasks_read",
+   "fieldtype": "Check",
+   "label": "Tasks: read"
+  },
+  {
+   "fieldname": "tasks_write",
+   "fieldtype": "Check",
+   "label": "Tasks: create and edit"
+  },
+  {
+   "fieldname": "sync_deletes",
+   "fieldtype": "Check",
+   "label": "Incremental sync: read deleted records log"
+  },
+  {
    "fieldname": "pipelines",
    "fieldtype": "Table",
    "label": "Pipelines",
@@ -150,6 +211,12 @@
    "fieldname": "expires_on",
    "fieldtype": "Date",
    "label": "Expires On"
+  },
+  {
+   "fieldname": "custom_rate_limit",
+   "fieldtype": "Int",
+   "label": "Custom Rate Limit (calls/min)",
+   "description": "Optional: custom calls/min limit. Leave empty for default (300/min)."
   },
   {
    "fieldname": "last_used_on",
@@ -175,4 +242,4 @@
  "sort_field": "creation",
  "sort_order": "DESC",
  "title_field": "label"
-}
+}
