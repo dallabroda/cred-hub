@@ -36,7 +36,9 @@ from cred_hub.credit_check.rules import (
 
 CACHE_DAYS = 30
 ESCAVADOR_ESTIMATED_COST = 0.50
-INFOSIMPLES_ESTIMATED_COST = 0.70
+# Infosimples cobra R$0,20 por sub-consulta (confirmado, 30/10/2026). fetch_fiscal_and_protests()
+# sempre chama as 4 (PGFN, CND Federal, CNDT, CENPROT-SP), então o custo real por checagem é 4x isso.
+INFOSIMPLES_ESTIMATED_COST = 0.80
 DIRECTD_SCORE_ESTIMATED_COST = 1.98
 DIRECTD_PROTESTS_ESTIMATED_COST = 2.95
 DIRECTD_PROCESSOS_ESTIMATED_COST = 1.50
