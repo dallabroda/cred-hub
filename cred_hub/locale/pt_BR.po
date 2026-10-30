@@ -1610,6 +1610,99 @@ msgstr "Os pedidos não estão disponíveis agora. Escreva para contato@credtech
 msgid "We could not send your request. Write to contato@credtechdigital.com.br."
 msgstr "Não conseguimos enviar o seu pedido. Escreva para contato@credtechdigital.com.br."
 
+msgid "Credit Risk Verdict"
+msgstr "Parecer de Risco de Crédito"
+
+msgid "Credit Report"
+msgstr "Relatório de Crédito"
+
+msgid "Latest Credit Report"
+msgstr "Último Relatório de Crédito"
+
+msgid "Not Checked"
+msgstr "Pendente de Consulta"
+
+msgid "Pre-Approved"
+msgstr "Aprovado no Pré-Filtro"
+
+msgid "Warning"
+msgstr "Atenção"
+
+msgid "Rejected"
+msgstr "Reprovado no Pré-Filtro"
+
+msgid "Cred Hub Credit Settings"
+msgstr "Configurações de Bureaus de Crédito"
+
+msgid "Cred Hub Credit Report"
+msgstr "Relatório de Crédito e Conformidade"
+
+msgid "Credit & Legal Bureaus"
+msgstr "Bureaus de Crédito e Jurídico"
+
+# Esteira de crédito: falhas de provedor nunca aprovam por omissão (credtech#302)
+msgid "no provider is enabled in Credit & Legal Bureaus settings"
+msgstr "nenhum provedor está habilitado nas configurações de Bureaus de Crédito"
+
+msgid "{0}: no API token configured"
+msgstr "{0}: sem token de API configurado"
+
+msgid "{0}: query failed ({1})"
+msgstr "{0}: a consulta falhou ({1})"
+
+msgid "Compliance report reused from cache (checked on {0}, valid until {1}): verdict {2}."
+msgstr "Relatório de conformidade reaproveitado do cache (consultado em {0}, válido até {1}): parecer {2}."
+
+msgid "You do not have permission to access this deal."
+msgstr "Você não tem permissão para acessar este card."
+
+msgid "You do not have permission to access this organization."
+msgstr "Você não tem permissão para acessar esta organização."
+
+msgid "Credit and compliance analysis queued in the background."
+msgstr "Análise de crédito e conformidade agendada em segundo plano."
+
+msgid "Report not found."
+msgstr "Relatório não encontrado."
+
+msgid "Enter the API token to test."
+msgstr "Informe o token da API para testar."
+
+msgid "Enter a CNPJ to run the test query against."
+msgstr "Informe um CNPJ para a consulta de teste."
+
+msgid "Unknown provider: {0}"
+msgstr "Provedor desconhecido: {0}"
+
+msgid "This test runs a real paid query (~R$ {0}). Confirm the cost to continue."
+msgstr "Este teste faz uma consulta paga real (~R$ {0}). Confirme o custo para continuar."
+
+msgid "Connected to the Escavador API (v2) successfully!"
+msgstr "Conexão com a Escavador API (v2) realizada com sucesso!"
+
+msgid "Escavador connection test failed: {0}"
+msgstr "Falha ao testar Escavador: {0}"
+
+msgid "Connected to the Infosimples API (v2) successfully!"
+msgstr "Conexão com a Infosimples API (v2) realizada com sucesso!"
+
+msgid "Infosimples connection test failed: {0}"
+msgstr "Falha ao testar Infosimples: {0}"
+
+msgid "This deal has not gone through the credit pre-analysis yet."
+msgstr "Este card ainda não passou pela pré-análise de crédito."
+
+msgid "The deal must be linked to an organization with a valid CNPJ."
+msgstr "O card precisa estar vinculado a uma organização com CNPJ válido."
+
+msgid "Serasa query failed: {0}"
+msgstr "Falha na consulta ao Serasa: {0}"
+
+msgid "Final bureau query ({0}) requested by {1}. Provider status: {2}."
+msgstr "Consulta ao bureau final ({0}) solicitada por {1}. Status do provedor: {2}."
+
+msgid "insufficient credits for Infosimples/DirectD: balance R$ {0}, needed R$ {1}. Add credits to continue."
+msgstr "créditos insuficientes para Infosimples/DirectD: saldo R$ {0}, necessário R$ {1}. Adicione créditos para continuar."
 # Bureaus: Assertiva Localize e CENPROT (credtech#290)
 msgid "Assertiva refused the CPF or CNPJ (HTTP 400)."
 msgstr "A Assertiva recusou o CPF ou CNPJ (HTTP 400)."

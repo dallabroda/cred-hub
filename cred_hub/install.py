@@ -91,6 +91,8 @@ def after_install():
 	install_api_keys()
 	# Empresa pelo e-mail do lead (credtech#187): sugestão no card e interruptor em Configurações
 	install_email_company()
+	# Esteira progressiva de credito e processos (credtech#260): campos leves de parecer e relatorio
+	install_credit_check_fields()
 	create_custom_fields({dt: custom_fields(insert_after="facebook") + _missing(dt, company_custom_fields(insert_after="cnpj_checked_on")) for dt in DOCTYPES}, update=True)
 	migrate_checked_dates()
 	add_industries()
@@ -295,3 +297,50 @@ def add_quick_entry_cnpj(doctype, after):
 				doc.layout = json.dumps(layout)
 				doc.save(ignore_permissions=True)
 				return
+
+
+def install_credit_check_fields():
+	"""Instala os campos leves de parecer e relatorio de credito na Organizacao e no Card (credtech#260)."""
+	create_custom_fields(
+		{
+			"CRM Deal": [
+				{
+					"fieldname": "credit_verdict",
+					"fieldtype": "Select",
+					"label": "Credit Risk Verdict",
+					"options": "Not Checked\nPre-Approved\nWarning\nRejected",
+					"default": "Not Checked",
+					"read_only": 1,
+					"insert_after": "organization",
+				},
+				{
+					"fieldname": "credit_report",
+					"fieldtype": "Link",
+					"label": "Credit Report",
+					"options": "Cred Hub Credit Report",
+					"read_only": 1,
+					"insert_after": "credit_verdict",
+				},
+			],
+			"CRM Organization": [
+				{
+					"fieldname": "credit_verdict",
+					"fieldtype": "Select",
+					"label": "Credit Risk Verdict",
+					"options": "Not Checked\nPre-Approved\nWarning\nRejected",
+					"default": "Not Checked",
+					"read_only": 1,
+					"insert_after": "cnpj_checked_on",
+				},
+				{
+					"fieldname": "credit_report",
+					"fieldtype": "Link",
+					"label": "Latest Credit Report",
+					"options": "Cred Hub Credit Report",
+					"read_only": 1,
+					"insert_after": "credit_verdict",
+				},
+			],
+		},
+		update=True,
+	)

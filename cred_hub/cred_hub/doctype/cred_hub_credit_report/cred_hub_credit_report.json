@@ -1,0 +1,277 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-10-29 20:00:00.000000",
+ "description": "Relatório consolidado de risco jurídico, fiscal e cartorial por empresa (credtech#260).",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "organization",
+  "deal",
+  "cnpj",
+  "checked_on",
+  "valid_until",
+  "verdict",
+  "verdict_summary",
+  "section_sanctions",
+  "ceis_cnep_sanctioned",
+  "ceis_cnep_verified",
+  "section_lawsuits",
+  "lawsuits_total",
+  "lawsuits_defendant",
+  "lawsuits_highest_value",
+  "has_bankruptcy_recovery",
+  "section_fiscal",
+  "pgfn_status",
+  "pgfn_total_debt",
+  "cnd_federal_status",
+  "cnd_federal_pdf_url",
+  "cndt_status",
+  "cndt_pdf_url",
+  "section_protests",
+  "cenprot_has_protests",
+  "cenprot_protests_count",
+  "fgts_status",
+  "sintegra_situacao_cadastral",
+  "section_audit",
+  "total_cost",
+  "client_total_cost",
+  "dossie_pdf_url",
+  "raw_details_json"
+ ],
+ "fields": [
+  {
+   "fieldname": "organization",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Organização",
+   "options": "CRM Organization",
+   "reqd": 1
+  },
+  {
+   "fieldname": "deal",
+   "fieldtype": "Link",
+   "label": "Card de Origem",
+   "options": "CRM Deal"
+  },
+  {
+   "fieldname": "cnpj",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "CNPJ",
+   "read_only": 1
+  },
+  {
+   "fieldname": "checked_on",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Consultado em",
+   "read_only": 1
+  },
+  {
+   "fieldname": "valid_until",
+   "fieldtype": "Date",
+   "label": "Válido até",
+   "read_only": 1
+  },
+  {
+   "fieldname": "verdict",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Parecer de Risco",
+   "options": "Pre-Approved\nWarning\nRejected\nError",
+   "read_only": 1
+  },
+  {
+   "fieldname": "verdict_summary",
+   "fieldtype": "Small Text",
+   "label": "Resumo do Parecer",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_sanctions",
+   "fieldtype": "Section Break",
+   "label": "Sanções CEIS/CNEP (Portal da Transparência / CGU)"
+  },
+  {
+   "default": "0",
+   "fieldname": "ceis_cnep_sanctioned",
+   "fieldtype": "Check",
+   "label": "Consta Sancionado (CEIS/CNEP)",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "ceis_cnep_verified",
+   "fieldtype": "Check",
+   "label": "Verificado (Etapa 0 habilitada e a API do governo respondeu)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_lawsuits",
+   "fieldtype": "Section Break",
+   "label": "Processos Judiciais (Escavador)"
+  },
+  {
+   "default": "0",
+   "fieldname": "lawsuits_total",
+   "fieldtype": "Int",
+   "label": "Total de Processos Localizados",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "lawsuits_defendant",
+   "fieldtype": "Int",
+   "label": "Processos como Réu",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "lawsuits_highest_value",
+   "fieldtype": "Currency",
+   "label": "Maior Valor de Causa (R$)",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "has_bankruptcy_recovery",
+   "fieldtype": "Check",
+   "label": "Alerta de Falência / Recuperação Judicial",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_fiscal",
+   "fieldtype": "Section Break",
+   "label": "Fiscal e Previdenciário (Infosimples)"
+  },
+  {
+   "fieldname": "pgfn_status",
+   "fieldtype": "Data",
+   "label": "Status PGFN (Dívida da União)",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "pgfn_total_debt",
+   "fieldtype": "Currency",
+   "label": "Débito Inscrito na PGFN (R$)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cnd_federal_status",
+   "fieldtype": "Data",
+   "label": "CND Federal",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cnd_federal_pdf_url",
+   "fieldtype": "Data",
+   "label": "Link Certidão Federal",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cndt_status",
+   "fieldtype": "Data",
+   "label": "Certidão Trabalhista (CNDT)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cndt_pdf_url",
+   "fieldtype": "Data",
+   "label": "Link CNDT",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_protests",
+   "fieldtype": "Section Break",
+   "label": "Cartórios de Protesto (CENPROT)"
+  },
+  {
+   "default": "0",
+   "fieldname": "cenprot_has_protests",
+   "fieldtype": "Check",
+   "label": "Constam Protestos Ativos",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "cenprot_protests_count",
+   "fieldtype": "Int",
+   "label": "Quantidade de Protestos",
+   "read_only": 1
+  },
+  {
+   "fieldname": "fgts_status",
+   "fieldtype": "Data",
+   "label": "Status FGTS",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sintegra_situacao_cadastral",
+   "fieldtype": "Data",
+   "label": "Situação Cadastral (Sintegra/CCC)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_audit",
+   "fieldtype": "Section Break",
+   "label": "Auditoria e Detalhes"
+  },
+  {
+   "default": "0",
+   "fieldname": "total_cost",
+   "fieldtype": "Currency",
+   "label": "Custo da Consulta (R$)",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "Custo dos provedores da CredTech (Infosimples, DirectD) com markup de 20% — exclui Escavador, que é conta do próprio cliente e não passa pela carteira de créditos.",
+   "fieldname": "client_total_cost",
+   "fieldtype": "Currency",
+   "label": "Preço a Cobrar do Cliente (R$)",
+   "read_only": 1
+  },
+  {
+   "description": "PDF gerado pelo print format 'Cred Hub - Dossiê de Crédito', anexado também nos Anexos da Organização.",
+   "fieldname": "dossie_pdf_url",
+   "fieldtype": "Data",
+   "label": "Link do Dossiê (PDF)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "raw_details_json",
+   "fieldtype": "Code",
+   "label": "Payload JSON Completo",
+   "options": "JSON",
+   "read_only": 1
+  }
+ ],
+ "in_create": 0,
+ "links": [],
+ "modified": "2026-10-29 20:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Cred Hub",
+ "name": "Cred Hub Credit Report",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "role": "System Manager"
+  },
+  {
+   "read": 1,
+   "role": "Sales Manager"
+  },
+  {
+   "read": 1,
+   "role": "Sales User"
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

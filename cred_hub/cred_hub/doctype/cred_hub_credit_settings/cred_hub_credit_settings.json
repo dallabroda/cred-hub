@@ -1,0 +1,260 @@
+{
+ "actions": [],
+ "creation": "2026-10-29 20:00:00.000000",
+ "description": "Configurações da esteira progressiva de crédito, processos judiciais e fiscal (credtech#260).",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "enabled",
+  "section_cgu",
+  "cgu_enabled",
+  "block_on_ceis_cnep",
+  "section_escavador",
+  "escavador_enabled",
+  "escavador_token",
+  "section_infosimples",
+  "infosimples_enabled",
+  "section_directd",
+  "directd_enabled",
+  "min_directd_score",
+  "directd_fgts_enabled",
+  "directd_sintegra_enabled",
+  "section_automation",
+  "auto_trigger_stage",
+  "check_second_organization",
+  "section_tolerances",
+  "max_lawsuits_defendant",
+  "max_lawsuit_value",
+  "block_on_bankruptcy",
+  "max_pgfn_debt",
+  "block_on_cndt",
+  "block_on_protest",
+  "block_on_fgts_irregular",
+  "section_bureaus_finais",
+  "serasa_enabled",
+  "serasa_endpoint_url",
+  "serasa_token",
+  "boavista_risco_enabled",
+  "dossie_quod_enabled",
+  "scr_bacen_enabled"
+ ],
+ "fields": [
+  {
+   "default": "0",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Ativar Esteira de Análise de Risco"
+  },
+  {
+   "fieldname": "section_cgu",
+   "fieldtype": "Section Break",
+   "label": "Etapa 0 — Sanções CEIS/CNEP (Portal da Transparência / CGU, grátis)"
+  },
+  {
+   "default": "0",
+   "description": "Roda antes de tudo, de graça — credencial da CredTech, sem nada pra você configurar aqui. Se achar sanção e 'Reprovar' estiver marcado, nem chama os provedores pagos abaixo — economiza o custo inteiro da consulta.",
+   "fieldname": "cgu_enabled",
+   "fieldtype": "Check",
+   "label": "Ativar Etapa 0 (CEIS/CNEP)"
+  },
+  {
+   "default": "1",
+   "depends_on": "eval:doc.cgu_enabled",
+   "fieldname": "block_on_ceis_cnep",
+   "fieldtype": "Check",
+   "label": "Reprovar Imediatamente se constar no CEIS/CNEP"
+  },
+  {
+   "fieldname": "section_escavador",
+   "fieldtype": "Section Break",
+   "label": "Escavador API (Processos Judiciais Unificados) — sua própria conta"
+  },
+  {
+   "default": "0",
+   "fieldname": "escavador_enabled",
+   "fieldtype": "Check",
+   "label": "Ativar Escavador"
+  },
+  {
+   "description": "Token da sua própria conta Escavador. A cobrança é direto com o Escavador, não passa pela carteira de créditos.",
+   "fieldname": "escavador_token",
+   "fieldtype": "Password",
+   "label": "Token de Acesso Escavador (Bearer)"
+  },
+  {
+   "fieldname": "section_infosimples",
+   "fieldtype": "Section Break",
+   "label": "Infosimples API (Dívida PGFN, CNDs e Protestos)"
+  },
+  {
+   "default": "0",
+   "description": "Credencial da CredTech (nada pra configurar aqui). Cobrado da sua carteira de créditos, com margem, a cada consulta.",
+   "fieldname": "infosimples_enabled",
+   "fieldtype": "Check",
+   "label": "Ativar Infosimples"
+  },
+  {
+   "fieldname": "section_directd",
+   "fieldtype": "Section Break",
+   "label": "DirectD (Score QUOD, Protestos Nacional e Processos Judiciais)"
+  },
+  {
+   "default": "0",
+   "description": "Credencial da CredTech (nada pra configurar aqui). Habilita Score de Crédito (QUOD), Protestos Nacional (IEPTB, todo o Brasil) e Processos Judiciais Simplificada — cada consulta é cobrada da sua carteira de créditos, com margem.",
+   "fieldname": "directd_enabled",
+   "fieldtype": "Check",
+   "label": "Ativar DirectD"
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:doc.directd_enabled",
+   "description": "0 = não reprova por score, só registra como informação. Score do Quod vai de 0 a 1000 (faixas: até 600 risco alto, 601-700 médio, 701-1000 baixo).",
+   "fieldname": "min_directd_score",
+   "fieldtype": "Int",
+   "label": "Score DirectD Mínimo Tolerado (0 = não reprova)"
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:doc.directd_enabled",
+   "description": "FGTS - Regularidade do Empregador (cobrado da carteira de créditos, com margem).",
+   "fieldname": "directd_fgts_enabled",
+   "fieldtype": "Check",
+   "label": "Checar Regularidade do FGTS"
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:doc.directd_enabled",
+   "description": "Sintegra/CCC - Inscrição Estadual habilitada (cobrado da carteira de créditos, com margem).",
+   "fieldname": "directd_sintegra_enabled",
+   "fieldtype": "Check",
+   "label": "Checar Sintegra/CCC (Inscrição Estadual)"
+  },
+  {
+   "fieldname": "section_automation",
+   "fieldtype": "Section Break",
+   "label": "Gatilhos Automáticos no Funil"
+  },
+  {
+   "fieldname": "auto_trigger_stage",
+   "fieldtype": "Link",
+   "label": "Etapa do Funil para Disparo Automático",
+   "options": "CRM Deal Status"
+  },
+  {
+   "default": "1",
+   "fieldname": "check_second_organization",
+   "fieldtype": "Check",
+   "label": "Consultar também a Segunda Organização (Sacado)"
+  },
+  {
+   "fieldname": "section_tolerances",
+   "fieldtype": "Section Break",
+   "label": "Régua de Corte e Tolerância de Risco"
+  },
+  {
+   "default": "0",
+   "fieldname": "max_lawsuits_defendant",
+   "fieldtype": "Int",
+   "label": "Máximo de Processos como Réu Tolerados"
+  },
+  {
+   "default": "0",
+   "fieldname": "max_lawsuit_value",
+   "fieldtype": "Currency",
+   "label": "Valor Máximo de Causa Tolerado (R$)"
+  },
+  {
+   "default": "1",
+   "fieldname": "block_on_bankruptcy",
+   "fieldtype": "Check",
+   "label": "Reprovar Imediatamente se houver Falência / Recuperação"
+  },
+  {
+   "default": "0",
+   "fieldname": "max_pgfn_debt",
+   "fieldtype": "Currency",
+   "label": "Valor Máximo em Dívida Ativa da União (PGFN) Tolerado (R$)"
+  },
+  {
+   "default": "1",
+   "fieldname": "block_on_cndt",
+   "fieldtype": "Check",
+   "label": "Reprovar se constar no BNDT (Trabalhista)"
+  },
+  {
+   "default": "1",
+   "fieldname": "block_on_protest",
+   "fieldtype": "Check",
+   "label": "Reprovar se houver Protestos em Cartório (CENPROT)"
+  },
+  {
+   "default": "1",
+   "depends_on": "eval:doc.directd_fgts_enabled",
+   "fieldname": "block_on_fgts_irregular",
+   "fieldtype": "Check",
+   "label": "Reprovar se o FGTS estiver Irregular"
+  },
+  {
+   "fieldname": "section_bureaus_finais",
+   "fieldtype": "Section Break",
+   "label": "Bureaus Finais (Sob Demanda)"
+  },
+  {
+   "default": "0",
+   "fieldname": "serasa_enabled",
+   "fieldtype": "Check",
+   "label": "Habilitar Serasa Experian (Relato PJ)"
+  },
+  {
+   "depends_on": "eval:doc.serasa_enabled",
+   "description": "Endpoint do contrato do próprio cliente com o Serasa Experian. Sem isso, a consulta ao Serasa falha explicitamente (nunca finge sucesso). Não passa pela carteira de créditos — é cobrado direto no seu contrato com o Serasa.",
+   "fieldname": "serasa_endpoint_url",
+   "fieldtype": "Data",
+   "label": "Endpoint Serasa Relato PJ (contrato do cliente)"
+  },
+  {
+   "depends_on": "eval:doc.serasa_enabled",
+   "fieldname": "serasa_token",
+   "fieldtype": "Password",
+   "label": "Token de Acesso Serasa (contrato do cliente)"
+  },
+  {
+   "default": "0",
+   "description": "Boa Vista - Risco Positivo PJ, segundo bureau de score. Credencial da CredTech, nada pra configurar — cobrado R$18,00 da sua carteira de créditos por consulta.",
+   "fieldname": "boavista_risco_enabled",
+   "fieldtype": "Check",
+   "label": "Habilitar Boa Vista - Risco Positivo PJ"
+  },
+  {
+   "default": "0",
+   "description": "Dossiê QUOD Completo, PF ou PJ. Credencial da CredTech, nada pra configurar — cobrado R$10,00 da sua carteira de créditos por consulta.",
+   "fieldname": "dossie_quod_enabled",
+   "fieldtype": "Check",
+   "label": "Habilitar Dossiê QUOD - Completo"
+  },
+  {
+   "default": "0",
+   "description": "SCR Analítico - Resumo BACEN, exposição bancária real, PF ou PJ. Credencial da CredTech, nada pra configurar — cobrado R$6,00 da sua carteira de créditos por consulta.",
+   "fieldname": "scr_bacen_enabled",
+   "fieldtype": "Check",
+   "label": "Habilitar SCR Analítico (Resumo BACEN)"
+  }
+ ],
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-10-30 23:50:00.000000",
+ "modified_by": "Administrator",
+ "module": "Cred Hub",
+ "name": "Cred Hub Credit Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "read": 1,
+   "write": 1,
+   "role": "System Manager"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

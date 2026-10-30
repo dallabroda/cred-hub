@@ -1,0 +1,90 @@
+{
+ "actions": [],
+ "creation": "2026-10-30 23:30:00.000000",
+ "description": "Saldo pré-pago de créditos para os bureaus Premium (Boa Vista, Dossiê QUOD, SCR Bacen), que rodam na conta DirectD da própria CredTech. Um por empresa (site) — igual ao Cred Hub Plan.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "balance",
+  "section_asaas",
+  "asaas_customer_id",
+  "payer_name",
+  "payer_email",
+  "section_audit",
+  "total_topped_up",
+  "total_spent"
+ ],
+ "fields": [
+  {
+   "default": "0",
+   "description": "Debitado automaticamente a cada consulta a um bureau Premium. Nunca fica negativo.",
+   "fieldname": "balance",
+   "fieldtype": "Currency",
+   "label": "Saldo Atual (R$)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_asaas",
+   "fieldtype": "Section Break",
+   "label": "Cobrança (Asaas)"
+  },
+  {
+   "fieldname": "asaas_customer_id",
+   "fieldtype": "Data",
+   "label": "Cliente no Asaas",
+   "read_only": 1
+  },
+  {
+   "fieldname": "payer_name",
+   "fieldtype": "Data",
+   "label": "Nome de Quem Paga",
+   "read_only": 1
+  },
+  {
+   "fieldname": "payer_email",
+   "fieldtype": "Data",
+   "label": "E-mail de Quem Paga",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_audit",
+   "fieldtype": "Section Break",
+   "label": "Auditoria"
+  },
+  {
+   "default": "0",
+   "fieldname": "total_topped_up",
+   "fieldtype": "Currency",
+   "label": "Total Recarregado (R$, histórico)",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "total_spent",
+   "fieldtype": "Currency",
+   "label": "Total Gasto (R$, histórico)",
+   "read_only": 1
+  }
+ ],
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-10-30 23:30:00.000000",
+ "modified_by": "Administrator",
+ "module": "Cred Hub",
+ "name": "Cred Hub Credit Wallet",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "read": 1,
+   "write": 1,
+   "role": "System Manager"
+  },
+  {
+   "read": 1,
+   "role": "Sales Manager"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
