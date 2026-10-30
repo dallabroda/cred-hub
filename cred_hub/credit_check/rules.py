@@ -46,6 +46,7 @@ def evaluate_credit_risk(
 				"cndt_pdf": "",
 				"cenprot_has_protest": None,
 				"cenprot_protests_count": None,
+				"fgts_status": "Não verificado",
 				"directd_score": None,
 			},
 		}
@@ -57,6 +58,7 @@ def evaluate_credit_risk(
 	max_pgfn_debt = float(cfg.get("max_pgfn_debt", 0.0))
 	block_on_cndt = bool(cfg.get("block_on_cndt", True))
 	block_on_protest = bool(cfg.get("block_on_protest", True))
+	block_on_fgts_irregular = bool(cfg.get("block_on_fgts_irregular", True))
 	min_directd_score = int(cfg.get("min_directd_score", 0))
 
 	reasons: list[str] = []
@@ -133,7 +135,17 @@ def evaluate_credit_risk(
 	if not cnd_fed_regular:
 		warnings.append(f"CND Federal com pendências: {cnd_fed.get('status') or 'Positiva'}.")
 
-	# 7. Score de Crédito (DirectD / Quod) — só reprova se o cliente configurou um piso (> 0)
+	# 7. Regularidade do FGTS (DirectD)
+	fgts = infosimples_data.get("fgts") or {}
+	fgts_regular = bool(fgts.get("is_regular", True))
+	if not fgts_regular:
+		if block_on_fgts_irregular:
+			is_rejected = True
+			reasons.append("FGTS irregular perante a Caixa Econômica.")
+		else:
+			warnings.append("FGTS irregular perante a Caixa Econômica.")
+
+	# 8. Score de Crédito (DirectD / Quod) — só reprova se o cliente configurou um piso (> 0)
 	directd_score = None
 	if directd_score_data and directd_score_data.get("score") is not None:
 		directd_score = int(directd_score_data["score"])
@@ -171,6 +183,7 @@ def evaluate_credit_risk(
 			"cndt_pdf": cndt.get("pdf_url", ""),
 			"cenprot_has_protest": has_protest,
 			"cenprot_protests_count": protest_count,
+			"fgts_status": fgts.get("status") or ("Regular" if fgts_regular else "Irregular"),
 			"directd_score": directd_score,
 		},
 	}
@@ -207,6 +220,7 @@ def format_timeline_summary(evaluation: dict[str, Any], cnpj_formatted: str) -> 
 		f"• **Dívida Ativa da União (PGFN):** R$ {metrics.get('pgfn_debt', 0.0):,.2f}.",
 		f"• **Certidão Trabalhista (CNDT):** {metrics.get('cndt_status')}.",
 		f"• **Protestos em Cartório (CENPROT):** {'Sim (' + str(metrics.get('cenprot_protests_count', 0)) + ')' if metrics.get('cenprot_has_protest') else 'Nenhum'}.",
+		f"• **FGTS:** {metrics.get('fgts_status')}.",
 	]
 	if metrics.get("directd_score") is not None:
 		lines.append(f"• **Score de Crédito (DirectD/Quod):** {metrics['directd_score']}.")

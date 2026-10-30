@@ -28,8 +28,11 @@
   "section_protests",
   "cenprot_has_protests",
   "cenprot_protests_count",
+  "fgts_status",
+  "sintegra_situacao_cadastral",
   "section_audit",
   "total_cost",
+  "client_total_cost",
   "raw_details_json"
  ],
  "fields": [
@@ -176,6 +179,18 @@
    "read_only": 1
   },
   {
+   "fieldname": "fgts_status",
+   "fieldtype": "Data",
+   "label": "Status FGTS",
+   "read_only": 1
+  },
+  {
+   "fieldname": "sintegra_situacao_cadastral",
+   "fieldtype": "Data",
+   "label": "Situação Cadastral (Sintegra/CCC)",
+   "read_only": 1
+  },
+  {
    "fieldname": "section_audit",
    "fieldtype": "Section Break",
    "label": "Auditoria e Detalhes"
@@ -185,6 +200,14 @@
    "fieldname": "total_cost",
    "fieldtype": "Currency",
    "label": "Custo da Consulta (R$)",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "total_cost com a margem padrão de 20% (decisão do dono, 30/10/2026).",
+   "fieldname": "client_total_cost",
+   "fieldtype": "Currency",
+   "label": "Preço a Cobrar do Cliente (R$)",
    "read_only": 1
   },
   {

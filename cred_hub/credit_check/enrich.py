@@ -20,9 +20,11 @@ from frappe.utils import add_days, today
 
 from cred_hub.cnpj.mapping import format_cnpj, is_valid_cnpj, only_digits
 from cred_hub.credit_check.clients.directd import (
+	fetch_fgts_regularidade,
 	fetch_lawsuits_directd,
 	fetch_protests_nacional,
 	fetch_score,
+	fetch_sintegra_ccc,
 	merge_lawsuit_sources,
 	merge_protest_sources,
 )
@@ -42,6 +44,11 @@ INFOSIMPLES_ESTIMATED_COST = 0.80
 DIRECTD_SCORE_ESTIMATED_COST = 1.98
 DIRECTD_PROTESTS_ESTIMATED_COST = 2.95
 DIRECTD_PROCESSOS_ESTIMATED_COST = 1.50
+DIRECTD_FGTS_ESTIMATED_COST = 0.36
+DIRECTD_SINTEGRA_ESTIMATED_COST = 1.80
+# Markup fixo sobre o custo da esteira automática (decisão do dono, 30/10/2026). Os bureaus
+# Premium (Boa Vista, Dossiê QUOD, SCR Bacen) têm preço fixo próprio — ver premium_bureaus.py.
+CLIENT_PRICE_MULTIPLIER = 1.20
 
 EMPTY_ESCAVADOR_DATA = {"total_count": 0, "defendant_count": 0, "highest_value": 0.0, "has_bankruptcy_recovery": False}
 EMPTY_INFOSIMPLES_DATA = {
@@ -52,6 +59,8 @@ EMPTY_INFOSIMPLES_DATA = {
 }
 EMPTY_DIRECTD_SCORE_DATA = {"score": None, "faixa_score": "", "motivos": [], "indicadores_negocio": []}
 EMPTY_DIRECTD_PROTESTS_DATA = {"has_protests": False, "protests_count": 0, "total_value": 0.0, "cartorios_distintos": 0, "cidades_distintas": 0}
+EMPTY_FGTS_DATA = {"is_regular": True, "status": "Regular", "certificado_numero": "", "raw": {}}
+EMPTY_SINTEGRA_DATA = {"situacao_cadastral": "", "situacao_cnpj": "", "inscricoes_estaduais": [], "raw": {}}
 
 
 @dataclass
@@ -85,6 +94,8 @@ def get_credit_settings() -> dict[str, Any]:
 		"directd_enabled": bool(doc.get("directd_enabled")),
 		"directd_token": doc.get_password("directd_token") if doc.get("directd_token") else "",
 		"min_directd_score": int(doc.get("min_directd_score") or 0),
+		"directd_fgts_enabled": bool(doc.get("directd_fgts_enabled")),
+		"directd_sintegra_enabled": bool(doc.get("directd_sintegra_enabled")),
 		"auto_trigger_stage": doc.get("auto_trigger_stage") or "",
 		"check_second_organization": bool(doc.get("check_second_organization")),
 		"max_lawsuits_defendant": int(doc.get("max_lawsuits_defendant") or 0),
@@ -93,6 +104,7 @@ def get_credit_settings() -> dict[str, Any]:
 		"max_pgfn_debt": float(doc.get("max_pgfn_debt") or 0.0),
 		"block_on_cndt": bool(doc.get("block_on_cndt", 1)),
 		"block_on_protest": bool(doc.get("block_on_protest", 1)),
+		"block_on_fgts_irregular": bool(doc.get("block_on_fgts_irregular", 1)),
 	}
 
 
@@ -152,6 +164,26 @@ def _build_providers(settings: dict[str, Any]) -> list[ProviderCheck]:
 			empty_result=EMPTY_ESCAVADOR_DATA,
 			estimated_cost=DIRECTD_PROCESSOS_ESTIMATED_COST,
 			data_slot="directd_processos",
+		),
+		ProviderCheck(
+			key="directd_fgts",
+			label="DirectD FGTS",
+			enabled=bool(settings.get("directd_enabled")) and bool(settings.get("directd_fgts_enabled")),
+			token=settings.get("directd_token") or "",
+			fetch=fetch_fgts_regularidade,
+			empty_result=EMPTY_FGTS_DATA,
+			estimated_cost=DIRECTD_FGTS_ESTIMATED_COST,
+			data_slot="directd_fgts",
+		),
+		ProviderCheck(
+			key="directd_sintegra",
+			label="DirectD Sintegra/CCC",
+			enabled=bool(settings.get("directd_enabled")) and bool(settings.get("directd_sintegra_enabled")),
+			token=settings.get("directd_token") or "",
+			fetch=fetch_sintegra_ccc,
+			empty_result=EMPTY_SINTEGRA_DATA,
+			estimated_cost=DIRECTD_SINTEGRA_ESTIMATED_COST,
+			data_slot="directd_sintegra",
 		),
 	]
 
@@ -241,6 +273,7 @@ def run_background_check(
 	merged_infosimples["cenprot"] = merge_protest_sources(
 		results["infosimples"].get("cenprot") or {}, results["directd_protestos"]
 	)
+	merged_infosimples["fgts"] = results["directd_fgts"]
 
 	# Avaliação de risco — qualquer falha num provedor habilitado força o parecer 'Error'
 	evaluation = evaluate_credit_risk(
@@ -287,7 +320,10 @@ def run_background_check(
 		"cndt_pdf_url": metrics.get("cndt_pdf", ""),
 		"cenprot_has_protests": 1 if metrics.get("cenprot_has_protest") else 0,
 		"cenprot_protests_count": metrics.get("cenprot_protests_count") or 0,
+		"fgts_status": metrics.get("fgts_status") or "Regular",
+		"sintegra_situacao_cadastral": results["directd_sintegra"].get("situacao_cadastral") or "",
 		"total_cost": total_cost,
+		"client_total_cost": round(total_cost * CLIENT_PRICE_MULTIPLIER, 2),
 		"raw_details_json": json.dumps(
 			{
 				"escavador": results["escavador"],
@@ -295,6 +331,8 @@ def run_background_check(
 				"directd_score": results["directd_score"],
 				"directd_protestos": results["directd_protestos"],
 				"directd_processos": results["directd_processos"],
+				"directd_fgts": results["directd_fgts"],
+				"directd_sintegra": results["directd_sintegra"],
 				"failures": failures,
 			},
 			ensure_ascii=False,

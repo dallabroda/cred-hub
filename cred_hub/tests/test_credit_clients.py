@@ -5,12 +5,18 @@ import pytest
 
 from cred_hub.credit_check.clients.directd import (
 	DirectDAuthError,
+	fetch_boa_vista_risco_pj,
+	fetch_dossie_credito_completo,
+	fetch_fgts_regularidade,
 	fetch_protests_nacional,
+	fetch_scr_bacen,
 	fetch_score,
+	fetch_sintegra_ccc,
 	merge_lawsuit_sources,
 	merge_protest_sources,
 	parse_directd_processos_payload,
 )
+from cred_hub.credit_check.premium_bureaus import PREMIUM_BUREAUS
 from cred_hub.credit_check.clients.escavador import (
 	EscavadorAuthError,
 	EscavadorRateLimitError,
@@ -239,3 +245,102 @@ def test_merge_protest_sources_is_conservative():
 	merged = merge_protest_sources(a, b)
 	assert merged["has_protests"] is True
 	assert merged["protests_count"] == 3
+
+
+@patch("cred_hub.credit_check.clients.directd.requests.get")
+def test_directd_fgts_irregular(mock_get):
+	mock_resp = MagicMock()
+	mock_resp.status_code = 200
+	mock_resp.ok = True
+	mock_resp.json.return_value = {"retorno": {"flagIrregularidade": True, "status": "Irregular"}}
+	mock_get.return_value = mock_resp
+
+	res = fetch_fgts_regularidade("12345678000199", "token")
+	assert res["is_regular"] is False
+	assert res["status"] == "Irregular"
+
+
+@patch("cred_hub.credit_check.clients.directd.requests.get")
+def test_directd_sintegra_ccc(mock_get):
+	mock_resp = MagicMock()
+	mock_resp.status_code = 200
+	mock_resp.ok = True
+	mock_resp.json.return_value = {"retorno": {"situacaoCadastral": "Ativa", "listaInscricoesEstaduaisSintegra": ["123456"]}}
+	mock_get.return_value = mock_resp
+
+	res = fetch_sintegra_ccc("12345678000199", "token")
+	assert res["situacao_cadastral"] == "Ativa"
+	assert res["inscricoes_estaduais"] == ["123456"]
+
+
+@patch("cred_hub.credit_check.clients.directd.requests.get")
+def test_directd_boa_vista_risco_pj_success(mock_get):
+	mock_resp = MagicMock()
+	mock_resp.status_code = 200
+	mock_resp.ok = True
+	mock_resp.json.return_value = {
+		"retorno": {
+			"score": {"score": "320", "classificacaoABC": "C", "risco": "Alto"},
+			"restricoes": {
+				"protestos": {"quantidade": "2", "valorTotal": "1500"},
+				"falenciaRecuperacaoJudicial": {"quantidade": "0"},
+			},
+		}
+	}
+	mock_get.return_value = mock_resp
+
+	res = fetch_boa_vista_risco_pj("12345678000199", "token")
+	assert res["score"] == 320.0
+	assert res["has_protests"] is True
+	assert res["protests_count"] == 2
+	assert res["has_bankruptcy_recovery"] is False
+
+
+@patch("cred_hub.credit_check.clients.directd.requests.get")
+def test_directd_dossie_credito_completo_accepts_cpf_or_cnpj(mock_get):
+	mock_resp = MagicMock()
+	mock_resp.status_code = 200
+	mock_resp.ok = True
+	mock_resp.json.return_value = {
+		"retorno": {
+			"entidadeJuridica": {
+				"scoreEntidades": {"entidadeJuridica": {"score": 700, "motivos": []}},
+				"pendenciaFinanceira": {"status": "Regular", "protestos": [], "acoesJudiciais": []},
+			}
+		}
+	}
+	mock_get.return_value = mock_resp
+
+	res = fetch_dossie_credito_completo("12345678000199", "token")
+	assert res["score"] == 700.0
+	assert res["has_protests"] is False
+
+	with pytest.raises(ValueError):
+		fetch_dossie_credito_completo("123", "token")
+
+
+@patch("cred_hub.credit_check.clients.directd.requests.get")
+def test_directd_scr_bacen_success(mock_get):
+	mock_resp = MagicMock()
+	mock_resp.status_code = 200
+	mock_resp.ok = True
+	mock_resp.json.return_value = {
+		"retorno": {
+			"quantidadeInstituicoes": "3",
+			"quantidadeOperacoes": "5",
+			"situacao": "Normal",
+			"carteiraCredito": {"valorVencer": "10000,00", "valorVencida": "0,00"},
+		}
+	}
+	mock_get.return_value = mock_resp
+
+	res = fetch_scr_bacen("12345678000199", "token")
+	assert res["quantidade_instituicoes"] == 3
+	assert res["valor_a_vencer"] == 10000.0
+
+
+def test_premium_bureaus_registry_has_cost_and_client_price():
+	for key in ("boavista_risco", "dossie_quod", "scr_bacen"):
+		bureau = PREMIUM_BUREAUS[key]
+		assert bureau.cost > 0
+		assert bureau.client_price > bureau.cost  # sempre vendido com margem

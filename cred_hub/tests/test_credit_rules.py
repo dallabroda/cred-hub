@@ -129,6 +129,23 @@ def test_evaluate_credit_risk_rejected_by_protests():
 	assert any("protestado" in r for r in eval_res["reasons"])
 
 
+def test_evaluate_credit_risk_rejected_by_fgts_irregular():
+	clean_escavador = {"total_count": 0, "defendant_count": 0, "highest_value": 0.0, "has_bankruptcy_recovery": False}
+	infosimples_with_fgts = {
+		"pgfn": {"total_debt": 0.0},
+		"cndt": {"is_regular": True},
+		"cenprot": {"has_protests": False},
+		"fgts": {"is_regular": False, "status": "Irregular"},
+	}
+	eval_res = evaluate_credit_risk(clean_escavador, infosimples_with_fgts)
+	assert eval_res["verdict"] == VERDICT_REJECTED
+	assert any("FGTS" in r for r in eval_res["reasons"])
+
+	# Com block_on_fgts_irregular desligado, vira só aviso
+	eval_res_warning = evaluate_credit_risk(clean_escavador, infosimples_with_fgts, {"block_on_fgts_irregular": False})
+	assert eval_res_warning["verdict"] == VERDICT_WARNING
+
+
 def test_evaluate_credit_risk_directd_score_rejects_below_floor():
 	clean_escavador = {"total_count": 0, "defendant_count": 0, "highest_value": 0.0, "has_bankruptcy_recovery": False}
 	clean_infosimples = {

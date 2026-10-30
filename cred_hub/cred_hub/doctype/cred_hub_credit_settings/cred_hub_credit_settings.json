@@ -16,6 +16,8 @@
   "directd_enabled",
   "directd_token",
   "min_directd_score",
+  "directd_fgts_enabled",
+  "directd_sintegra_enabled",
   "section_automation",
   "auto_trigger_stage",
   "check_second_organization",
@@ -26,10 +28,14 @@
   "max_pgfn_debt",
   "block_on_cndt",
   "block_on_protest",
+  "block_on_fgts_irregular",
   "section_bureaus_finais",
   "serasa_enabled",
   "serasa_endpoint_url",
-  "serasa_token"
+  "serasa_token",
+  "boavista_risco_enabled",
+  "dossie_quod_enabled",
+  "scr_bacen_enabled"
  ],
  "fields": [
   {
@@ -97,6 +103,22 @@
    "label": "Score DirectD Mínimo Tolerado (0 = não reprova)"
   },
   {
+   "default": "0",
+   "depends_on": "eval:doc.directd_enabled",
+   "description": "FGTS - Regularidade do Empregador (R$0,36/consulta).",
+   "fieldname": "directd_fgts_enabled",
+   "fieldtype": "Check",
+   "label": "Checar Regularidade do FGTS"
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:doc.directd_enabled",
+   "description": "Sintegra/CCC - Inscrição Estadual habilitada (R$1,80/consulta).",
+   "fieldname": "directd_sintegra_enabled",
+   "fieldtype": "Check",
+   "label": "Checar Sintegra/CCC (Inscrição Estadual)"
+  },
+  {
    "fieldname": "section_automation",
    "fieldtype": "Section Break",
    "label": "Gatilhos Automáticos no Funil"
@@ -155,6 +177,13 @@
    "label": "Reprovar se houver Protestos em Cartório (CENPROT)"
   },
   {
+   "default": "1",
+   "depends_on": "eval:doc.directd_fgts_enabled",
+   "fieldname": "block_on_fgts_irregular",
+   "fieldtype": "Check",
+   "label": "Reprovar se o FGTS estiver Irregular"
+  },
+  {
    "fieldname": "section_bureaus_finais",
    "fieldtype": "Section Break",
    "label": "Bureaus Finais (Sob Demanda)"
@@ -177,6 +206,30 @@
    "fieldname": "serasa_token",
    "fieldtype": "Password",
    "label": "Token de Acesso Serasa (contrato do cliente)"
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:doc.directd_enabled",
+   "description": "Boa Vista - Risco Positivo PJ, segundo bureau de score (custo R$14,03, cobrado do cliente a R$18,00 — usa o token DirectD acima).",
+   "fieldname": "boavista_risco_enabled",
+   "fieldtype": "Check",
+   "label": "Habilitar Boa Vista - Risco Positivo PJ"
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:doc.directd_enabled",
+   "description": "Dossiê QUOD Completo, PF ou PJ (custo R$6,99, cobrado do cliente a R$10,00 — usa o token DirectD acima).",
+   "fieldname": "dossie_quod_enabled",
+   "fieldtype": "Check",
+   "label": "Habilitar Dossiê QUOD - Completo"
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:doc.directd_enabled",
+   "description": "SCR Analítico - Resumo BACEN, exposição bancária real, PF ou PJ (custo R$3,90, cobrado do cliente a R$6,00 — usa o token DirectD acima).",
+   "fieldname": "scr_bacen_enabled",
+   "fieldtype": "Check",
+   "label": "Habilitar SCR Analítico (Resumo BACEN)"
   }
  ],
  "issingle": 1,

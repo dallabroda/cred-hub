@@ -7,16 +7,20 @@ from typing import Any
 
 import frappe
 from frappe import _
+from frappe.utils import now_datetime
 
+from cred_hub.credit_check.clients.directd import DirectDAuthError, DirectDError
 from cred_hub.credit_check.clients.escavador import fetch_lawsuits
 from cred_hub.credit_check.clients.infosimples import query_pgfn
 from cred_hub.credit_check.clients.serasa import (
 	BureauGateBlocked,
 	SerasaError,
 	SerasaNotConfigured,
+	assert_pre_approved_for_bureau,
 	trigger_serasa_relato,
 )
 from cred_hub.credit_check.enrich import get_credit_settings, run_background_check
+from cred_hub.credit_check.premium_bureaus import PREMIUM_BUREAUS
 
 # Custo real aproximado de cada chamada de teste de conexão — cobrado mesmo numa consulta de teste
 TEST_CONNECTION_COST = {
@@ -88,6 +92,10 @@ def get_report_details(report_name: str) -> dict[str, Any]:
 		"cndt_pdf_url": report.cndt_pdf_url,
 		"cenprot_has_protests": bool(report.cenprot_has_protests),
 		"cenprot_protests_count": report.cenprot_protests_count,
+		"fgts_status": report.get("fgts_status") or "",
+		"sintegra_situacao_cadastral": report.get("sintegra_situacao_cadastral") or "",
+		"total_cost": report.get("total_cost") or 0.0,
+		"client_total_cost": report.get("client_total_cost") or 0.0,
 		"raw_details": raw_details,
 	}
 
@@ -131,9 +139,28 @@ def test_provider_connection(provider: str, token: str, cnpj: str, confirm_cost:
 			frappe.throw(_("Infosimples connection test failed: {0}").format(str(e)))
 
 
+def _log_premium_bureau_query(bureau: str, deal, cnpj: str, cost: float, client_price: float, status: str, raw: dict[str, Any]) -> None:
+	"""Grava a auditoria da consulta ao bureau Premium: custo pago ao fornecedor e preço cobrado
+	do cliente, pra reconciliação de cobrança."""
+	frappe.get_doc({
+		"doctype": "Cred Hub Premium Bureau Query",
+		"bureau": bureau,
+		"organization": deal.organization,
+		"deal": deal.name,
+		"cnpj": cnpj,
+		"requested_by": frappe.session.user,
+		"requested_on": now_datetime(),
+		"cost": cost,
+		"client_price": client_price,
+		"status": status,
+		"raw_response_json": json.dumps(raw, ensure_ascii=False),
+	}).insert(ignore_permissions=True)
+
+
 @frappe.whitelist()
 def request_bureau_final(deal_name: str, bureau: str = "serasa") -> dict[str, Any]:
-	"""Dispara a consulta ao bureau final (Serasa), garantindo pré-aprovação."""
+	"""Dispara a consulta a um bureau final (Serasa ou um bureau Premium da DirectD), garantindo
+	pré-aprovação no pré-filtro de baixo custo antes de gastar."""
 	frappe.only_for(["System Manager", "Sales Manager"])
 	_check_deal_and_org_permission(deal_name, None)
 
@@ -146,22 +173,51 @@ def request_bureau_final(deal_name: str, bureau: str = "serasa") -> dict[str, An
 		frappe.throw(_("The deal must be linked to an organization with a valid CNPJ."))
 
 	settings_doc = frappe.get_single("Cred Hub Credit Settings")
-	endpoint_url = settings_doc.get("serasa_endpoint_url") or ""
-	serasa_token = settings_doc.get_password("serasa_token") if settings_doc.get("serasa_token") else ""
+
+	if bureau == "serasa":
+		endpoint_url = settings_doc.get("serasa_endpoint_url") or ""
+		serasa_token = settings_doc.get_password("serasa_token") if settings_doc.get("serasa_token") else ""
+		try:
+			result = trigger_serasa_relato(org_cnpj, frappe.session.user, deal.credit_verdict, endpoint_url, serasa_token)
+		except BureauGateBlocked as e:
+			frappe.throw(str(e))
+		except SerasaNotConfigured as e:
+			frappe.throw(str(e))
+		except SerasaError as e:
+			frappe.throw(_("Serasa query failed: {0}").format(str(e)))
+
+		_log_premium_bureau_query(bureau, deal, org_cnpj, 0.0, 0.0, result.get("status") or "", result)
+		deal.add_comment(
+			"Comment",
+			_("Final bureau query ({0}) requested by {1}. Provider status: {2}.").format(
+				bureau.upper(), frappe.session.user, result.get("status")
+			),
+		)
+		return result
+
+	registry = PREMIUM_BUREAUS.get(bureau)
+	if not registry:
+		frappe.throw(_("Unknown bureau: {0}").format(bureau))
 
 	try:
-		result = trigger_serasa_relato(org_cnpj, frappe.session.user, deal.credit_verdict, endpoint_url, serasa_token)
+		assert_pre_approved_for_bureau(deal.credit_verdict, org_cnpj)
 	except BureauGateBlocked as e:
 		frappe.throw(str(e))
-	except SerasaNotConfigured as e:
-		frappe.throw(str(e))
-	except SerasaError as e:
-		frappe.throw(_("Serasa query failed: {0}").format(str(e)))
 
+	token = settings_doc.get_password(registry.credential_setting) if settings_doc.get(registry.credential_setting) else ""
+	if not token:
+		frappe.throw(_("{0} is not configured: set up the DirectD token in Credit & Legal Bureaus settings first.").format(registry.label))
+
+	try:
+		result = registry.fetch(org_cnpj, token)
+	except (DirectDAuthError, DirectDError) as e:
+		frappe.throw(_("{0} query failed: {1}").format(registry.label, str(e)))
+
+	_log_premium_bureau_query(bureau, deal, org_cnpj, registry.cost, registry.client_price, "Concluído", result.get("raw") or result)
 	deal.add_comment(
 		"Comment",
-		_("Final bureau query ({0}) requested by {1}. Provider status: {2}.").format(
-			bureau.upper(), frappe.session.user, result.get("status")
+		_("Final bureau query ({0}) requested by {1}. Cost: R$ {2:.2f}, billed to client: R$ {3:.2f}.").format(
+			registry.label, frappe.session.user, registry.cost, registry.client_price
 		),
 	)
-	return result
+	return {"status": "Concluído", "bureau": registry.label, "cost": registry.cost, "client_price": registry.client_price, "data": result}
