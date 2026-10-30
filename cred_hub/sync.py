@@ -38,7 +38,9 @@ def get_deleted_records(doctype: str, since: str | None = None) -> list[dict]:
 		limit=500,
 	)
 
-	# Se for CRM Deal, isola por funis autorizados da chave
+	# Se for CRM Deal, isola por funis autorizados da chave. Sem o snapshot (ou sem conseguir ler o
+	# funil nele), o registro fica de fora: a chave nunca deve ver exclusão de um card de outro funil
+	# só porque o dado ficou incompleto (falhar fechado, não aberto).
 	if doctype == "CRM Deal":
 		allowed_pipelines = set(
 			frappe.get_all("Cred Hub API Key Pipeline", {"parent": key_info["name"]}, pluck="pipeline")
@@ -46,16 +48,14 @@ def get_deleted_records(doctype: str, since: str | None = None) -> list[dict]:
 		filtered = []
 		for r in records:
 			raw_data = frappe.db.get_value("Deleted Document", r["name"], "data")
-			if raw_data:
-				try:
-					data_dict = frappe.parse_json(raw_data) if isinstance(raw_data, str) else raw_data
-					if data_dict.get("pipeline") in allowed_pipelines:
-						filtered.append(r)
-				except Exception:
+			if not raw_data:
+				continue
+			try:
+				data_dict = frappe.parse_json(raw_data) if isinstance(raw_data, str) else raw_data
+				if data_dict.get("pipeline") in allowed_pipelines:
 					filtered.append(r)
-			else:
-				# Se não houver snapshot salvo dos campos, preserva o registro
-				filtered.append(r)
+			except Exception:
+				continue
 		return filtered
 
 	return records

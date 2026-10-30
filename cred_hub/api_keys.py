@@ -69,8 +69,10 @@ RESOURCES = {
 	"CRM Task": ("tasks_read", "tasks_write"),
 }
 
-# Doctypes protegidos que nunca podem ser excluídos via API Key mesmo com allow_delete
-PROTECTED_AGAINST_DELETE = {"CRM Pipeline", "CRM Deal Status", "Cred Hub API Key", "User"}
+# Doctypes protegidos que nunca podem ser excluídos via API Key mesmo com allow_delete.
+# CRM Lead entra aqui: hoje não existe "lead" separado de "card" para quem usa a API — leads_write
+# só serve para criar o contato que entra no funil (card), nunca para excluir.
+PROTECTED_AGAINST_DELETE = {"CRM Pipeline", "CRM Deal Status", "Cred Hub API Key", "User", "CRM Lead"}
 
 # /api/method/<rota>: escopo exigido. Escrita é decidida pela rota, não pelo verbo HTTP.
 METHODS = {

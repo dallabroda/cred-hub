@@ -376,7 +376,7 @@ class TestApiKeys(IntegrationTestCase):
 	def test_delete_blocked_on_protected_doctypes(self):
 		all_scopes = list(api_keys.SCOPES.keys())
 		token = self.create(scopes=all_scopes)["token"]
-		for protected in ("CRM Pipeline", "CRM Deal Status", "Cred Hub API Key", "User"):
+		for protected in ("CRM Pipeline", "CRM Deal Status", "Cred Hub API Key", "User", "CRM Lead"):
 			with self.subTest(doctype=protected), self.assertRaises(frappe.PermissionError):
 				self.call(token, f"/api/resource/{protected}/X", "DELETE")
 
@@ -438,6 +438,36 @@ class TestApiKeys(IntegrationTestCase):
 		token_no_sync = self.create(scopes=("cards_read",))["token"]
 		with self.assertRaises(frappe.PermissionError):
 			self.call(token_no_sync, "/api/method/cred_hub.sync.get_deleted_records", "GET", form={"doctype": "CRM Deal"})
+
+	def test_sync_deleted_records_isolates_by_pipeline_and_fails_closed(self):
+		"""Chave só vê exclusões de CRM Deal dos próprios funis; sem o snapshot do funil, o registro
+		fica de fora (nunca aparece "por garantia")."""
+		from cred_hub import sync
+
+		for name, pipeline in (
+			("GHOST-IN-SCOPE", self.pipeline),
+			("GHOST-OUT-OF-SCOPE", self.other),
+		):
+			frappe.get_doc(
+				{
+					"doctype": "Deleted Document",
+					"deleted_doctype": "CRM Deal",
+					"deleted_name": name,
+					"data": frappe.as_json({"pipeline": pipeline}),
+				}
+			).insert(ignore_permissions=True)
+		for name, data in (("GHOST-NO-SNAPSHOT", None), ("GHOST-BAD-SNAPSHOT", "{not json")):
+			frappe.get_doc(
+				{"doctype": "Deleted Document", "deleted_doctype": "CRM Deal", "deleted_name": name, "data": data}
+			).insert(ignore_permissions=True)
+
+		token = self.create(scopes=("cards_read", "sync_deletes"))["token"]
+		self.call(token, "/api/method/cred_hub.sync.get_deleted_records", "GET", form={"doctype": "CRM Deal"})
+		seen = {r["deleted_name"] for r in sync.get_deleted_records("CRM Deal")}
+		self.assertIn("GHOST-IN-SCOPE", seen)
+		self.assertNotIn("GHOST-OUT-OF-SCOPE", seen)
+		self.assertNotIn("GHOST-NO-SNAPSHOT", seen)
+		self.assertNotIn("GHOST-BAD-SNAPSHOT", seen)
 
 	def test_card_contacts_route(self):
 		token = self.create(scopes=("cards_read",))["token"]
