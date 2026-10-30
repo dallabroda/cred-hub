@@ -80,6 +80,8 @@ def get_report_details(report_name: str) -> dict[str, Any]:
 		"valid_until": report.valid_until,
 		"verdict": report.verdict,
 		"verdict_summary": report.verdict_summary,
+		"ceis_cnep_sanctioned": bool(report.get("ceis_cnep_sanctioned")),
+		"ceis_cnep_verified": bool(report.get("ceis_cnep_verified")),
 		"lawsuits_total": report.lawsuits_total,
 		"lawsuits_defendant": report.lawsuits_defendant,
 		"lawsuits_highest_value": report.lawsuits_highest_value,

@@ -19,6 +19,7 @@ from frappe import _
 from frappe.utils import add_days, today
 
 from cred_hub.cnpj.mapping import format_cnpj, is_valid_cnpj, only_digits
+from cred_hub.credit_check.clients.cgu import CGUError, fetch_ceis_cnep
 from cred_hub.credit_check.clients.directd import (
 	fetch_fgts_regularidade,
 	fetch_lawsuits_directd,
@@ -61,6 +62,7 @@ EMPTY_DIRECTD_SCORE_DATA = {"score": None, "faixa_score": "", "motivos": [], "in
 EMPTY_DIRECTD_PROTESTS_DATA = {"has_protests": False, "protests_count": 0, "total_value": 0.0, "cartorios_distintos": 0, "cidades_distintas": 0}
 EMPTY_FGTS_DATA = {"is_regular": True, "status": "Regular", "certificado_numero": "", "raw": {}}
 EMPTY_SINTEGRA_DATA = {"situacao_cadastral": "", "situacao_cnpj": "", "inscricoes_estaduais": [], "raw": {}}
+EMPTY_CGU_DATA = {"sanctioned": False, "ceis_count": 0, "cnep_count": 0, "sanctions": [], "raw": {}}
 
 
 @dataclass
@@ -87,6 +89,9 @@ def get_credit_settings() -> dict[str, Any]:
 	doc = frappe.get_single("Cred Hub Credit Settings")
 	return {
 		"enabled": bool(doc.get("enabled")),
+		"cgu_enabled": bool(doc.get("cgu_enabled")),
+		"cgu_api_key": doc.get_password("cgu_api_key") if doc.get("cgu_api_key") else "",
+		"block_on_ceis_cnep": bool(doc.get("block_on_ceis_cnep", 1)),
 		"escavador_enabled": bool(doc.get("escavador_enabled")),
 		"escavador_token": doc.get_password("escavador_token") if doc.get("escavador_token") else "",
 		"infosimples_enabled": bool(doc.get("infosimples_enabled")),
@@ -240,15 +245,33 @@ def run_background_check(
 			_apply_report_to_deal_and_org(cached_report_name, org_doc, deal_doc, is_cached=True)
 			return cached_report_name
 
+	# Etapa 0 — Sanções CEIS/CNEP (CGU, grátis). Roda antes e separada do loop genérico: se achar
+	# sanção e o cliente configurou pra reprovar, nem chama os provedores pagos (economiza o custo
+	# inteiro). Exceção deliberada ao fail-closed: falha do governo nunca trava o resto da esteira
+	# nem vira 'Error' geral — só fica "não verificado" nesse campo específico.
+	cgu_data: dict[str, Any] | None = None
+	skip_paid_providers = False
+	if settings.get("cgu_enabled"):
+		cgu_api_key = settings.get("cgu_api_key")
+		if cgu_api_key:
+			try:
+				cgu_data = fetch_ceis_cnep(digits, cgu_api_key)
+				if cgu_data.get("sanctioned") and settings.get("block_on_ceis_cnep", True):
+					skip_paid_providers = True
+			except CGUError as e:
+				frappe.log_error(title=f"Cred Hub: CGU CEIS/CNEP falhou para CNPJ {cnpj}", message=str(e))
+		else:
+			frappe.log_error(title=f"Cred Hub: CGU habilitado sem chave de API para CNPJ {cnpj}", message="cgu_enabled=1 mas cgu_api_key vazio")
+
 	# Chamada aos provedores externos habilitados — cada um isolado, sem fail-open
 	providers = _build_providers(settings)
-	enabled_providers = [p for p in providers if p.enabled]
+	enabled_providers = [] if skip_paid_providers else [p for p in providers if p.enabled]
 
 	results: dict[str, Any] = {p.data_slot: p.empty_result for p in providers}
 	failures: list[str] = []
 	total_cost = 0.0
 
-	if not enabled_providers:
+	if not enabled_providers and not skip_paid_providers:
 		failures.append(_("no provider is enabled in Credit & Legal Bureaus settings"))
 	else:
 		for provider in enabled_providers:
@@ -282,6 +305,7 @@ def run_background_check(
 		settings,
 		provider_failures=failures,
 		directd_score_data=results["directd_score"],
+		cgu_data=cgu_data,
 	)
 	verdict = evaluation.get("verdict") or VERDICT_ERROR
 	summary = evaluation.get("summary") or ""
@@ -308,6 +332,8 @@ def run_background_check(
 		"valid_until": valid_until_date,
 		"verdict": verdict,
 		"verdict_summary": summary,
+		"ceis_cnep_sanctioned": 1 if metrics.get("ceis_cnep_sanctioned") else 0,
+		"ceis_cnep_verified": 1 if metrics.get("ceis_cnep_verified") else 0,
 		"lawsuits_total": metrics.get("lawsuits_total") or 0,
 		"lawsuits_defendant": metrics.get("lawsuits_defendant") or 0,
 		"lawsuits_highest_value": metrics.get("lawsuits_highest_value") or 0.0,
@@ -326,6 +352,7 @@ def run_background_check(
 		"client_total_cost": round(total_cost * CLIENT_PRICE_MULTIPLIER, 2),
 		"raw_details_json": json.dumps(
 			{
+				"cgu": cgu_data,
 				"escavador": results["escavador"],
 				"infosimples": results["infosimples"],
 				"directd_score": results["directd_score"],

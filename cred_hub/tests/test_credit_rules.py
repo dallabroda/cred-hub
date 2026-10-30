@@ -129,6 +129,32 @@ def test_evaluate_credit_risk_rejected_by_protests():
 	assert any("protestado" in r for r in eval_res["reasons"])
 
 
+def test_evaluate_credit_risk_rejected_by_ceis_cnep():
+	clean_escavador = {"total_count": 0, "defendant_count": 0, "highest_value": 0.0, "has_bankruptcy_recovery": False}
+	clean_infosimples = {
+		"pgfn": {"total_debt": 0.0},
+		"cndt": {"is_regular": True},
+		"cenprot": {"has_protests": False},
+	}
+	cgu_sanctioned = {"sanctioned": True, "ceis_count": 1, "cnep_count": 0, "sanctions": []}
+
+	eval_res = evaluate_credit_risk(clean_escavador, clean_infosimples, cgu_data=cgu_sanctioned)
+	assert eval_res["verdict"] == VERDICT_REJECTED
+	assert any("CEIS/CNEP" in r for r in eval_res["reasons"])
+	assert eval_res["metrics"]["ceis_cnep_verified"] is True
+
+	# Com block_on_ceis_cnep desligado, vira só aviso
+	eval_res_warning = evaluate_credit_risk(
+		clean_escavador, clean_infosimples, {"block_on_ceis_cnep": False}, cgu_data=cgu_sanctioned
+	)
+	assert eval_res_warning["verdict"] == VERDICT_WARNING
+
+	# Sem cgu_data (Etapa 0 desligada): não verificado, mas não bloqueia aprovação
+	eval_res_unverified = evaluate_credit_risk(clean_escavador, clean_infosimples)
+	assert eval_res_unverified["verdict"] == VERDICT_PRE_APPROVED
+	assert eval_res_unverified["metrics"]["ceis_cnep_verified"] is False
+
+
 def test_evaluate_credit_risk_rejected_by_fgts_irregular():
 	clean_escavador = {"total_count": 0, "defendant_count": 0, "highest_value": 0.0, "has_bankruptcy_recovery": False}
 	infosimples_with_fgts = {

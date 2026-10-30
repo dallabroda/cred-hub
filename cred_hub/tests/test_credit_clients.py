@@ -3,6 +3,7 @@
 from unittest.mock import MagicMock, patch
 import pytest
 
+from cred_hub.credit_check.clients.cgu import CGUAuthError, fetch_ceis_cnep
 from cred_hub.credit_check.clients.directd import (
 	DirectDAuthError,
 	fetch_boa_vista_risco_pj,
@@ -337,6 +338,54 @@ def test_directd_scr_bacen_success(mock_get):
 	res = fetch_scr_bacen("12345678000199", "token")
 	assert res["quantidade_instituicoes"] == 3
 	assert res["valor_a_vencer"] == 10000.0
+
+
+def test_cgu_missing_api_key():
+	with pytest.raises(CGUAuthError):
+		fetch_ceis_cnep("12345678000199", "")
+
+
+@patch("cred_hub.credit_check.clients.cgu.requests.get")
+def test_cgu_no_sanctions_found(mock_get):
+	mock_resp = MagicMock()
+	mock_resp.status_code = 200
+	mock_resp.ok = True
+	mock_resp.json.return_value = []
+	mock_get.return_value = mock_resp
+
+	res = fetch_ceis_cnep("12345678000199", "chave")
+	assert res["sanctioned"] is False
+	assert res["ceis_count"] == 0
+	assert res["cnep_count"] == 0
+
+
+@patch("cred_hub.credit_check.clients.cgu.requests.get")
+def test_cgu_sanctioned_in_ceis(mock_get):
+	ceis_resp = MagicMock()
+	ceis_resp.status_code = 200
+	ceis_resp.ok = True
+	ceis_resp.json.return_value = [
+		{
+			"tipoSancao": {"descricaoResumida": "Suspensão"},
+			"orgaoSancionador": {"nome": "TCU"},
+			"dataInicioSancao": "01/01/2024",
+			"dataFimSancao": "",
+			"textoPublicacao": "Empresa suspensa",
+			"linkPublicacao": "https://...",
+			"numeroProcesso": "123",
+		}
+	]
+	cnep_resp = MagicMock()
+	cnep_resp.status_code = 200
+	cnep_resp.ok = True
+	cnep_resp.json.return_value = []
+	mock_get.side_effect = [ceis_resp, cnep_resp]
+
+	res = fetch_ceis_cnep("12345678000199", "chave")
+	assert res["sanctioned"] is True
+	assert res["ceis_count"] == 1
+	assert res["cnep_count"] == 0
+	assert res["sanctions"][0]["orgao"] == "TCU"
 
 
 def test_premium_bureaus_registry_has_cost_and_client_price():

@@ -21,6 +21,7 @@ def evaluate_credit_risk(
 	settings: dict[str, Any] | None = None,
 	provider_failures: list[str] | None = None,
 	directd_score_data: dict[str, Any] | None = None,
+	cgu_data: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
 	"""Avalia os dados judiciais e fiscais retornando o parecer e as justificativas.
 
@@ -48,6 +49,8 @@ def evaluate_credit_risk(
 				"cenprot_protests_count": None,
 				"fgts_status": "Não verificado",
 				"directd_score": None,
+				"ceis_cnep_sanctioned": None,
+				"ceis_cnep_verified": False,
 			},
 		}
 
@@ -59,11 +62,26 @@ def evaluate_credit_risk(
 	block_on_cndt = bool(cfg.get("block_on_cndt", True))
 	block_on_protest = bool(cfg.get("block_on_protest", True))
 	block_on_fgts_irregular = bool(cfg.get("block_on_fgts_irregular", True))
+	block_on_ceis_cnep = bool(cfg.get("block_on_ceis_cnep", True))
 	min_directd_score = int(cfg.get("min_directd_score", 0))
 
 	reasons: list[str] = []
 	warnings: list[str] = []
 	is_rejected = False
+
+	# 0. Sanções CEIS/CNEP (CGU, Etapa 0 grátis) — roda antes de tudo; se o cliente marcou pra
+	# bloquear, a esteira nem chega a gastar com os provedores pagos (ver enrich.py).
+	ceis_cnep_sanctioned = None
+	ceis_cnep_verified = False
+	if cgu_data is not None:
+		ceis_cnep_verified = True
+		ceis_cnep_sanctioned = bool(cgu_data.get("sanctioned"))
+		if ceis_cnep_sanctioned:
+			if block_on_ceis_cnep:
+				is_rejected = True
+				reasons.append("Consta no CEIS/CNEP (sanção administrativa — Portal da Transparência/CGU).")
+			else:
+				warnings.append("Consta no CEIS/CNEP (sanção administrativa — Portal da Transparência/CGU).")
 
 	# 1. Falência e Recuperação Judicial (Escavador)
 	has_bankruptcy = bool(escavador_data.get("has_bankruptcy_recovery"))
@@ -185,6 +203,8 @@ def evaluate_credit_risk(
 			"cenprot_protests_count": protest_count,
 			"fgts_status": fgts.get("status") or ("Regular" if fgts_regular else "Irregular"),
 			"directd_score": directd_score,
+			"ceis_cnep_sanctioned": ceis_cnep_sanctioned,
+			"ceis_cnep_verified": ceis_cnep_verified,
 		},
 	}
 
@@ -216,6 +236,10 @@ def format_timeline_summary(evaluation: dict[str, Any], cnpj_formatted: str) -> 
 
 	lines = [
 		f"{icon} **{badge}** (CNPJ {cnpj_formatted})",
+	]
+	if metrics.get("ceis_cnep_verified"):
+		lines.append(f"• **Sanções CEIS/CNEP (CGU):** {'Sim ⚠️' if metrics.get('ceis_cnep_sanctioned') else 'Nenhuma'}.")
+	lines += [
 		f"• **Processos Judiciais:** {metrics.get('lawsuits_defendant', 0)} como réu (total: {metrics.get('lawsuits_total', 0)}). Falência/Recuperação: {'Sim ⚠️' if metrics.get('has_bankruptcy') else 'Não'}.",
 		f"• **Dívida Ativa da União (PGFN):** R$ {metrics.get('pgfn_debt', 0.0):,.2f}.",
 		f"• **Certidão Trabalhista (CNDT):** {metrics.get('cndt_status')}.",

@@ -6,6 +6,10 @@
  "engine": "InnoDB",
  "field_order": [
   "enabled",
+  "section_cgu",
+  "cgu_enabled",
+  "cgu_api_key",
+  "block_on_ceis_cnep",
   "section_escavador",
   "escavador_enabled",
   "escavador_token",
@@ -43,6 +47,32 @@
    "fieldname": "enabled",
    "fieldtype": "Check",
    "label": "Ativar Esteira de Análise de Risco"
+  },
+  {
+   "fieldname": "section_cgu",
+   "fieldtype": "Section Break",
+   "label": "Etapa 0 — Sanções CEIS/CNEP (Portal da Transparência / CGU, grátis)"
+  },
+  {
+   "default": "0",
+   "description": "Roda antes de tudo, de graça. Se achar sanção e 'Reprovar' estiver marcado, nem chama os provedores pagos (Escavador/Infosimples/DirectD) — economiza o custo inteiro da consulta.",
+   "fieldname": "cgu_enabled",
+   "fieldtype": "Check",
+   "label": "Ativar Etapa 0 (CEIS/CNEP)"
+  },
+  {
+   "depends_on": "eval:doc.cgu_enabled",
+   "description": "Chave grátis via cadastro em portaldatransparencia.gov.br/api-de-dados.",
+   "fieldname": "cgu_api_key",
+   "fieldtype": "Password",
+   "label": "Chave de API do Portal da Transparência"
+  },
+  {
+   "default": "1",
+   "depends_on": "eval:doc.cgu_enabled",
+   "fieldname": "block_on_ceis_cnep",
+   "fieldtype": "Check",
+   "label": "Reprovar Imediatamente se constar no CEIS/CNEP"
   },
   {
    "fieldname": "section_escavador",

@@ -13,6 +13,9 @@
   "valid_until",
   "verdict",
   "verdict_summary",
+  "section_sanctions",
+  "ceis_cnep_sanctioned",
+  "ceis_cnep_verified",
   "section_lawsuits",
   "lawsuits_total",
   "lawsuits_defendant",
@@ -82,6 +85,25 @@
    "fieldname": "verdict_summary",
    "fieldtype": "Small Text",
    "label": "Resumo do Parecer",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_sanctions",
+   "fieldtype": "Section Break",
+   "label": "Sanções CEIS/CNEP (Portal da Transparência / CGU)"
+  },
+  {
+   "default": "0",
+   "fieldname": "ceis_cnep_sanctioned",
+   "fieldtype": "Check",
+   "label": "Consta Sancionado (CEIS/CNEP)",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "ceis_cnep_verified",
+   "fieldtype": "Check",
+   "label": "Verificado (Etapa 0 habilitada e a API do governo respondeu)",
    "read_only": 1
   },
   {
