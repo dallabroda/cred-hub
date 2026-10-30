@@ -1,0 +1,130 @@
+{
+ "actions": [],
+ "creation": "2026-10-30 16:30:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "links": [],
+ "modified": "2026-10-30 16:30:00.000000",
+ "modified_by": "Administrator",
+ "module": "Cred Hub",
+ "owner": "Administrator",
+ "states": [],
+ "field_order": [
+  "webhook",
+  "event",
+  "status",
+  "response_code",
+  "duration_ms",
+  "column_break_meta",
+  "delivery_id",
+  "reference_doctype",
+  "reference_name",
+  "dispatched_on",
+  "section_payload",
+  "url",
+  "request_payload",
+  "response_body"
+ ],
+ "fields": [
+  {
+   "fieldname": "webhook",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Webhook",
+   "options": "Cred Hub Webhook",
+   "reqd": 1
+  },
+  {
+   "fieldname": "event",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Event",
+   "reqd": 1
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Success\nFailed",
+   "reqd": 1
+  },
+  {
+   "fieldname": "response_code",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "HTTP Status"
+  },
+  {
+   "fieldname": "duration_ms",
+   "fieldtype": "Int",
+   "label": "Duration (ms)"
+  },
+  {
+   "fieldname": "column_break_meta",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "delivery_id",
+   "fieldtype": "Data",
+   "label": "Delivery ID",
+   "read_only": 1
+  },
+  {
+   "fieldname": "reference_doctype",
+   "fieldtype": "Data",
+   "label": "Reference DocType"
+  },
+  {
+   "fieldname": "reference_name",
+   "fieldtype": "Data",
+   "label": "Reference Name"
+  },
+  {
+   "fieldname": "dispatched_on",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Dispatched On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_payload",
+   "fieldtype": "Section Break",
+   "label": "Details"
+  },
+  {
+   "fieldname": "url",
+   "fieldtype": "Data",
+   "label": "Destination URL",
+   "read_only": 1
+  },
+  {
+   "fieldname": "request_payload",
+   "fieldtype": "Code",
+   "label": "Request Payload",
+   "options": "JSON",
+   "read_only": 1
+  },
+  {
+   "fieldname": "response_body",
+   "fieldtype": "Code",
+   "label": "Response Body",
+   "read_only": 1
+  }
+ ],
+ "name": "Cred Hub Webhook Log",
+ "permissions": [
+  {
+   "create": 0,
+   "delete": 1,
+   "email": 0,
+   "export": 1,
+   "print": 0,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 0,
+   "write": 0
+  }
+ ]
+}
