@@ -299,7 +299,7 @@ def _rate_limit(key_name: str, write: bool, custom_limit: int | None = None):
 		custom_limit = cint(frappe.db.get_value(KEY, key_name, "custom_rate_limit"))
 	custom = cint(custom_limit)
 	total_limit = custom if custom > 0 else CALLS_PER_MINUTE
-	write_limit = max(custom // 5, WRITES_PER_MINUTE) if custom > 0 else WRITES_PER_MINUTE
+	write_limit = max(1, min(WRITES_PER_MINUTE, custom // 5)) if custom > 0 else WRITES_PER_MINUTE
 	limits = [(total_limit, "all")] + ([(write_limit, "write")] if write else [])
 	for limit, counter in limits:
 		cache_key = frappe.cache.make_key(f"credhub_api:{key_name}:{counter}:{minute}")
