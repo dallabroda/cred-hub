@@ -1,0 +1,137 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-10-30 09:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "description": "Every paid bureau query and registry operation (credtech#290): LGPD audit and the cache that avoids paying twice.",
+ "field_order": [
+  "provider",
+  "operation",
+  "document",
+  "status",
+  "result_code",
+  "protocol",
+  "column_main",
+  "reference_doctype",
+  "reference_name",
+  "user",
+  "purpose",
+  "http_status",
+  "section_response",
+  "error",
+  "response"
+ ],
+ "fields": [
+  {
+   "fieldname": "provider",
+   "fieldtype": "Select",
+   "label": "Provider",
+   "options": "Assertiva\nCENPROT",
+   "in_list_view": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "operation",
+   "fieldtype": "Data",
+   "label": "Operation",
+   "length": 40,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "document",
+   "fieldtype": "Data",
+   "label": "CPF or CNPJ",
+   "length": 14,
+   "search_index": 1,
+   "in_standard_filter": 1
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Success\nNot Found\nError",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "result_code",
+   "fieldtype": "Data",
+   "label": "Result code",
+   "length": 40
+  },
+  {
+   "fieldname": "protocol",
+   "fieldtype": "Data",
+   "label": "Protocol",
+   "length": 80
+  },
+  {
+   "fieldname": "column_main",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "reference_doctype",
+   "fieldtype": "Link",
+   "label": "Reference type",
+   "options": "DocType"
+  },
+  {
+   "fieldname": "reference_name",
+   "fieldtype": "Dynamic Link",
+   "label": "Reference",
+   "options": "reference_doctype"
+  },
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "label": "Asked by",
+   "options": "User",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "purpose",
+   "fieldtype": "Data",
+   "label": "LGPD purpose",
+   "length": 80
+  },
+  {
+   "fieldname": "http_status",
+   "fieldtype": "Int",
+   "label": "HTTP status"
+  },
+  {
+   "fieldname": "section_response",
+   "fieldtype": "Section Break",
+   "label": "Response",
+   "collapsible": 1
+  },
+  {
+   "fieldname": "error",
+   "fieldtype": "Small Text",
+   "label": "Error"
+  },
+  {
+   "fieldname": "response",
+   "fieldtype": "Long Text",
+   "label": "Response"
+  }
+ ],
+ "in_create": 1,
+ "links": [],
+ "modified": "2026-10-30 09:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Cred Hub",
+ "name": "Cred Hub Bureau Query",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "read": 1,
+   "report": 1,
+   "export": 1,
+   "role": "System Manager"
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

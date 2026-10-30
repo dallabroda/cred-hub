@@ -44,6 +44,9 @@ TRIAL_DAYS = 14
 # Avisos do fim do teste: dias antes do último dia (0 = no último dia)
 TRIAL_REMINDER_DAYS = (3, 0)
 PLAN = "Cred Hub Plan"
+WALLET = "Cred Hub Credit Wallet"
+# Recarga mínima de créditos de bureaus Premium (mesmo piso do Asaas que MIN_CHARGE, decisão do dono 30/10/2026)
+MIN_CREDIT_TOPUP = 10
 UNLIMITED = 1_000_000
 # Menor cobrança avulsa aceita pelo Asaas no cartão; diferença menor não é cobrada (entra na próxima fatura)
 MIN_CHARGE = 5
@@ -70,11 +73,19 @@ class UserLimitError(frappe.ValidationError):
 	"""Sem vaga no plano para mais um usuário (exc_type na resposta da API)."""
 
 
+class InsufficientCreditsError(frappe.ValidationError):
+	"""Saldo de créditos insuficiente pra pagar um bureau Premium (exc_type na resposta da API)."""
+
+
 # Plano e uso
 
 
 def _plan():
 	return frappe.get_single(PLAN)
+
+
+def _wallet():
+	return frappe.get_single(WALLET)
 
 
 def billing_enabled():
@@ -509,6 +520,141 @@ def _save_plan(plan, **values):
 	plan.save()
 
 
+# Créditos de bureaus Premium (Boa Vista, Dossiê QUOD, SCR Bacen — credtech#302)
+#
+# Diferente do plano de usuários: aqui a CredTech paga a DirectD na hora (conta própria da
+# plataforma, não a de cada cliente) e revende com margem fixa. Por isso precisa de saldo
+# pré-pago: sem créditos, o bureau Premium não é chamado (nunca deixa a CredTech pagar sem
+# receber). Reusa os mesmos helpers de Asaas do plano de usuários (_asaas, _create_customer,
+# _clean_payer) — mesma conta, outro tipo de cobrança (pagamento avulso, não assinatura).
+
+
+@frappe.whitelist(methods=["GET"])
+def get_credit_wallet():
+	"""Saldo atual e recargas recentes, para a tela de Análise de Crédito da Organização."""
+	frappe.only_for(["System Manager", "Sales Manager"])
+	wallet = _wallet()
+	recent_topups = frappe.get_all(
+		"Cred Hub Credit Topup",
+		fields=["name", "amount", "status", "invoice_url", "requested_on"],
+		order_by="creation desc",
+		limit_page_length=10,
+	)
+	return {
+		"balance": wallet.balance or 0,
+		"total_topped_up": wallet.total_topped_up or 0,
+		"total_spent": wallet.total_spent or 0,
+		"needs_payer": not wallet.asaas_customer_id,
+		"payer": {"name": wallet.payer_name, "email": wallet.payer_email} if wallet.asaas_customer_id else None,
+		"recent_topups": recent_topups,
+		"min_topup": MIN_CREDIT_TOPUP,
+	}
+
+
+@frappe.whitelist(methods=["POST"])
+def request_credit_topup(amount, payer=None):
+	"""Pede uma recarga de créditos: cria um pagamento avulso no Asaas e devolve o link da fatura.
+	O saldo só entra quando o webhook confirmar o pagamento (apply_asaas_event)."""
+	frappe.only_for(["System Manager", "Sales Manager"])
+	if not billing_enabled():
+		frappe.throw(_("Billing is not available right now. Please try again later."))
+	amount = float(amount or 0)
+	if amount < MIN_CREDIT_TOPUP:
+		return _field_error("amount", _("Minimum top-up is R$ {0}.").format(MIN_CREDIT_TOPUP))
+
+	wallet = _wallet()
+	clean = None
+	if not wallet.asaas_customer_id:
+		# Reusa o cliente do plano de usuários se já existir (mesma empresa, mesmo pagador)
+		plan = _plan()
+		if plan.asaas_customer_id:
+			wallet.asaas_customer_id = plan.asaas_customer_id
+			wallet.payer_name = plan.payer_name
+			wallet.payer_email = plan.payer_email
+		else:
+			clean, error = _clean_payer(payer)
+			if error:
+				return error
+			wallet.asaas_customer_id = _create_customer(clean)
+			wallet.payer_name = clean["name"]
+			wallet.payer_email = clean["email"]
+		wallet.flags.ignore_permissions = True
+		wallet.save()
+
+	due = add_days(getdate(), 3)
+	payment = _asaas(
+		"POST",
+		"/payments",
+		{
+			"customer": wallet.asaas_customer_id,
+			"billingType": "CREDIT_CARD",
+			"value": amount,
+			"dueDate": str(due),
+			"description": f"HubTech CRM - Créditos de bureaus Premium (R$ {amount:.2f}) - {frappe.local.site}",
+			"externalReference": frappe.local.site,
+		},
+	)
+	frappe.get_doc({
+		"doctype": "Cred Hub Credit Topup",
+		"amount": amount,
+		"status": "Pending",
+		"asaas_payment_id": payment["id"],
+		"invoice_url": payment.get("invoiceUrl"),
+		"requested_by": frappe.session.user,
+		"requested_on": now_datetime(),
+	}).insert(ignore_permissions=True)
+	return {"ok": True, "invoice_url": payment.get("invoiceUrl")}
+
+
+def _apply_credit_topup(event, payment_id):
+	"""Confirmação de uma recarga: credita a carteira. Chamado de apply_asaas_event quando o
+	payment_id bate com um 'Cred Hub Credit Topup' pendente (nunca com o de um aumento de plano)."""
+	if event not in ("PAYMENT_CONFIRMED", "PAYMENT_RECEIVED"):
+		return False
+	topup_name = frappe.db.get_value(
+		"Cred Hub Credit Topup", {"asaas_payment_id": payment_id, "status": "Pending"}
+	)
+	if not topup_name:
+		return False
+	payment = _asaas("GET", f"/payments/{payment_id}")
+	if payment.get("status") not in CONFIRMED:
+		return False
+	topup = frappe.get_doc("Cred Hub Credit Topup", topup_name)
+	topup.status = "Paid"
+	topup.flags.ignore_permissions = True
+	topup.save()
+	wallet = _wallet()
+	wallet.balance = (wallet.balance or 0) + topup.amount
+	wallet.total_topped_up = (wallet.total_topped_up or 0) + topup.amount
+	wallet.flags.ignore_permissions = True
+	wallet.save()
+	frappe.db.commit()
+	return True
+
+
+def wallet_balance() -> float:
+	"""Saldo atual da carteira de créditos (consulta rápida, sem debitar)."""
+	return _wallet().balance or 0
+
+
+def spend_credits(amount: float, description: str = "") -> None:
+	"""Debita `amount` da carteira pra pagar um bureau Premium. Levanta InsufficientCreditsError
+	sem debitar nada se o saldo não cobrir — nunca deixa a carteira negativa."""
+	wallet = _wallet()
+	balance = wallet.balance or 0
+	if balance < amount:
+		frappe.throw(
+			_("Insufficient credits: balance is R$ {0}, this costs R$ {1}. Add credits to continue.").format(
+				f"{balance:.2f}", f"{amount:.2f}"
+			),
+			InsufficientCreditsError,
+		)
+	wallet.balance = balance - amount
+	wallet.total_spent = (wallet.total_spent or 0) + amount
+	wallet.flags.ignore_permissions = True
+	wallet.save()
+
+
 # Pausar e reativar
 
 
@@ -680,6 +826,11 @@ def apply_asaas_event(event, payment_id=None, subscription_id=None):
 	"""No site da empresa. Não confia no conteúdo do webhook: confere pagamento e assinatura na API do Asaas."""
 	plan = _plan()
 	if not subscription_id:
+		# Pagamento avulso: ou é a diferença de um aumento de plano, ou uma recarga de créditos de
+		# bureaus Premium — nunca os dois. Tenta recarga primeiro (só bate se o payment_id for de um
+		# 'Cred Hub Credit Topup' pendente); senão, segue o caminho de aumento de plano de sempre.
+		if payment_id != plan.upgrade_payment_id and _apply_credit_topup(event, payment_id):
+			return
 		_apply_upgrade_payment(plan, event, payment_id)
 		return
 	if plan.asaas_subscription_id != subscription_id:

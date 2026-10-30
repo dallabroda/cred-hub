@@ -1,0 +1,83 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-10-30 23:30:00.000000",
+ "description": "Uma tentativa de recarga de créditos (um pagamento avulso no Asaas). O webhook credita a carteira quando o pagamento é confirmado.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "amount",
+  "status",
+  "asaas_payment_id",
+  "invoice_url",
+  "requested_by",
+  "requested_on"
+ ],
+ "fields": [
+  {
+   "fieldname": "amount",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Valor (R$)",
+   "read_only": 1
+  },
+  {
+   "default": "Pending",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Pending\nPaid\nExpired",
+   "read_only": 1
+  },
+  {
+   "fieldname": "asaas_payment_id",
+   "fieldtype": "Data",
+   "label": "ID do Pagamento no Asaas",
+   "read_only": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "invoice_url",
+   "fieldtype": "Data",
+   "label": "Link da Fatura",
+   "read_only": 1
+  },
+  {
+   "fieldname": "requested_by",
+   "fieldtype": "Link",
+   "label": "Solicitado por",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "requested_on",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Solicitado em",
+   "read_only": 1
+  }
+ ],
+ "in_create": 0,
+ "links": [],
+ "modified": "2026-10-30 23:30:00.000000",
+ "modified_by": "Administrator",
+ "module": "Cred Hub",
+ "name": "Cred Hub Credit Topup",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "role": "System Manager"
+  },
+  {
+   "read": 1,
+   "role": "Sales Manager"
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}
