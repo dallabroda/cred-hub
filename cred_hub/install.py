@@ -12,6 +12,8 @@ from cred_hub.cnpj.fields import CHECKED_DATE_FIELDS, DETAILS_ADDRESS_FIELDS, DO
 from cred_hub.cnpj.sectors import SECTORS
 from cred_hub.company.fields import COMPANY_SECTION, company_custom_fields
 from cred_hub.email_company.apply import install as install_email_company
+from cred_hub.integrations.fields import CONTACT_PANEL_FIELDS
+from cred_hub.integrations.fields import custom_fields as integration_custom_fields
 
 CNPJ_SECTION = "cred_hub_cnpj_section"
 CNPJ_SECTION_LABEL = "Company Registry (CNPJ)"
@@ -106,6 +108,11 @@ def after_install():
 		for kind in ("Side Panel", "Quick Entry", "Data Fields"):
 			remove_from_layout(f"{doctype}-{kind}", HIDDEN_FIELDS)
 	add_quick_entry_cnpj("CRM Organization", after="organization_name")
+	# Bureaus (credtech#290): dados da Assertiva no Contato e campos de protesto (CENPROT) no Card
+	create_custom_fields(integration_custom_fields(), update=True)
+	add_side_panel_section(
+		"Contact", name="cred_hub_localize_section", label="Localize (Assertiva)", fields=CONTACT_PANEL_FIELDS
+	)
 	# Conexão do Cred Chat feita antes do painel na conversa (credtech#45): instala em segundo plano
 	try:
 		install_chat_panel()

@@ -1,0 +1,330 @@
+{
+ "actions": [],
+ "creation": "2026-10-30 09:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "description": "Credentials and options of the Assertiva Localize and CENPROT integrations (credtech#290). Only admins.",
+ "field_order": [
+  "assertiva_section",
+  "assertiva_enabled",
+  "assertiva_client_id",
+  "assertiva_client_secret",
+  "assertiva_column",
+  "assertiva_purpose",
+  "assertiva_partner_lookup",
+  "assertiva_cache_days",
+  "cenprot_section",
+  "cenprot_enabled",
+  "cenprot_environment",
+  "cenprot_username",
+  "cenprot_password",
+  "cenprot_column",
+  "cenprot_presenter_code",
+  "cenprot_bearer_code",
+  "cenprot_bearer_name",
+  "creditor_section",
+  "creditor_name",
+  "creditor_document",
+  "creditor_address",
+  "creditor_number",
+  "creditor_complement",
+  "creditor_column",
+  "creditor_district",
+  "creditor_city",
+  "creditor_state",
+  "creditor_zip",
+  "title_defaults_section",
+  "default_species",
+  "default_endorsement",
+  "titles_accepted",
+  "collection_section",
+  "collection_pipeline",
+  "auto_send_on_stage",
+  "stage_send",
+  "stage_at_registry",
+  "stage_notified",
+  "collection_column",
+  "stage_protested",
+  "stage_paid",
+  "stage_agreement"
+ ],
+ "fields": [
+  {
+   "fieldname": "assertiva_section",
+   "fieldtype": "Section Break",
+   "label": "Assertiva Localize"
+  },
+  {
+   "fieldname": "assertiva_enabled",
+   "fieldtype": "Check",
+   "label": "Enable Assertiva Localize",
+   "description": "Find the partners of an organization with phones (WhatsApp) and e-mails. Each query is paid to Assertiva by your company."
+  },
+  {
+   "fieldname": "assertiva_client_id",
+   "fieldtype": "Data",
+   "label": "Assertiva Client ID",
+   "depends_on": "eval:doc.assertiva_enabled",
+   "mandatory_depends_on": "eval:doc.assertiva_enabled"
+  },
+  {
+   "fieldname": "assertiva_client_secret",
+   "fieldtype": "Password",
+   "label": "Assertiva Client Secret",
+   "depends_on": "eval:doc.assertiva_enabled",
+   "mandatory_depends_on": "eval:doc.assertiva_enabled"
+  },
+  {
+   "fieldname": "assertiva_column",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "assertiva_purpose",
+   "fieldtype": "Select",
+   "label": "LGPD purpose of the queries",
+   "options": "Credit protection and collection\nIdentity confirmation and fraud prevention",
+   "default": "Credit protection and collection",
+   "depends_on": "eval:doc.assertiva_enabled"
+  },
+  {
+   "fieldname": "assertiva_partner_lookup",
+   "fieldtype": "Check",
+   "label": "Also look up each partner's phones and e-mails",
+   "default": "1",
+   "depends_on": "eval:doc.assertiva_enabled",
+   "description": "One more paid query per partner."
+  },
+  {
+   "fieldname": "assertiva_cache_days",
+   "fieldtype": "Int",
+   "label": "Reuse a query for (days)",
+   "default": "30",
+   "non_negative": 1,
+   "depends_on": "eval:doc.assertiva_enabled",
+   "description": "Within this period the saved result is used at no cost, unless someone asks for a new paid query."
+  },
+  {
+   "fieldname": "cenprot_section",
+   "fieldtype": "Section Break",
+   "label": "CENPROT (protest at the registry)"
+  },
+  {
+   "fieldname": "cenprot_enabled",
+   "fieldtype": "Check",
+   "label": "Enable CENPROT",
+   "description": "Send overdue titles of the collection pipeline to protest and follow them at the registry. Your company's own IEPTB contract."
+  },
+  {
+   "fieldname": "cenprot_environment",
+   "fieldtype": "Select",
+   "label": "CENPROT environment",
+   "options": "Homologation\nProduction",
+   "default": "Homologation",
+   "depends_on": "eval:doc.cenprot_enabled"
+  },
+  {
+   "fieldname": "cenprot_username",
+   "fieldtype": "Data",
+   "label": "CENPROT username",
+   "depends_on": "eval:doc.cenprot_enabled",
+   "mandatory_depends_on": "eval:doc.cenprot_enabled"
+  },
+  {
+   "fieldname": "cenprot_password",
+   "fieldtype": "Password",
+   "label": "CENPROT password",
+   "depends_on": "eval:doc.cenprot_enabled",
+   "mandatory_depends_on": "eval:doc.cenprot_enabled"
+  },
+  {
+   "fieldname": "cenprot_column",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "cenprot_presenter_code",
+   "fieldtype": "Data",
+   "label": "Presenter code",
+   "depends_on": "eval:doc.cenprot_enabled",
+   "description": "Only when IEPTB gave one (tag apresentante)."
+  },
+  {
+   "fieldname": "cenprot_bearer_code",
+   "fieldtype": "Data",
+   "label": "Bearer code",
+   "depends_on": "eval:doc.cenprot_enabled",
+   "description": "Only when IEPTB gave one (tag codPortador)."
+  },
+  {
+   "fieldname": "cenprot_bearer_name",
+   "fieldtype": "Data",
+   "label": "Bearer name",
+   "depends_on": "eval:doc.cenprot_enabled"
+  },
+  {
+   "fieldname": "creditor_section",
+   "fieldtype": "Section Break",
+   "label": "Creditor (who protests)",
+   "depends_on": "eval:doc.cenprot_enabled"
+  },
+  {
+   "fieldname": "creditor_name",
+   "fieldtype": "Data",
+   "label": "Creditor name",
+   "mandatory_depends_on": "eval:doc.cenprot_enabled"
+  },
+  {
+   "fieldname": "creditor_document",
+   "fieldtype": "Data",
+   "label": "Creditor CPF or CNPJ",
+   "mandatory_depends_on": "eval:doc.cenprot_enabled"
+  },
+  {
+   "fieldname": "creditor_address",
+   "fieldtype": "Data",
+   "label": "Creditor street",
+   "mandatory_depends_on": "eval:doc.cenprot_enabled"
+  },
+  {
+   "fieldname": "creditor_number",
+   "fieldtype": "Data",
+   "label": "Creditor number"
+  },
+  {
+   "fieldname": "creditor_complement",
+   "fieldtype": "Data",
+   "label": "Creditor complement"
+  },
+  {
+   "fieldname": "creditor_column",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "creditor_district",
+   "fieldtype": "Data",
+   "label": "Creditor neighborhood",
+   "mandatory_depends_on": "eval:doc.cenprot_enabled"
+  },
+  {
+   "fieldname": "creditor_city",
+   "fieldtype": "Data",
+   "label": "Creditor city",
+   "mandatory_depends_on": "eval:doc.cenprot_enabled"
+  },
+  {
+   "fieldname": "creditor_state",
+   "fieldtype": "Data",
+   "label": "Creditor state (UF)",
+   "length": 2,
+   "mandatory_depends_on": "eval:doc.cenprot_enabled"
+  },
+  {
+   "fieldname": "creditor_zip",
+   "fieldtype": "Data",
+   "label": "Creditor ZIP code (CEP)",
+   "mandatory_depends_on": "eval:doc.cenprot_enabled"
+  },
+  {
+   "fieldname": "title_defaults_section",
+   "fieldtype": "Section Break",
+   "label": "Title defaults",
+   "depends_on": "eval:doc.cenprot_enabled"
+  },
+  {
+   "fieldname": "default_species",
+   "fieldtype": "Select",
+   "label": "Default title type",
+   "options": "DMI\nDSI\nCBI\nCCB\nDM\nDS\nNP\nCH\nCD\nCPS\nCA\nCL\nCM\nTA\nDD",
+   "default": "DMI"
+  },
+  {
+   "fieldname": "default_endorsement",
+   "fieldtype": "Select",
+   "label": "Endorsement",
+   "options": "\nMandate endorsement\nTransfer endorsement\nBlank endorsement"
+  },
+  {
+   "fieldname": "titles_accepted",
+   "fieldtype": "Check",
+   "label": "Titles have the debtor's acceptance"
+  },
+  {
+   "fieldname": "collection_section",
+   "fieldtype": "Section Break",
+   "label": "Collection pipeline",
+   "depends_on": "eval:doc.cenprot_enabled"
+  },
+  {
+   "fieldname": "collection_pipeline",
+   "fieldtype": "Link",
+   "label": "Collection pipeline",
+   "options": "CRM Pipeline",
+   "description": "Created when CENPROT is enabled."
+  },
+  {
+   "fieldname": "auto_send_on_stage",
+   "fieldtype": "Check",
+   "label": "Send to the registry when a card enters the send stage",
+   "default": "1"
+  },
+  {
+   "fieldname": "stage_send",
+   "fieldtype": "Link",
+   "label": "Send to the registry stage",
+   "options": "CRM Deal Status"
+  },
+  {
+   "fieldname": "stage_at_registry",
+   "fieldtype": "Link",
+   "label": "At the registry stage",
+   "options": "CRM Deal Status"
+  },
+  {
+   "fieldname": "stage_notified",
+   "fieldtype": "Link",
+   "label": "Notified by the registry stage",
+   "options": "CRM Deal Status"
+  },
+  {
+   "fieldname": "collection_column",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "stage_protested",
+   "fieldtype": "Link",
+   "label": "Protested stage",
+   "options": "CRM Deal Status"
+  },
+  {
+   "fieldname": "stage_paid",
+   "fieldtype": "Link",
+   "label": "Paid at the registry stage",
+   "options": "CRM Deal Status"
+  },
+  {
+   "fieldname": "stage_agreement",
+   "fieldtype": "Link",
+   "label": "Agreement or withdrawn stage",
+   "options": "CRM Deal Status",
+   "description": "Moving a card here asks the registry to withdraw or cancel the protest."
+  }
+ ],
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-10-30 09:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Cred Hub",
+ "name": "Cred Hub Provider Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "read": 1,
+   "write": 1,
+   "role": "System Manager"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

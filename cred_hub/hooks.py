@@ -19,6 +19,8 @@ scheduler_events = {
 		"cred_hub.billing.daily_check",
 		"cred_hub.api_keys.delete_old_logs",
 	],
+	# Status dos títulos em protesto no cartório (CENPROT, credtech#290)
+	"daily_long": ["cred_hub.integrations.protest.sync_all"],
 	# Rede de segurança dos leads da Meta: o que o webhook não trouxe (credtech#51)
 	"cron": {"*/10 * * * *": ["cred_hub.meta_leads.catch_up"]},
 }
@@ -53,6 +55,8 @@ doc_events = {
 	# Card criado de um lead com CNPJ: o CNPJ vai para a Organização do card (épico #66)
 	"CRM Deal": {
 		"after_insert": "cred_hub.cnpj.card.after_insert",
+		# Funil de Cobrança: entrar na etapa de envio ou de acordo age no cartório (CENPROT, credtech#290)
+		"on_update": "cred_hub.integrations.protest.on_deal_update",
 	},
 	"CRM Lead": {
 		# Empresa pelo domínio do e-mail (credtech#183): em fila, nunca atrasa a entrada do lead
