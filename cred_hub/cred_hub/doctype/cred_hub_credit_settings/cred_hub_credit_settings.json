@@ -24,7 +24,8 @@
   "block_on_protest",
   "section_bureaus_finais",
   "serasa_enabled",
-  "assertiva_enabled"
+  "serasa_endpoint_url",
+  "serasa_token"
  ],
  "fields": [
   {
@@ -135,10 +136,17 @@
    "label": "Habilitar Serasa Experian (Relato PJ)"
   },
   {
-   "default": "0",
-   "fieldname": "assertiva_enabled",
-   "fieldtype": "Check",
-   "label": "Habilitar Assertiva Localize"
+   "depends_on": "eval:doc.serasa_enabled",
+   "description": "Endpoint do contrato do próprio cliente com o Serasa Experian. Sem isso, a consulta ao Serasa falha explicitamente (nunca finge sucesso).",
+   "fieldname": "serasa_endpoint_url",
+   "fieldtype": "Data",
+   "label": "Endpoint Serasa Relato PJ (contrato do cliente)"
+  },
+  {
+   "depends_on": "eval:doc.serasa_enabled",
+   "fieldname": "serasa_token",
+   "fieldtype": "Password",
+   "label": "Token de Acesso Serasa (contrato do cliente)"
   }
  ],
  "issingle": 1,

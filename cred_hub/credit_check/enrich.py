@@ -1,24 +1,28 @@
 """Worker e orquestrador de segundo plano da esteira de crédito e compliance.
 
-Executa consultas assíncronas no Escavador e Infosimples, aplica regras de corte,
-grava o DocType 'Cred Hub Credit Report', atualiza a Organização e o Card, e posta
-o resumo na linha do tempo.
+Executa consultas assíncronas nos provedores habilitados (Escavador, Infosimples e outros
+que venham a ser plugados — ver `_build_providers`), aplica regras de corte, grava o DocType
+'Cred Hub Credit Report', atualiza a Organização e o Card, e posta o resumo na linha do tempo.
+
+Regra de segurança (fail-closed): se um provedor habilitado estiver sem credencial ou a
+chamada falhar, o parecer final é sempre 'Error' — nunca 'Pre-Approved' por omissão de dado.
 """
 
 from __future__ import annotations
 
 import json
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, Callable
 
 import frappe
 from frappe import _
-from frappe.utils import add_days, getdate, today
+from frappe.utils import add_days, today
 
 from cred_hub.cnpj.mapping import format_cnpj, is_valid_cnpj, only_digits
 from cred_hub.credit_check.clients.escavador import fetch_lawsuits
 from cred_hub.credit_check.clients.infosimples import fetch_fiscal_and_protests
 from cred_hub.credit_check.rules import (
-	VERDICT_REJECTED,
+	VERDICT_ERROR,
 	evaluate_credit_risk,
 	format_timeline_summary,
 )
@@ -26,6 +30,30 @@ from cred_hub.credit_check.rules import (
 CACHE_DAYS = 30
 ESCAVADOR_ESTIMATED_COST = 0.50
 INFOSIMPLES_ESTIMATED_COST = 0.70
+
+EMPTY_ESCAVADOR_DATA = {"total_count": 0, "defendant_count": 0, "highest_value": 0.0, "has_bankruptcy_recovery": False}
+EMPTY_INFOSIMPLES_DATA = {
+	"pgfn": {"total_debt": 0.0, "status": "Regular", "inscriptions_count": 0},
+	"cnd_federal": {"is_regular": True, "status": "Regular", "pdf_url": ""},
+	"cndt": {"is_regular": True, "status": "Regular", "pdf_url": ""},
+	"cenprot": {"has_protests": False, "protests_count": 0},
+}
+
+
+@dataclass
+class ProviderCheck:
+	"""Um provedor plugável da esteira (Escavador, Infosimples e futuros — Assertiva/CENPROT/Serasa
+	real quando entrarem no épico #290). Cada provedor é independente: habilitar um não exige os
+	outros, e a falha de um nunca é mascarada pelos demais."""
+
+	key: str
+	label: str
+	enabled: bool
+	token: str
+	fetch: Callable[[str, str], dict[str, Any]]
+	empty_result: dict[str, Any]
+	estimated_cost: float
+	data_slot: str  # onde o resultado entra no dicionário consolidado
 
 
 def get_credit_settings() -> dict[str, Any]:
@@ -49,6 +77,34 @@ def get_credit_settings() -> dict[str, Any]:
 		"block_on_cndt": bool(doc.get("block_on_cndt", 1)),
 		"block_on_protest": bool(doc.get("block_on_protest", 1)),
 	}
+
+
+def _build_providers(settings: dict[str, Any]) -> list[ProviderCheck]:
+	"""Monta a lista de provedores habilitados nesta empresa. Adicionar um novo provedor
+	(ex.: Serasa automático, CENPROT direto) é só acrescentar um `ProviderCheck` aqui — o
+	orquestrador abaixo trata todos de forma genérica e sem fail-open."""
+	return [
+		ProviderCheck(
+			key="escavador",
+			label="Escavador",
+			enabled=bool(settings.get("escavador_enabled")),
+			token=settings.get("escavador_token") or "",
+			fetch=fetch_lawsuits,
+			empty_result=EMPTY_ESCAVADOR_DATA,
+			estimated_cost=ESCAVADOR_ESTIMATED_COST,
+			data_slot="escavador",
+		),
+		ProviderCheck(
+			key="infosimples",
+			label="Infosimples",
+			enabled=bool(settings.get("infosimples_enabled")),
+			token=settings.get("infosimples_token") or "",
+			fetch=fetch_fiscal_and_protests,
+			empty_result=EMPTY_INFOSIMPLES_DATA,
+			estimated_cost=INFOSIMPLES_ESTIMATED_COST,
+			data_slot="infosimples",
+		),
+	]
 
 
 def find_valid_cached_report(org_name: str) -> str | None:
@@ -96,51 +152,60 @@ def run_background_check(
 	if not is_valid_cnpj(cnpj):
 		return None
 
-	# Conferência de cache (30 dias)
+	# Conferência de cache (30 dias) — nunca reaproveita um relatório 'Error'
 	if not force:
 		cached_report_name = find_valid_cached_report(org_doc.name)
 		if cached_report_name:
 			_apply_report_to_deal_and_org(cached_report_name, org_doc, deal_doc, is_cached=True)
 			return cached_report_name
 
-	# Chamada às APIs externas
-	escavador_token = settings.get("escavador_token")
-	infosimples_token = settings.get("infosimples_token")
+	# Chamada aos provedores externos habilitados — cada um isolado, sem fail-open
+	providers = _build_providers(settings)
+	enabled_providers = [p for p in providers if p.enabled]
 
-	escavador_data = {"total_count": 0, "defendant_count": 0, "highest_value": 0.0, "has_bankruptcy_recovery": False}
-	infosimples_data = {
-		"pgfn": {"total_debt": 0.0, "status": "Regular", "inscriptions_count": 0},
-		"cnd_federal": {"is_regular": True, "status": "Regular", "pdf_url": ""},
-		"cndt": {"is_regular": True, "status": "Regular", "pdf_url": ""},
-		"cenprot": {"has_protests": False, "protests_count": 0},
-	}
+	results: dict[str, Any] = {p.data_slot: p.empty_result for p in providers}
+	failures: list[str] = []
 	total_cost = 0.0
 
-	# 1. Escavador
-	if settings.get("escavador_enabled") and escavador_token:
-		try:
-			escavador_data = fetch_lawsuits(digits, escavador_token)
-			total_cost += ESCAVADOR_ESTIMATED_COST
-		except Exception as e:
-			frappe.log_error(title=f"Cred Hub: Escavador API falhou para CNPJ {cnpj}", message=str(e))
+	if not enabled_providers:
+		failures.append(_("no provider is enabled in Credit & Legal Bureaus settings"))
+	else:
+		for provider in enabled_providers:
+			if not provider.token.strip():
+				failures.append(_("{0}: no API token configured").format(provider.label))
+				continue
+			try:
+				results[provider.data_slot] = provider.fetch(digits, provider.token)
+				total_cost += provider.estimated_cost
+			except Exception as e:
+				frappe.log_error(
+					title=f"Cred Hub: {provider.label} API falhou para CNPJ {cnpj}",
+					message=str(e),
+				)
+				failures.append(_("{0}: query failed ({1})").format(provider.label, str(e)[:150]))
 
-	# 2. Infosimples
-	if settings.get("infosimples_enabled") and infosimples_token:
-		try:
-			infosimples_data = fetch_fiscal_and_protests(digits, infosimples_token)
-			total_cost += INFOSIMPLES_ESTIMATED_COST
-		except Exception as e:
-			frappe.log_error(title=f"Cred Hub: Infosimples API falhou para CNPJ {cnpj}", message=str(e))
-
-	# 3. Avaliação de Risco
-	evaluation = evaluate_credit_risk(escavador_data, infosimples_data, settings)
-	verdict = evaluation.get("verdict") or "Error"
+	# Avaliação de risco — qualquer falha num provedor habilitado força o parecer 'Error'
+	evaluation = evaluate_credit_risk(
+		results["escavador"],
+		results["infosimples"],
+		settings,
+		provider_failures=failures,
+	)
+	verdict = evaluation.get("verdict") or VERDICT_ERROR
 	summary = evaluation.get("summary") or ""
 	metrics = evaluation.get("metrics") or {}
 
-	# 4. Gravação do DocType 'Cred Hub Credit Report'
+	# Gravação do DocType 'Cred Hub Credit Report'
 	today_date = today()
-	valid_until_date = add_days(today_date, CACHE_DAYS)
+	# Um parecer 'Error' nunca fica em cache: a próxima tentativa deve consultar de novo
+	valid_until_date = today_date if verdict == VERDICT_ERROR else add_days(today_date, CACHE_DAYS)
+
+	if verdict == VERDICT_ERROR:
+		pgfn_status = "Não verificado"
+	elif (metrics.get("pgfn_debt") or 0.0) > 0:
+		pgfn_status = "Inscrito na Dívida Ativa"
+	else:
+		pgfn_status = "Regular"
 
 	report_doc = frappe.get_doc({
 		"doctype": "Cred Hub Credit Report",
@@ -151,24 +216,27 @@ def run_background_check(
 		"valid_until": valid_until_date,
 		"verdict": verdict,
 		"verdict_summary": summary,
-		"lawsuits_total": metrics.get("lawsuits_total", 0),
-		"lawsuits_defendant": metrics.get("lawsuits_defendant", 0),
-		"lawsuits_highest_value": metrics.get("lawsuits_highest_value", 0.0),
+		"lawsuits_total": metrics.get("lawsuits_total") or 0,
+		"lawsuits_defendant": metrics.get("lawsuits_defendant") or 0,
+		"lawsuits_highest_value": metrics.get("lawsuits_highest_value") or 0.0,
 		"has_bankruptcy_recovery": 1 if metrics.get("has_bankruptcy") else 0,
-		"pgfn_status": metrics.get("pgfn_debt", 0.0) > 0 and "Inscrito na Dívida Ativa" or "Regular",
-		"pgfn_total_debt": metrics.get("pgfn_debt", 0.0),
+		"pgfn_status": pgfn_status,
+		"pgfn_total_debt": metrics.get("pgfn_debt") or 0.0,
 		"cnd_federal_status": metrics.get("cnd_federal_status", "Regular"),
 		"cnd_federal_pdf_url": metrics.get("cnd_federal_pdf", ""),
 		"cndt_status": metrics.get("cndt_status", "Regular"),
 		"cndt_pdf_url": metrics.get("cndt_pdf", ""),
 		"cenprot_has_protests": 1 if metrics.get("cenprot_has_protest") else 0,
-		"cenprot_protests_count": metrics.get("cenprot_protests_count", 0),
+		"cenprot_protests_count": metrics.get("cenprot_protests_count") or 0,
 		"total_cost": total_cost,
-		"raw_details_json": json.dumps({"escavador": escavador_data, "infosimples": infosimples_data}, ensure_ascii=False),
+		"raw_details_json": json.dumps(
+			{"escavador": results["escavador"], "infosimples": results["infosimples"], "failures": failures},
+			ensure_ascii=False,
+		),
 	})
 	report_doc.insert(ignore_permissions=True)
 
-	# 5. Atualização da Organização e Deal + Comentários na timeline
+	# Atualização da Organização e Deal + Comentários na timeline
 	_apply_report_to_deal_and_org(report_doc.name, org_doc, deal_doc, is_cached=False, evaluation=evaluation)
 
 	return report_doc.name
@@ -201,7 +269,7 @@ def _apply_report_to_deal_and_org(
 		elif is_cached:
 			deal_doc.add_comment(
 				"Comment",
-				_("Relatório de conformidade reaproveitado do cache (consultado em {0}, válido até {1}): parecer {2}.").format(
+				_("Compliance report reused from cache (checked on {0}, valid until {1}): verdict {2}.").format(
 					report.checked_on, report.valid_until, verdict
 				),
 			)

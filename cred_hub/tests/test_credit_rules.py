@@ -3,8 +3,14 @@
 import pytest
 
 from cred_hub.credit_check.clients.escavador import parse_escavador_payload
-from cred_hub.credit_check.clients.serasa import BureauGateBlocked, assert_pre_approved_for_bureau
+from cred_hub.credit_check.clients.serasa import (
+	BureauGateBlocked,
+	SerasaNotConfigured,
+	assert_pre_approved_for_bureau,
+	trigger_serasa_relato,
+)
 from cred_hub.credit_check.rules import (
+	VERDICT_ERROR,
 	VERDICT_PRE_APPROVED,
 	VERDICT_REJECTED,
 	VERDICT_WARNING,
@@ -121,6 +127,41 @@ def test_evaluate_credit_risk_rejected_by_protests():
 	eval_res = evaluate_credit_risk(escavador, infosimples)
 	assert eval_res["verdict"] == VERDICT_REJECTED
 	assert any("protestado" in r for r in eval_res["reasons"])
+
+
+def test_evaluate_credit_risk_never_fails_open_on_provider_failure():
+	"""Mesmo com dados 'limpos', uma falha de provedor nunca pode virar Pre-Approved (credtech#302)."""
+	clean_escavador = {"total_count": 0, "defendant_count": 0, "highest_value": 0.0, "has_bankruptcy_recovery": False}
+	clean_infosimples = {
+		"pgfn": {"total_debt": 0.0, "inscriptions_count": 0},
+		"cndt": {"is_regular": True},
+		"cenprot": {"has_protests": False},
+	}
+	eval_res = evaluate_credit_risk(
+		clean_escavador,
+		clean_infosimples,
+		provider_failures=["Escavador: query failed (timeout)"],
+	)
+	assert eval_res["verdict"] == VERDICT_ERROR
+	assert eval_res["verdict"] != VERDICT_PRE_APPROVED
+
+
+def test_format_timeline_summary_for_error_verdict():
+	evaluation = {
+		"verdict": VERDICT_ERROR,
+		"reasons": ["Falha na consulta: Escavador: query failed (timeout)"],
+		"warnings": [],
+		"metrics": {},
+	}
+	text = format_timeline_summary(evaluation, "12.345.678/0001-99")
+	assert "Não verificado" in text
+	assert "Aprovado" not in text
+
+
+def test_trigger_serasa_relato_requires_real_credentials():
+	"""Sem endpoint/token do contrato do cliente, nunca finge sucesso (credtech#302)."""
+	with pytest.raises(SerasaNotConfigured):
+		trigger_serasa_relato("12345678000199", "user@example.com", "Pre-Approved")
 
 
 def test_bureau_gate_blocking():

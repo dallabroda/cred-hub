@@ -12,14 +12,42 @@ from typing import Any
 VERDICT_PRE_APPROVED = "Pre-Approved"  # Aprovado para Birô / Sem restrições graves
 VERDICT_WARNING = "Warning"            # Atenção: Pequenas pendências dentro da tolerância
 VERDICT_REJECTED = "Rejected"          # Reprovado no Pré-Filtro (falência, execuções, protestos)
+VERDICT_ERROR = "Error"                # Não verificado: um provedor habilitado falhou ou está sem credencial
 
 
 def evaluate_credit_risk(
 	escavador_data: dict[str, Any],
 	infosimples_data: dict[str, Any],
 	settings: dict[str, Any] | None = None,
+	provider_failures: list[str] | None = None,
 ) -> dict[str, Any]:
-	"""Avalia os dados judiciais e fiscais retornando o parecer e as justificativas."""
+	"""Avalia os dados judiciais e fiscais retornando o parecer e as justificativas.
+
+	Se algum provedor habilitado falhou (`provider_failures`), o parecer é sempre 'Error':
+	dado incompleto nunca pode virar aprovação por omissão (fail-open).
+	"""
+	if provider_failures:
+		reasons_fail = [f"Falha na consulta: {item}" for item in provider_failures]
+		return {
+			"verdict": VERDICT_ERROR,
+			"summary": f"Não verificado — {'; '.join(reasons_fail)}. Nenhum parecer de crédito foi emitido; tente novamente.",
+			"reasons": reasons_fail,
+			"warnings": [],
+			"metrics": {
+				"lawsuits_total": None,
+				"lawsuits_defendant": None,
+				"lawsuits_highest_value": None,
+				"has_bankruptcy": None,
+				"pgfn_debt": None,
+				"cnd_federal_status": "Não verificado",
+				"cnd_federal_pdf": "",
+				"cndt_status": "Não verificado",
+				"cndt_pdf": "",
+				"cenprot_has_protest": None,
+				"cenprot_protests_count": None,
+			},
+		}
+
 	cfg = settings or {}
 	max_lawsuits_defendant = int(cfg.get("max_lawsuits_defendant", 0))
 	max_lawsuit_value = float(cfg.get("max_lawsuit_value", 0.0))
@@ -140,6 +168,14 @@ def format_timeline_summary(evaluation: dict[str, Any], cnpj_formatted: str) -> 
 	metrics = evaluation.get("metrics") or {}
 	reasons = evaluation.get("reasons") or []
 	warnings = evaluation.get("warnings") or []
+
+	if verdict == VERDICT_ERROR:
+		lines = [
+			f"❌ **Não verificado — consulta de crédito falhou** (CNPJ {cnpj_formatted})",
+			f"**Motivo:** {'; '.join(reasons) if reasons else 'erro desconhecido na consulta.'}",
+			"Nenhum parecer de aprovação foi emitido. Corrija a configuração do provedor e tente novamente.",
+		]
+		return "\n".join(lines)
 
 	if verdict == VERDICT_REJECTED:
 		icon = "🚫"
