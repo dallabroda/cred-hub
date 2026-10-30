@@ -2,17 +2,16 @@
 pré-filtro de baixo custo — mesmo gate de `clients/serasa.py:assert_pre_approved_for_bureau`,
 que é genérico apesar do nome do módulo).
 
-Cada bureau aqui roda com a conta/token DirectD da PRÓPRIA CredTech (plataforma, 1 só,
-compartilhada por todas as empresas clientes) e é revendido com margem fixa (decidida pelo dono,
-30/10/2026) — por isso a chamada é paga com o saldo de créditos da empresa (`billing.spend_credits`),
-nunca com o token DirectD que o cliente cadastra em Cred Hub Credit Settings pra esteira automática
-(esse token é da conta do próprio cliente, usado só pelos 6 provedores automáticos de
-`enrich.py:_build_providers`). Misturar os dois já foi um bug real desta esteira: o cliente pagaria
-a DirectD direto pela própria conta E a CredTech cobraria margem em cima, cobrando duas vezes pela
-mesma consulta.
+Cada bureau aqui roda com o mesmo token DirectD da PRÓPRIA CredTech (plataforma, 1 só, compartilhada
+por todas as empresas clientes — `platform_credentials.platform_directd_token`) usado também pelos
+produtos DirectD automáticos em `enrich.py` (Score, Protestos Nacional, Processos, FGTS, Sintegra/
+CCC — decisão do dono, 30/10/2026: DirectD inteiro passou a ser conta da CredTech, não do cliente).
+É revendido com margem fixa (bureaus Premium) ou 20% (automáticos) — por isso toda chamada é paga
+com o saldo de créditos da empresa (`billing.spend_credits`), nunca com credencial do cliente.
 
-O Serasa Relato PJ (`clients/serasa.py`) fica de fora deste registro: usa o contrato e a credencial
-do próprio cliente, sem custo pra CredTech repassar nem débito de créditos.
+Só Escavador e Serasa continuam com chave/contrato do próprio cliente (ele paga direto, sem
+intermediar pela carteira de créditos). O Serasa Relato PJ (`clients/serasa.py`) fica de fora deste
+registro por esse motivo.
 """
 
 from __future__ import annotations
@@ -25,23 +24,13 @@ from cred_hub.credit_check.clients.directd import (
 	fetch_dossie_credito_completo,
 	fetch_scr_bacen,
 )
+from cred_hub.credit_check.platform_credentials import (
+	PlatformCredentialNotConfigured as PlatformDirectDNotConfigured,
+	platform_directd_token,
+)
 
-
-class PlatformDirectDNotConfigured(Exception):
-	"""O token DirectD da própria CredTech (plataforma) não está configurado neste ambiente."""
-
-
-def platform_directd_token() -> str:
-	"""Token DirectD da conta da CredTech (não a do cliente), vindo do site_config/common_site_config
-	— gravado pelo deploy, igual ASAAS_API_KEY. Nunca lido do Cred Hub Credit Settings do cliente."""
-	import frappe
-
-	token = frappe.conf.get("credhub_directd_platform_token") or ""
-	if not token:
-		raise PlatformDirectDNotConfigured(
-			"Token DirectD da plataforma (credhub_directd_platform_token) não configurado neste site."
-		)
-	return token
+# Reexportados para quem já importava daqui (request_bureau_final em api.py)
+__all__ = ["PREMIUM_BUREAUS", "PremiumBureau", "PlatformDirectDNotConfigured", "platform_directd_token"]
 
 
 @dataclass

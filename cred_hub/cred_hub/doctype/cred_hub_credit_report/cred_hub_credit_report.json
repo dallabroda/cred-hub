@@ -227,7 +227,7 @@
   },
   {
    "default": "0",
-   "description": "total_cost com a margem padrão de 20% (decisão do dono, 30/10/2026).",
+   "description": "Custo dos provedores da CredTech (Infosimples, DirectD) com markup de 20% — exclui Escavador, que é conta do próprio cliente e não passa pela carteira de créditos.",
    "fieldname": "client_total_cost",
    "fieldtype": "Currency",
    "label": "Preço a Cobrar do Cliente (R$)",

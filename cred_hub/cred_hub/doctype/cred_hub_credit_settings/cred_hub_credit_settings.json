@@ -8,17 +8,14 @@
   "enabled",
   "section_cgu",
   "cgu_enabled",
-  "cgu_api_key",
   "block_on_ceis_cnep",
   "section_escavador",
   "escavador_enabled",
   "escavador_token",
   "section_infosimples",
   "infosimples_enabled",
-  "infosimples_token",
   "section_directd",
   "directd_enabled",
-  "directd_token",
   "min_directd_score",
   "directd_fgts_enabled",
   "directd_sintegra_enabled",
@@ -55,17 +52,10 @@
   },
   {
    "default": "0",
-   "description": "Roda antes de tudo, de graça. Se achar sanção e 'Reprovar' estiver marcado, nem chama os provedores pagos (Escavador/Infosimples/DirectD) — economiza o custo inteiro da consulta.",
+   "description": "Roda antes de tudo, de graça — credencial da CredTech, sem nada pra você configurar aqui. Se achar sanção e 'Reprovar' estiver marcado, nem chama os provedores pagos abaixo — economiza o custo inteiro da consulta.",
    "fieldname": "cgu_enabled",
    "fieldtype": "Check",
    "label": "Ativar Etapa 0 (CEIS/CNEP)"
-  },
-  {
-   "depends_on": "eval:doc.cgu_enabled",
-   "description": "Chave grátis via cadastro em portaldatransparencia.gov.br/api-de-dados.",
-   "fieldname": "cgu_api_key",
-   "fieldtype": "Password",
-   "label": "Chave de API do Portal da Transparência"
   },
   {
    "default": "1",
@@ -77,7 +67,7 @@
   {
    "fieldname": "section_escavador",
    "fieldtype": "Section Break",
-   "label": "Escavador API (Processos Judiciais Unificados)"
+   "label": "Escavador API (Processos Judiciais Unificados) — sua própria conta"
   },
   {
    "default": "0",
@@ -86,6 +76,7 @@
    "label": "Ativar Escavador"
   },
   {
+   "description": "Token da sua própria conta Escavador. A cobrança é direto com o Escavador, não passa pela carteira de créditos.",
    "fieldname": "escavador_token",
    "fieldtype": "Password",
    "label": "Token de Acesso Escavador (Bearer)"
@@ -97,14 +88,10 @@
   },
   {
    "default": "0",
+   "description": "Credencial da CredTech (nada pra configurar aqui). Cobrado da sua carteira de créditos, com margem, a cada consulta.",
    "fieldname": "infosimples_enabled",
    "fieldtype": "Check",
    "label": "Ativar Infosimples"
-  },
-  {
-   "fieldname": "infosimples_token",
-   "fieldtype": "Password",
-   "label": "Token de Acesso Infosimples"
   },
   {
    "fieldname": "section_directd",
@@ -113,16 +100,10 @@
   },
   {
    "default": "0",
-   "description": "Um único token DirectD habilita os 3 produtos de Crédito/Processos usados aqui: Score de Crédito (QUOD), Protestos Nacional (IEPTB, todo o Brasil) e Processos Judiciais Simplificada.",
+   "description": "Credencial da CredTech (nada pra configurar aqui). Habilita Score de Crédito (QUOD), Protestos Nacional (IEPTB, todo o Brasil) e Processos Judiciais Simplificada — cada consulta é cobrada da sua carteira de créditos, com margem.",
    "fieldname": "directd_enabled",
    "fieldtype": "Check",
    "label": "Ativar DirectD"
-  },
-  {
-   "depends_on": "eval:doc.directd_enabled",
-   "fieldname": "directd_token",
-   "fieldtype": "Password",
-   "label": "Token de Acesso DirectD"
   },
   {
    "default": "0",
@@ -135,7 +116,7 @@
   {
    "default": "0",
    "depends_on": "eval:doc.directd_enabled",
-   "description": "FGTS - Regularidade do Empregador (R$0,36/consulta).",
+   "description": "FGTS - Regularidade do Empregador (cobrado da carteira de créditos, com margem).",
    "fieldname": "directd_fgts_enabled",
    "fieldtype": "Check",
    "label": "Checar Regularidade do FGTS"
@@ -143,7 +124,7 @@
   {
    "default": "0",
    "depends_on": "eval:doc.directd_enabled",
-   "description": "Sintegra/CCC - Inscrição Estadual habilitada (R$1,80/consulta).",
+   "description": "Sintegra/CCC - Inscrição Estadual habilitada (cobrado da carteira de créditos, com margem).",
    "fieldname": "directd_sintegra_enabled",
    "fieldtype": "Check",
    "label": "Checar Sintegra/CCC (Inscrição Estadual)"
@@ -226,7 +207,7 @@
   },
   {
    "depends_on": "eval:doc.serasa_enabled",
-   "description": "Endpoint do contrato do próprio cliente com o Serasa Experian. Sem isso, a consulta ao Serasa falha explicitamente (nunca finge sucesso).",
+   "description": "Endpoint do contrato do próprio cliente com o Serasa Experian. Sem isso, a consulta ao Serasa falha explicitamente (nunca finge sucesso). Não passa pela carteira de créditos — é cobrado direto no seu contrato com o Serasa.",
    "fieldname": "serasa_endpoint_url",
    "fieldtype": "Data",
    "label": "Endpoint Serasa Relato PJ (contrato do cliente)"
@@ -239,24 +220,21 @@
   },
   {
    "default": "0",
-   "depends_on": "eval:doc.directd_enabled",
-   "description": "Boa Vista - Risco Positivo PJ, segundo bureau de score (custo R$14,03, cobrado do cliente a R$18,00 — usa o token DirectD acima).",
+   "description": "Boa Vista - Risco Positivo PJ, segundo bureau de score. Credencial da CredTech, nada pra configurar — cobrado R$18,00 da sua carteira de créditos por consulta.",
    "fieldname": "boavista_risco_enabled",
    "fieldtype": "Check",
    "label": "Habilitar Boa Vista - Risco Positivo PJ"
   },
   {
    "default": "0",
-   "depends_on": "eval:doc.directd_enabled",
-   "description": "Dossiê QUOD Completo, PF ou PJ (custo R$6,99, cobrado do cliente a R$10,00 — usa o token DirectD acima).",
+   "description": "Dossiê QUOD Completo, PF ou PJ. Credencial da CredTech, nada pra configurar — cobrado R$10,00 da sua carteira de créditos por consulta.",
    "fieldname": "dossie_quod_enabled",
    "fieldtype": "Check",
    "label": "Habilitar Dossiê QUOD - Completo"
   },
   {
    "default": "0",
-   "depends_on": "eval:doc.directd_enabled",
-   "description": "SCR Analítico - Resumo BACEN, exposição bancária real, PF ou PJ (custo R$3,90, cobrado do cliente a R$6,00 — usa o token DirectD acima).",
+   "description": "SCR Analítico - Resumo BACEN, exposição bancária real, PF ou PJ. Credencial da CredTech, nada pra configurar — cobrado R$6,00 da sua carteira de créditos por consulta.",
    "fieldname": "scr_bacen_enabled",
    "fieldtype": "Check",
    "label": "Habilitar SCR Analítico (Resumo BACEN)"
@@ -264,7 +242,7 @@
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-10-29 20:00:00.000000",
+ "modified": "2026-10-30 23:50:00.000000",
  "modified_by": "Administrator",
  "module": "Cred Hub",
  "name": "Cred Hub Credit Settings",

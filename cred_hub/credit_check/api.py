@@ -12,7 +12,6 @@ from frappe.utils import now_datetime
 from cred_hub.billing import InsufficientCreditsError, spend_credits, wallet_balance
 from cred_hub.credit_check.clients.directd import DirectDAuthError, DirectDError
 from cred_hub.credit_check.clients.escavador import fetch_lawsuits
-from cred_hub.credit_check.clients.infosimples import query_pgfn
 from cred_hub.credit_check.clients.serasa import (
 	BureauGateBlocked,
 	SerasaError,
@@ -23,10 +22,11 @@ from cred_hub.credit_check.clients.serasa import (
 from cred_hub.credit_check.enrich import get_credit_settings, run_background_check
 from cred_hub.credit_check.premium_bureaus import PREMIUM_BUREAUS, PlatformDirectDNotConfigured, platform_directd_token
 
-# Custo real aproximado de cada chamada de teste de conexão — cobrado mesmo numa consulta de teste
+# Custo real aproximado de cada chamada de teste de conexão — cobrado mesmo numa consulta de teste.
+# Só Escavador: é o único provedor automático que ainda usa token do próprio cliente (Infosimples
+# e DirectD passaram a ser conta da CredTech — nada pro cliente testar aqui, decisão de 30/10/2026).
 TEST_CONNECTION_COST = {
 	"escavador": 0.50,
-	"infosimples": 0.70,
 }
 
 
@@ -99,6 +99,9 @@ def get_report_details(report_name: str) -> dict[str, Any]:
 		"sintegra_situacao_cadastral": report.get("sintegra_situacao_cadastral") or "",
 		"total_cost": report.get("total_cost") or 0.0,
 		"client_total_cost": report.get("client_total_cost") or 0.0,
+		"dossie_pdf_url": report.get("dossie_pdf_url") or "",
+		"directd_score": ((raw_details.get("directd_score") or {}).get("score")),
+		"directd_score_faixa": ((raw_details.get("directd_score") or {}).get("faixa_score") or ""),
 		"raw_details": raw_details,
 	}
 
@@ -164,13 +167,6 @@ def test_provider_connection(provider: str, token: str, cnpj: str, confirm_cost:
 			return {"ok": True, "message": _("Connected to the Escavador API (v2) successfully!")}
 		except Exception as e:
 			frappe.throw(_("Escavador connection test failed: {0}").format(str(e)))
-
-	elif provider == "infosimples":
-		try:
-			query_pgfn(cnpj, token)
-			return {"ok": True, "message": _("Connected to the Infosimples API (v2) successfully!")}
-		except Exception as e:
-			frappe.throw(_("Infosimples connection test failed: {0}").format(str(e)))
 
 
 def _log_premium_bureau_query(

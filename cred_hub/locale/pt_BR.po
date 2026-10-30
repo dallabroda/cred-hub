@@ -1700,3 +1700,6 @@ msgstr "Falha na consulta ao Serasa: {0}"
 
 msgid "Final bureau query ({0}) requested by {1}. Provider status: {2}."
 msgstr "Consulta ao bureau final ({0}) solicitada por {1}. Status do provedor: {2}."
+
+msgid "insufficient credits for Infosimples/DirectD: balance R$ {0}, needed R$ {1}. Add credits to continue."
+msgstr "créditos insuficientes para Infosimples/DirectD: saldo R$ {0}, necessário R$ {1}. Adicione créditos para continuar."

@@ -6,6 +6,13 @@ que venham a ser plugados — ver `_build_providers`), aplica regras de corte, g
 
 Regra de segurança (fail-closed): se um provedor habilitado estiver sem credencial ou a
 chamada falhar, o parecer final é sempre 'Error' — nunca 'Pre-Approved' por omissão de dado.
+
+Quem paga (decisão do dono, 30/10/2026): Escavador e Serasa usam credencial/contrato do próprio
+cliente (ele paga direto). Infosimples e DirectD (todos os produtos) rodam na conta da CredTech
+(`platform_credentials.py`) e são cobrados da carteira de créditos da empresa (`billing.py`), com
+markup de 20%. Portal da Transparência (CGU) também é conta da CredTech, mas grátis — sem cobrança.
+Sem saldo suficiente, os provedores da CredTech são pulados (nunca gasta sem receber) e isso entra
+como falha — fail-closed de novo: dado incompleto nunca vira aprovação.
 """
 
 from __future__ import annotations
@@ -18,6 +25,7 @@ import frappe
 from frappe import _
 from frappe.utils import add_days, today
 
+from cred_hub.billing import InsufficientCreditsError, spend_credits, wallet_balance
 from cred_hub.cnpj.mapping import format_cnpj, is_valid_cnpj, only_digits
 from cred_hub.credit_check.clients.cgu import CGUError, fetch_ceis_cnep
 from cred_hub.credit_check.clients.directd import (
@@ -31,6 +39,12 @@ from cred_hub.credit_check.clients.directd import (
 )
 from cred_hub.credit_check.clients.escavador import fetch_lawsuits
 from cred_hub.credit_check.clients.infosimples import fetch_fiscal_and_protests
+from cred_hub.credit_check.platform_credentials import (
+	PlatformCredentialNotConfigured,
+	platform_cgu_api_key,
+	platform_directd_token,
+	platform_infosimples_token,
+)
 from cred_hub.credit_check.rules import (
 	VERDICT_ERROR,
 	evaluate_credit_risk,
@@ -79,6 +93,7 @@ class ProviderCheck:
 	empty_result: dict[str, Any]
 	estimated_cost: float
 	data_slot: str  # onde o resultado entra no dicionário consolidado
+	funded_by: str = "platform"  # "client" (Escavador: conta/token do próprio cliente) ou "platform" (CredTech, cobrado via créditos)
 
 
 def get_credit_settings() -> dict[str, Any]:
@@ -89,15 +104,14 @@ def get_credit_settings() -> dict[str, Any]:
 	doc = frappe.get_single("Cred Hub Credit Settings")
 	return {
 		"enabled": bool(doc.get("enabled")),
+		# CGU, Infosimples e DirectD: a empresa só liga/desliga — a credencial é da CredTech
+		# (platform_credentials.py), nunca cadastrada aqui.
 		"cgu_enabled": bool(doc.get("cgu_enabled")),
-		"cgu_api_key": doc.get_password("cgu_api_key") if doc.get("cgu_api_key") else "",
 		"block_on_ceis_cnep": bool(doc.get("block_on_ceis_cnep", 1)),
 		"escavador_enabled": bool(doc.get("escavador_enabled")),
 		"escavador_token": doc.get_password("escavador_token") if doc.get("escavador_token") else "",
 		"infosimples_enabled": bool(doc.get("infosimples_enabled")),
-		"infosimples_token": doc.get_password("infosimples_token") if doc.get("infosimples_token") else "",
 		"directd_enabled": bool(doc.get("directd_enabled")),
-		"directd_token": doc.get_password("directd_token") if doc.get("directd_token") else "",
 		"min_directd_score": int(doc.get("min_directd_score") or 0),
 		"directd_fgts_enabled": bool(doc.get("directd_fgts_enabled")),
 		"directd_sintegra_enabled": bool(doc.get("directd_sintegra_enabled")),
@@ -116,7 +130,20 @@ def get_credit_settings() -> dict[str, Any]:
 def _build_providers(settings: dict[str, Any]) -> list[ProviderCheck]:
 	"""Monta a lista de provedores habilitados nesta empresa. Adicionar um novo provedor
 	(ex.: Serasa automático, CENPROT direto) é só acrescentar um `ProviderCheck` aqui — o
-	orquestrador abaixo trata todos de forma genérica e sem fail-open."""
+	orquestrador abaixo trata todos de forma genérica e sem fail-open.
+
+	Infosimples e DirectD usam a conta da CredTech (token resolvido uma vez aqui); token vazio
+	("" se a credencial da plataforma não estiver configurada neste site) já cai na mesma checagem
+	de "sem token" do loop principal — nenhum tratamento especial precisa existir ali."""
+	try:
+		infosimples_token = platform_infosimples_token()
+	except PlatformCredentialNotConfigured:
+		infosimples_token = ""
+	try:
+		directd_token = platform_directd_token()
+	except PlatformCredentialNotConfigured:
+		directd_token = ""
+
 	return [
 		ProviderCheck(
 			key="escavador",
@@ -127,68 +154,75 @@ def _build_providers(settings: dict[str, Any]) -> list[ProviderCheck]:
 			empty_result=EMPTY_ESCAVADOR_DATA,
 			estimated_cost=ESCAVADOR_ESTIMATED_COST,
 			data_slot="escavador",
+			funded_by="client",
 		),
 		ProviderCheck(
 			key="infosimples",
 			label="Infosimples",
 			enabled=bool(settings.get("infosimples_enabled")),
-			token=settings.get("infosimples_token") or "",
+			token=infosimples_token,
 			fetch=fetch_fiscal_and_protests,
 			empty_result=EMPTY_INFOSIMPLES_DATA,
 			estimated_cost=INFOSIMPLES_ESTIMATED_COST,
 			data_slot="infosimples",
+			funded_by="platform",
 		),
-		# DirectD — só os 3 produtos de Crédito/Processos pedidos pelo dono (29/10/2026), não o
-		# catálogo inteiro. Um único toggle/token habilita os três.
+		# DirectD — só os produtos de Crédito/Processos pedidos pelo dono, não o catálogo inteiro.
+		# Um único toggle habilita cada um; todos usam o mesmo token da plataforma.
 		ProviderCheck(
 			key="directd_score",
 			label="DirectD Score (QUOD)",
 			enabled=bool(settings.get("directd_enabled")),
-			token=settings.get("directd_token") or "",
+			token=directd_token,
 			fetch=fetch_score,
 			empty_result=EMPTY_DIRECTD_SCORE_DATA,
 			estimated_cost=DIRECTD_SCORE_ESTIMATED_COST,
 			data_slot="directd_score",
+			funded_by="platform",
 		),
 		ProviderCheck(
 			key="directd_protestos",
 			label="DirectD Protestos Nacional",
 			enabled=bool(settings.get("directd_enabled")),
-			token=settings.get("directd_token") or "",
+			token=directd_token,
 			fetch=fetch_protests_nacional,
 			empty_result=EMPTY_DIRECTD_PROTESTS_DATA,
 			estimated_cost=DIRECTD_PROTESTS_ESTIMATED_COST,
 			data_slot="directd_protestos",
+			funded_by="platform",
 		),
 		ProviderCheck(
 			key="directd_processos",
 			label="DirectD Processos Judiciais",
 			enabled=bool(settings.get("directd_enabled")),
-			token=settings.get("directd_token") or "",
+			token=directd_token,
 			fetch=fetch_lawsuits_directd,
 			empty_result=EMPTY_ESCAVADOR_DATA,
 			estimated_cost=DIRECTD_PROCESSOS_ESTIMATED_COST,
 			data_slot="directd_processos",
+			funded_by="platform",
 		),
 		ProviderCheck(
 			key="directd_fgts",
 			label="DirectD FGTS",
 			enabled=bool(settings.get("directd_enabled")) and bool(settings.get("directd_fgts_enabled")),
-			token=settings.get("directd_token") or "",
+			token=directd_token,
 			fetch=fetch_fgts_regularidade,
 			empty_result=EMPTY_FGTS_DATA,
 			estimated_cost=DIRECTD_FGTS_ESTIMATED_COST,
 			data_slot="directd_fgts",
+			funded_by="platform",
 		),
 		ProviderCheck(
 			key="directd_sintegra",
 			label="DirectD Sintegra/CCC",
 			enabled=bool(settings.get("directd_enabled")) and bool(settings.get("directd_sintegra_enabled")),
-			token=settings.get("directd_token") or "",
+			token=directd_token,
 			fetch=fetch_sintegra_ccc,
 			empty_result=EMPTY_SINTEGRA_DATA,
 			estimated_cost=DIRECTD_SINTEGRA_ESTIMATED_COST,
 			data_slot="directd_sintegra",
+			funded_by="platform",
 		),
 	]
 
@@ -252,26 +286,40 @@ def run_background_check(
 	cgu_data: dict[str, Any] | None = None
 	skip_paid_providers = False
 	if settings.get("cgu_enabled"):
-		cgu_api_key = settings.get("cgu_api_key")
-		if cgu_api_key:
-			try:
-				cgu_data = fetch_ceis_cnep(digits, cgu_api_key)
-				if cgu_data.get("sanctioned") and settings.get("block_on_ceis_cnep", True):
-					skip_paid_providers = True
-			except CGUError as e:
-				frappe.log_error(title=f"Cred Hub: CGU CEIS/CNEP falhou para CNPJ {cnpj}", message=str(e))
-		else:
-			frappe.log_error(title=f"Cred Hub: CGU habilitado sem chave de API para CNPJ {cnpj}", message="cgu_enabled=1 mas cgu_api_key vazio")
+		try:
+			cgu_api_key = platform_cgu_api_key()
+			cgu_data = fetch_ceis_cnep(digits, cgu_api_key)
+			if cgu_data.get("sanctioned") and settings.get("block_on_ceis_cnep", True):
+				skip_paid_providers = True
+		except PlatformCredentialNotConfigured as e:
+			frappe.log_error(title="Cred Hub: CGU sem credencial de plataforma", message=str(e))
+		except CGUError as e:
+			frappe.log_error(title=f"Cred Hub: CGU CEIS/CNEP falhou para CNPJ {cnpj}", message=str(e))
 
 	# Chamada aos provedores externos habilitados — cada um isolado, sem fail-open
 	providers = _build_providers(settings)
 	enabled_providers = [] if skip_paid_providers else [p for p in providers if p.enabled]
 
-	results: dict[str, Any] = {p.data_slot: p.empty_result for p in providers}
-	failures: list[str] = []
-	total_cost = 0.0
+	# Saldo de créditos checado ANTES de gastar com Infosimples/DirectD (conta da CredTech) — nunca
+	# a CredTech paga sem o cliente ter saldo pra cobrir. Escavador (conta do próprio cliente) nunca
+	# entra nessa conta, por isso continua mesmo sem saldo.
+	platform_funded = [p for p in enabled_providers if p.funded_by == "platform" and p.token.strip()]
+	projected_client_cost = round(sum(p.estimated_cost for p in platform_funded) * CLIENT_PRICE_MULTIPLIER, 2)
+	if projected_client_cost > 0 and wallet_balance() < projected_client_cost:
+		enabled_providers = [p for p in enabled_providers if p.funded_by != "platform"]
+		failures = [
+			_("insufficient credits for Infosimples/DirectD: balance R$ {0}, needed R$ {1}. Add credits to continue.").format(
+				f"{wallet_balance():.2f}", f"{projected_client_cost:.2f}"
+			)
+		]
+	else:
+		failures = []
 
-	if not enabled_providers and not skip_paid_providers:
+	results: dict[str, Any] = {p.data_slot: p.empty_result for p in providers}
+	total_cost = 0.0
+	platform_cost = 0.0
+
+	if not enabled_providers and not skip_paid_providers and not failures:
 		failures.append(_("no provider is enabled in Credit & Legal Bureaus settings"))
 	else:
 		for provider in enabled_providers:
@@ -281,12 +329,26 @@ def run_background_check(
 			try:
 				results[provider.data_slot] = provider.fetch(digits, provider.token)
 				total_cost += provider.estimated_cost
+				if provider.funded_by == "platform":
+					platform_cost += provider.estimated_cost
 			except Exception as e:
 				frappe.log_error(
 					title=f"Cred Hub: {provider.label} API falhou para CNPJ {cnpj}",
 					message=str(e),
 				)
 				failures.append(_("{0}: query failed ({1})").format(provider.label, str(e)[:150]))
+
+	client_total_cost = round(platform_cost * CLIENT_PRICE_MULTIPLIER, 2)
+	if platform_cost > 0:
+		try:
+			spend_credits(client_total_cost, description=f"Esteira automática — CNPJ {cnpj}")
+		except InsufficientCreditsError:
+			# Não deveria acontecer (o saldo já foi checado acima antes de rodar); registra pra
+			# investigar, mas nunca deixa a carteira negativa nem trava o relatório já apurado.
+			frappe.log_error(
+				title=f"Cred Hub: saldo ficou insuficiente no meio da esteira para CNPJ {cnpj}",
+				message=f"platform_cost={platform_cost}, client_total_cost={client_total_cost}",
+			)
 
 	# Combina as fontes de processos e de protestos (Escavador+DirectD, Infosimples+DirectD) da
 	# forma mais conservadora, antes de avaliar o risco — nunca perde um sinal que só uma das
@@ -349,7 +411,7 @@ def run_background_check(
 		"fgts_status": metrics.get("fgts_status") or "Regular",
 		"sintegra_situacao_cadastral": results["directd_sintegra"].get("situacao_cadastral") or "",
 		"total_cost": total_cost,
-		"client_total_cost": round(total_cost * CLIENT_PRICE_MULTIPLIER, 2),
+		"client_total_cost": client_total_cost,
 		"raw_details_json": json.dumps(
 			{
 				"cgu": cgu_data,
