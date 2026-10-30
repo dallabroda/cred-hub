@@ -32,6 +32,8 @@ LOG_DAYS = 90
 # Rate limit por chave, por minuto (decisão do dono, credtech#175, expandido credtech#288)
 CALLS_PER_MINUTE = 300
 WRITES_PER_MINUTE = 60
+# Teto do limite próprio de uma chave: o servidor é compartilhado entre as empresas (credtech#288)
+MAX_CUSTOM_RATE_LIMIT = 1000
 
 # Escopos: (campo da chave, rótulo). Leitura é GET; escrita é criar e alterar. Excluir exige allow_delete.
 SCOPES = {
@@ -293,11 +295,21 @@ def _check_save_pipeline(key_name: str):
 		_deny()
 
 
+def _custom_rate_limit(value) -> int | None:
+	"""Vazio ou zero: o limite padrão. Acima do teto: recusado (não é cortado em silêncio)."""
+	value = cint(value)
+	if value <= 0:
+		return None
+	if value > MAX_CUSTOM_RATE_LIMIT:
+		frappe.throw(_("The rate limit can be at most {0} calls per minute.").format(MAX_CUSTOM_RATE_LIMIT))
+	return value
+
+
 def _rate_limit(key_name: str, write: bool, custom_limit: int | None = None):
 	minute = now_datetime().strftime("%Y%m%d%H%M")
 	if custom_limit is None:
 		custom_limit = cint(frappe.db.get_value(KEY, key_name, "custom_rate_limit"))
-	custom = cint(custom_limit)
+	custom = min(cint(custom_limit), MAX_CUSTOM_RATE_LIMIT)
 	total_limit = custom if custom > 0 else CALLS_PER_MINUTE
 	write_limit = max(1, min(WRITES_PER_MINUTE, custom // 5)) if custom > 0 else WRITES_PER_MINUTE
 	limits = [(total_limit, "all")] + ([(write_limit, "write")] if write else [])
@@ -492,7 +504,7 @@ def create_api_key(
 			"status": "Active",
 			"technical_user": user,
 			"allowed_ips": allowed_ips,
-			"custom_rate_limit": cint(custom_rate_limit) if custom_rate_limit else None,
+			"custom_rate_limit": _custom_rate_limit(custom_rate_limit),
 			"expires_on": expires_on or None,
 			"pipelines": [{"pipeline": p} for p in pipelines],
 			**values,
@@ -531,7 +543,7 @@ def update_api_key(
 	if expires_on is not None:
 		doc.expires_on = expires_on or None
 	if custom_rate_limit is not None:
-		doc.custom_rate_limit = cint(custom_rate_limit) if custom_rate_limit else None
+		doc.custom_rate_limit = _custom_rate_limit(custom_rate_limit)
 	_check_card_pipelines({s: cint(doc.get(s)) for s in SCOPES}, [r.pipeline for r in doc.pipelines])
 	doc.save(ignore_permissions=True)
 	_sync_pipelines(doc.technical_user, [r.pipeline for r in doc.pipelines])

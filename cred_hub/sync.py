@@ -26,36 +26,42 @@ def get_deleted_records(doctype: str, since: str | None = None) -> list[dict]:
 	if not read_scope or read_scope not in scopes:
 		frappe.throw(_("This API key is not allowed to read {0}.").format(doctype), frappe.PermissionError)
 
-	filters = {"deleted_doctype": doctype}
+	pipelines = frappe.get_all("Cred Hub API Key Pipeline", {"parent": key_info["name"]}, pluck="pipeline")
+	return deleted_since(doctype, since, pipelines)
+
+
+# Exclusões que dependem de um card: o funil vem do snapshot gravado na exclusão (CRM Deal) ou do card
+# a que a nota, tarefa ou arquivo pertencia. Sem snapshot, sem funil, ou com o card já excluído, o
+# registro fica de fora: falhar fechado, nunca mostrar "por garantia" (credtech#288).
+CARD_SCOPED = {
+	"FCRM Note": ("reference_doctype", "reference_docname"),
+	"CRM Task": ("reference_doctype", "reference_docname"),
+	"File": ("attached_to_doctype", "attached_to_name"),
+}
+
+
+def deleted_since(doctype: str, since: str | None, pipelines: list[str], limit: int = 500) -> list[dict]:
+	"""O filtro por funil é feito no banco, antes do limite: com o filtro depois, 500 exclusões de outros
+	funis devolviam uma lista vazia e quem sincroniza nunca conseguia passar delas."""
+	where = ["dd.deleted_doctype = %(doctype)s"]
+	values = {"doctype": doctype, "since": since, "pipelines": tuple(pipelines) or ("",), "limit": limit}
 	if since:
-		filters["creation"] = (">=", since)
-
-	records = frappe.get_all(
-		"Deleted Document",
-		filters=filters,
-		fields=["name", "deleted_doctype", "deleted_name", "creation", "owner"],
-		order_by="creation asc",
-		limit=500,
-	)
-
-	# Se for CRM Deal, isola por funis autorizados da chave. Sem o snapshot (ou sem conseguir ler o
-	# funil nele), o registro fica de fora: a chave nunca deve ver exclusão de um card de outro funil
-	# só porque o dado ficou incompleto (falhar fechado, não aberto).
+		where.append("dd.creation >= %(since)s")
 	if doctype == "CRM Deal":
-		allowed_pipelines = set(
-			frappe.get_all("Cred Hub API Key Pipeline", {"parent": key_info["name"]}, pluck="pipeline")
+		where.append("JSON_VALUE(dd.data, '$.pipeline') in %(pipelines)s")
+	elif doctype in CARD_SCOPED:
+		kind, name = CARD_SCOPED[doctype]
+		where.append(
+			f"(ifnull(JSON_VALUE(dd.data, '$.{kind}'), '') != 'CRM Deal'"
+			f" or JSON_VALUE(dd.data, '$.{name}') in"
+			" (select deal.name from `tabCRM Deal` deal where deal.pipeline in %(pipelines)s))"
 		)
-		filtered = []
-		for r in records:
-			raw_data = frappe.db.get_value("Deleted Document", r["name"], "data")
-			if not raw_data:
-				continue
-			try:
-				data_dict = frappe.parse_json(raw_data) if isinstance(raw_data, str) else raw_data
-				if data_dict.get("pipeline") in allowed_pipelines:
-					filtered.append(r)
-			except Exception:
-				continue
-		return filtered
-
-	return records
+	return frappe.db.sql(
+		f"""select dd.name, dd.deleted_doctype, dd.deleted_name, dd.creation
+		from `tabDeleted Document` dd
+		where {" and ".join(where)}
+		order by dd.creation asc, dd.name asc
+		limit %(limit)s""",
+		values,
+		as_dict=True,
+	)

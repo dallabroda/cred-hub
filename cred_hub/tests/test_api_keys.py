@@ -468,6 +468,55 @@ class TestApiKeys(IntegrationTestCase):
 		self.assertNotIn("GHOST-OUT-OF-SCOPE", seen)
 		self.assertNotIn("GHOST-NO-SNAPSHOT", seen)
 		self.assertNotIn("GHOST-BAD-SNAPSHOT", seen)
+		self.assertNotIn("owner", sync.get_deleted_records("CRM Deal")[0])
+
+	def test_sync_deleted_records_does_not_stall_behind_other_pipelines(self):
+		"""Mais exclusões de outros funis do que o limite não escondem as do funil da chave."""
+		from cred_hub import sync
+
+		for i in range(3):
+			frappe.get_doc(
+				{
+					"doctype": "Deleted Document",
+					"deleted_doctype": "CRM Deal",
+					"deleted_name": f"GHOST-OTHER-{i}",
+					"data": frappe.as_json({"pipeline": self.other}),
+				}
+			).insert(ignore_permissions=True)
+		frappe.get_doc(
+			{
+				"doctype": "Deleted Document",
+				"deleted_doctype": "CRM Deal",
+				"deleted_name": "GHOST-MINE",
+				"data": frappe.as_json({"pipeline": self.pipeline}),
+			}
+		).insert(ignore_permissions=True)
+		seen = [r["deleted_name"] for r in sync.deleted_since("CRM Deal", None, [self.pipeline], limit=2)]
+		self.assertIn("GHOST-MINE", seen)
+		self.assertFalse([name for name in seen if name.startswith("GHOST-OTHER")])
+
+	def test_sync_deleted_notes_follow_the_card_pipeline(self):
+		from cred_hub import sync
+
+		mine = frappe.get_doc(
+			{"doctype": "CRM Deal", "pipeline": self.pipeline, "organization_name": "Sync Org"}
+		).insert(ignore_permissions=True)
+		other = frappe.get_doc(
+			{"doctype": "CRM Deal", "pipeline": self.other, "organization_name": "Sync Org 2"}
+		).insert(ignore_permissions=True)
+		for name, card in (("NOTE-MINE", mine.name), ("NOTE-OTHER", other.name), ("NOTE-GONE", "CRM-DEAL-GONE")):
+			frappe.get_doc(
+				{
+					"doctype": "Deleted Document",
+					"deleted_doctype": "FCRM Note",
+					"deleted_name": name,
+					"data": frappe.as_json({"reference_doctype": "CRM Deal", "reference_docname": card}),
+				}
+			).insert(ignore_permissions=True)
+		seen = {r["deleted_name"] for r in sync.deleted_since("FCRM Note", None, [self.pipeline])}
+		self.assertIn("NOTE-MINE", seen)
+		self.assertNotIn("NOTE-OTHER", seen)
+		self.assertNotIn("NOTE-GONE", seen)
 
 	def test_card_contacts_route(self):
 		token = self.create(scopes=("cards_read",))["token"]
@@ -492,3 +541,10 @@ class TestApiKeys(IntegrationTestCase):
 		updated = api_keys.update_api_key(created["name"], custom_rate_limit=800)
 		self.assertEqual(updated["custom_rate_limit"], 800)
 		self.assertEqual(frappe.db.get_value(api_keys.KEY, created["name"], "custom_rate_limit"), 800)
+
+	def test_custom_rate_limit_has_a_ceiling(self):
+		with self.assertRaises(frappe.ValidationError):
+			self.create(scopes=("cards_read",), custom_rate_limit=api_keys.MAX_CUSTOM_RATE_LIMIT + 1)
+		created = self.create(scopes=("cards_read",))
+		with self.assertRaises(frappe.ValidationError):
+			api_keys.update_api_key(created["name"], custom_rate_limit=100000)
