@@ -8,15 +8,21 @@ from frappe import _
 
 from cred_hub.cnpj.fields import RECEITA_FIELDS
 from cred_hub.cnpj.mapping import format_cnpj, only_digits
+from cred_hub.party.document import CPF, document_kind, format_cpf
+from cred_hub.party.resolve import organization_for_cnpj
 
 
 def after_insert(doc, method=None):
 	"""Card criado a partir de um lead com CNPJ: leva o CNPJ (e o que já veio da Receita) para a
-	Organização do card, sem nunca misturar empresas diferentes."""
+	Organização do card, sem nunca misturar empresas diferentes. CPF no campo do CNPJ é pessoa física:
+	vai para o contato do card e nunca vira Organização (credtech#315)."""
 	if not doc.get("lead"):
 		return
 	lead = frappe.db.get_value("CRM Lead", doc.lead, ["cnpj", *RECEITA_FIELDS], as_dict=True)
 	if not lead or not only_digits(lead.cnpj or ""):
+		return
+	if document_kind(lead.cnpj) == CPF:
+		_cpf_to_contact(doc, lead.cnpj)
 		return
 	digits = only_digits(lead.cnpj)
 	values = {f: lead.get(f) for f in ("cnpj", *RECEITA_FIELDS) if lead.get(f)}
@@ -39,31 +45,27 @@ def after_insert(doc, method=None):
 		return
 
 	# db_set: só liga a organização ao card recém-criado, sem rodar de novo as validações do card
-	doc.db_set("organization", _organization_for(digits, values, lead))
+	name = lead.trade_name or lead.legal_name or format_cnpj(digits)
+	doc.db_set("organization", organization_for_cnpj(digits, name, values))
 
 
-def _organization_for(digits: str, values: dict, lead) -> str:
-	"""Organização com esse CNPJ; senão uma de mesmo nome ainda sem CNPJ; senão uma nova."""
-	formatted = format_cnpj(digits)
-	same_cnpj = frappe.get_all(
-		"CRM Organization", {"cnpj": ("in", (formatted, digits))}, pluck="name", limit=1
+def _primary_contact(doc) -> str | None:
+	rows = doc.get("contacts") or []
+	primary = next((row.contact for row in rows if row.get("is_primary")), None)
+	return primary or next((row.contact for row in rows), None) or doc.get("contact")
+
+
+def _cpf_to_contact(doc, cpf):
+	"""Põe o CPF no contato principal do card quando ele ainda não tem; senão só registra no card."""
+	formatted = format_cpf(cpf)
+	contact = _primary_contact(doc)
+	current = frappe.db.get_value("Contact", contact, "cpf") if contact else None
+	if contact and not current:
+		frappe.db.set_value("Contact", contact, "cpf", formatted)
+		return
+	if contact and only_digits(current) == only_digits(cpf):
+		return
+	doc.add_comment(
+		"Comment",
+		_("The entry came with the CPF {0}: a person goes in the contact, not in an organization.").format(formatted),
 	)
-	if same_cnpj:
-		return same_cnpj[0]
-
-	name = lead.trade_name or lead.legal_name or formatted
-	homonym = frappe.db.get_value(
-		"CRM Organization", {"organization_name": name}, ["name", "cnpj"], as_dict=True
-	)
-	if homonym and not homonym.cnpj:
-		org = frappe.get_doc("CRM Organization", homonym.name)
-		org.update(values)
-		org.save(ignore_permissions=True)
-		return org.name
-	if homonym:
-		# Mesmo nome, outra empresa: o nome é a chave da organização, então vai com o CNPJ junto
-		name = f"{name} ({formatted})"
-
-	org = frappe.get_doc({"doctype": "CRM Organization", "organization_name": name, **values})
-	org.insert(ignore_permissions=True)
-	return org.name

@@ -48,8 +48,9 @@ doc_events = {
 	# O usuário técnico das chaves da API não vira humano nem ganha papéis (credtech#175)
 	"User": {"validate": ["cred_hub.api_keys.validate_user", "cred_hub.billing.validate_user"]},
 	"CRM Invitation": {"before_insert": "cred_hub.billing.validate_invitation"},
+	# CPF é Contato e CNPJ é Organização (credtech#315): a validação do documento roda antes da do CNPJ
 	"CRM Organization": {
-		"validate": "cred_hub.cnpj.events.validate",
+		"validate": ["cred_hub.party.events.validate_organization", "cred_hub.cnpj.events.validate"],
 		"on_update": ["cred_hub.cnpj.events.on_update", "cred_hub.company.events.on_update"],
 	},
 	# Card criado de um lead com CNPJ: o CNPJ vai para a Organização do card (épico #66)
@@ -68,6 +69,7 @@ doc_events = {
 		"on_trash": "cred_hub.webhooks.on_deal_trash",
 	},
 	"Contact": {
+		"validate": "cred_hub.party.events.validate_contact",
 		"after_insert": "cred_hub.webhooks.on_contact_insert",
 		"on_update": "cred_hub.webhooks.on_contact_update",
 	},
