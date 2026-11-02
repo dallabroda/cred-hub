@@ -720,7 +720,7 @@ def get_dossier_package_status(organization_name: str, deal_name: str | None = N
 		"verdict": ctx["verdict"],
 		"verdict_summary": ctx["summary"],
 		"needs_acknowledgement": bool(current["missing"]) and pre_filter_needs_acknowledgement(ctx["verdict"]),
-		"can_run_queries": bool(set(frappe.get_roles()) & set(FINAL_BUREAU_ROLES)),
+		"can_run_queries": True,  # qualquer usuário gera o dossiê, com as consultas pagas do pacote (dono, 02/11/2026)
 		"running": is_job_enqueued(credit_package.job_id(ctx["organization"])),
 		"opinion": credit_opinion.status(),
 	}
@@ -738,7 +738,7 @@ def generate_credit_package(
 	gera o PDF 1 (retornos) e o PDF 2 (parecer da IA), tudo em segundo plano.
 
 	Transparência: consulta que falta só com `confirm_cost` (a tela mostrou o preço de tabela e que quem cobra é o
-	provedor) e, com alerta no pré-filtro, com `acknowledged_warning`. Consulta paga continua só para gestores. Sem IA
+	provedor) e, com alerta no pré-filtro, com `acknowledged_warning`. Qualquer usuário gera (decisão do dono em 02/11/2026). Sem IA
 	disponível (não configurada, cota do mês usada ou sem saldo), o dossiê sai sem o parecer e a resposta diz por quê."""
 	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
 	ctx = _final_bureau_context(deal_name, organization_name)
@@ -758,10 +758,6 @@ def generate_credit_package(
 	needs_ack = False
 	if current["missing"]:
 		labels = ", ".join(f"{entry['label']} ({entry['subject_name']})" for entry in current["missing"])
-		if not set(frappe.get_roles()) & set(FINAL_BUREAU_ROLES):
-			frappe.throw(
-				_("The minimum package still needs paid queries: {0}. Only managers can run paid queries; ask a manager.").format(labels)
-			)
 		if not _truthy(confirm_cost):
 			frappe.throw(
 				_("The minimum package needs paid queries billed by the provider on your account: {0}. Confirm the cost to continue.").format(

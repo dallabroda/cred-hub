@@ -126,13 +126,14 @@ class TestCreditPackage(IntegrationTestCase):
 		self.assertEqual(partner_rows[0]["document"], "52998224725")
 		self.assertEqual(current["partners_without_cpf"], ["Joao Sem CPF"])
 
-	def test_generate_needs_cost_confirmation_and_a_manager_for_paid_queries(self):
+	def test_generate_needs_cost_confirmation_and_any_user_can_run_the_paid_queries(self):
 		with self.assertRaises(frappe.ValidationError):
 			api.generate_credit_package(self.org.name)
-		with patch.object(frappe, "get_roles", return_value=["Sales User"]), self.assertRaises(frappe.ValidationError) as caught:
-			api.generate_credit_package(self.org.name, confirm_cost=1)
-		self.assertIn("managers", str(caught.exception))
 		self.enqueue_mock.assert_not_called()
+		with patch.object(frappe, "get_roles", return_value=["Sales User"]):
+			result = api.generate_credit_package(self.org.name, confirm_cost=1)
+		self.assertEqual(result["queries"], 2)
+		self.assertEqual(self.enqueue_mock.call_args.args[0], "cred_hub.credit_check.package.run_job")
 
 	def test_generate_with_alert_needs_acknowledgement(self):
 		self.org.db_set("credit_verdict", "Warning")
