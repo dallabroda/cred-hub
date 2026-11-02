@@ -27,6 +27,7 @@ from cred_hub.integrations.assertiva import (
 	PURPOSES,
 	AssertivaClient,
 	AssertivaError,
+	addresses,
 	emails,
 	partners,
 	phones,
@@ -122,7 +123,7 @@ def enrich_organization(organization: str, force: int | str = 0) -> dict:
 		# sem frappe.throw: o histórico da tentativa (cobrada ou não) precisa ficar gravado
 		return {"ok": False, "message": str(e)}
 	summary = {"ok": True, "found": company is not None, "cached": cached, "paid_queries": 0 if cached else 1}
-	summary.update(created=0, updated=0, phones=0, whatsapp=0, emails=0, errors=[])
+	summary.update(created=0, updated=0, phones=0, whatsapp=0, emails=0, addresses=0, errors=[])
 	if company is None:
 		summary["message"] = _("Assertiva did not find this CNPJ.")
 		return summary
@@ -147,7 +148,7 @@ def enrich_organization(organization: str, force: int | str = 0) -> dict:
 			summary["errors"].append(_("{0}: the contact could not be saved.").format(person_name(partner["name"])))
 			continue
 		summary["created" if stats["created"] else "updated"] += 1
-		for key in ("phones", "whatsapp", "emails"):
+		for key in ("phones", "whatsapp", "emails", "addresses"):
 			summary[key] += stats[key]
 
 	_fill_company_contact(org, company)
@@ -161,6 +162,8 @@ def _summary_text(summary, protocol) -> str:
 	text = _("Assertiva Localize: {0} contact(s) created and {1} updated, {2} phone(s) ({3} with WhatsApp) and {4} e-mail(s).").format(
 		summary["created"], summary["updated"], summary["phones"], summary["whatsapp"], summary["emails"]
 	)
+	if summary.get("addresses"):
+		text += " " + _("{0} address(es) saved for the CENPROT.").format(summary["addresses"])
 	if summary["cached"]:
 		text += " " + _("Saved result, at no cost.")
 	else:
@@ -215,7 +218,7 @@ def upsert_contact(org, partner, person, protocol) -> dict:
 
 	found_phones = phones(person) if person else []
 	found_emails = emails(person) if person else []
-	stats = {"created": not name, "phones": 0, "whatsapp": 0, "emails": 0}
+	stats = {"created": not name, "phones": 0, "whatsapp": 0, "emails": 0, "addresses": 0}
 
 	known = {only_digits(row.phone) for row in contact.get("phone_nos") or []}
 	for phone in found_phones:
@@ -240,7 +243,40 @@ def upsert_contact(org, partner, person, protocol) -> dict:
 		contact.save(ignore_permissions=True)
 	else:
 		contact.insert(ignore_permissions=True)
+	stats["addresses"] = _ensure_address(contact, person)
 	return stats
+
+
+def _ensure_address(contact, person) -> int:
+	"""O melhor endereço da consulta por CPF vira o endereço do contato, que a CENPROT exige para mandar o sócio
+	como codevedor. Contato que já tem endereço (digitado pelo cliente, por exemplo) não é alterado."""
+	if not person:
+		return 0
+	if frappe.db.exists(
+		"Dynamic Link", {"link_doctype": "Contact", "link_name": contact.name, "parenttype": "Address"}
+	):
+		return 0
+	best = next(iter(addresses(person)), None)
+	if not best:
+		return 0
+	# a vírgula separa o número do logradouro e o bairro fica por último na linha 2 (o que o envio à CENPROT lê)
+	street = f"{best['street']}, {best['number']}" if best["number"] else best["street"]
+	line2 = ", ".join(part for part in (best["complement"], best["neighborhood"]) if part) if best["neighborhood"] else ""
+	frappe.get_doc(
+		{
+			"doctype": "Address",
+			"address_title": (contact.full_name or contact.name)[:100],
+			"address_type": "Personal",
+			"address_line1": street,
+			"address_line2": line2,
+			"city": best["city"],
+			"state": best["state"],
+			"pincode": best["zip"],
+			"country": "Brazil",
+			"links": [{"link_doctype": "Contact", "link_name": contact.name}],
+		}
+	).insert(ignore_permissions=True)
+	return 1
 
 
 def _set_primary_phones(contact, found_phones):

@@ -2465,3 +2465,6 @@ msgstr "O título {0} foi com {1} codevedor(es): {2}."
 
 msgid "The attachment is too big: CENPROT limits the document (in base64) to 5 MB, which is about 3.7 MB of file."
 msgstr "O anexo é grande demais: a CENPROT limita o documento (em base64) a 5 MB, o que dá uns 3,7 MB de arquivo."
+
+msgid "{0} address(es) saved for the CENPROT."
+msgstr "{0} endereço(s) guardado(s) para a CENPROT."

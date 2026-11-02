@@ -245,6 +245,33 @@ def emails(payload) -> list[str]:
 	return sorted(scored, key=lambda address: -scored[address])
 
 
+def addresses(payload) -> list[dict]:
+	"""Endereços da pessoa, do melhor para o pior (documentação 4.2: `enderecos` com `scoreAssertividade`). Só
+	entra endereço com logradouro e CEP de 8 dígitos: sem eles a CENPROT não aceita o devedor."""
+	found = []
+	for item in body_of(payload).get("enderecos") or []:
+		if not isinstance(item, dict):
+			continue
+		street = str(item.get("logradouro") or "").strip()
+		zip_code = only_digits(item.get("cep"))
+		if not street or len(zip_code) != 8:
+			continue
+		found.append(
+			{
+				"street": street,
+				"number": str(item.get("numero") or "").strip(),
+				"complement": str(item.get("complemento") or "").strip(),
+				"neighborhood": str(item.get("bairro") or "").strip(),
+				"city": str(item.get("cidade") or "").strip(),
+				"state": str(item.get("uf") or "").strip().upper()[:2],
+				"zip": zip_code,
+				"score": max(min(cint(item.get("scoreAssertividade") or item.get("score")), 100), 0),
+				"ranking": cint(item.get("ranking")) or 999,
+			}
+		)
+	return sorted(found, key=lambda address: (-address["score"], address["ranking"]))
+
+
 def partners(payload) -> list[dict]:
 	"""Sócios pessoa física do quadro societário (o contato é uma pessoa: sócio empresa fica de fora)."""
 	body = body_of(payload)

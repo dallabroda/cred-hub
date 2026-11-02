@@ -35,6 +35,11 @@ CPF_RESPONSES = {
 			{"ddd": "19", "numero": "32510099", "tipo": "FIXO", "operadora": "CLARO", "scoreAssertividade": 60, "temWhatsApp": False},
 		],
 		"emails": [{"email": "carlos.esilva@gmail.com", "score": 92}],
+		"enderecos": [
+			{"ranking": 2, "logradouro": "RUA ANTIGA", "numero": "5", "bairro": "CENTRO", "cidade": "SAO PAULO", "uf": "SP", "cep": "01000000", "scoreAssertividade": 40},
+			{"ranking": 1, "logradouro": "AVENIDA CORONEL SILVA TELLES", "numero": "1200", "complemento": "APTO 81", "bairro": "CAMBUI", "cidade": "CAMPINAS", "uf": "sp", "cep": "13024001", "scoreAssertividade": 94},
+			{"ranking": 3, "logradouro": "SEM CEP", "cidade": "X", "uf": "SP", "cep": "123", "scoreAssertividade": 99},
+		],
 	},
 	"98765432100": None,  # não localizado (404)
 }
@@ -182,6 +187,17 @@ class TestLocalizeOrganization(IntegrationTestCase):
 		self.assertEqual(carlos.email_id, "carlos.esilva@gmail.com")
 		self.assertEqual(carlos.assertiva_protocol, "LOC-20261029-88321")
 		self.assertEqual(len(carlos.phone_nos), 3)
+		# o melhor endereço (e só ele) vira o endereço do contato, no formato que o envio à CENPROT lê
+		links = frappe.get_all(
+			"Dynamic Link", {"link_doctype": "Contact", "link_name": carlos.name, "parenttype": "Address"}, pluck="parent"
+		)
+		self.assertEqual(len(links), 1)
+		address = frappe.get_doc("Address", links[0])
+		self.assertEqual(
+			(address.address_line1, address.address_line2, address.city, address.state, address.pincode),
+			("AVENIDA CORONEL SILVA TELLES, 1200", "APTO 81, CAMBUI", "CAMPINAS", "SP", "13024001"),
+		)
+		self.assertEqual(result["addresses"], 1)
 
 		mariana = frappe.get_doc("Contact", {"company_name": self.org.name, "cpf": "987.654.321-00"})
 		self.assertEqual(mariana.full_name, "Mariana Souza Silva")
@@ -208,6 +224,10 @@ class TestLocalizeOrganization(IntegrationTestCase):
 		self.assertEqual(len(calls), 6)
 		self.assertFalse(forced["cached"])
 		self.assertEqual(frappe.db.count("Contact", {"company_name": self.org.name}), 2)
+		# nova consulta paga não duplica o endereço
+		self.assertEqual(
+			frappe.db.count("Dynamic Link", {"link_doctype": "Contact", "link_name": self.carlos.name, "parenttype": "Address"}), 1
+		)
 		status = localize.get_status(self.org.name)
 		self.assertTrue(status["enabled"] and status["has_cnpj"] and status["last_query_on"])
 
