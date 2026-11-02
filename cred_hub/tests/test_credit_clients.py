@@ -388,8 +388,15 @@ def test_cgu_sanctioned_in_ceis(mock_get):
 	assert res["sanctions"][0]["orgao"] == "TCU"
 
 
-def test_premium_bureaus_registry_has_cost_and_client_price():
-	for key in ("boavista_risco", "dossie_quod", "scr_bacen"):
+def test_premium_bureaus_registry_has_list_price_and_settings_toggle():
+	"""credtech#316: o preço é só a referência de tabela da DirectD (quem cobra é ela, na conta do
+	cliente) e cada bureau tem o seu liga/desliga nas configurações."""
+	for key, enabled_field in (
+		("boavista_risco", "boavista_risco_enabled"),
+		("dossie_quod", "dossie_quod_enabled"),
+		("scr_bacen", "scr_bacen_enabled"),
+	):
 		bureau = PREMIUM_BUREAUS[key]
-		assert bureau.cost > 0
-		assert bureau.client_price > bureau.cost  # sempre vendido com margem
+		assert bureau.price_reference > 0
+		assert bureau.enabled_field == enabled_field
+		assert not hasattr(bureau, "client_price")

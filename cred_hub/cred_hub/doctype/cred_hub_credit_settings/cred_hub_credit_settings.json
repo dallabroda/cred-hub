@@ -14,8 +14,10 @@
   "escavador_token",
   "section_infosimples",
   "infosimples_enabled",
+  "infosimples_token",
   "section_directd",
   "directd_enabled",
+  "directd_token",
   "min_directd_score",
   "directd_fgts_enabled",
   "directd_sintegra_enabled",
@@ -88,10 +90,17 @@
   },
   {
    "default": "0",
-   "description": "Credencial da CredTech (nada pra configurar aqui). Cobrado da sua carteira de créditos, com margem, a cada consulta.",
+   "description": "Usa o token da sua própria conta Infosimples. A cobrança é direto com a Infosimples, na sua conta: a CredTech não cobra nada.",
    "fieldname": "infosimples_enabled",
    "fieldtype": "Check",
    "label": "Ativar Infosimples"
+  },
+  {
+   "depends_on": "eval:doc.infosimples_enabled",
+   "description": "Token da sua própria conta Infosimples.",
+   "fieldname": "infosimples_token",
+   "fieldtype": "Password",
+   "label": "Token de Acesso Infosimples"
   },
   {
    "fieldname": "section_directd",
@@ -100,10 +109,17 @@
   },
   {
    "default": "0",
-   "description": "Credencial da CredTech (nada pra configurar aqui). Habilita Score de Crédito (QUOD), Protestos Nacional (IEPTB, todo o Brasil) e Processos Judiciais Simplificada — cada consulta é cobrada da sua carteira de créditos, com margem.",
+   "description": "Usa o token da sua própria conta DirectD. Habilita Score de Crédito (QUOD), Protestos Nacional (IEPTB, todo o Brasil) e Processos Judiciais Simplificada. A cobrança é direto com a DirectD, na sua conta: a CredTech não cobra nada.",
    "fieldname": "directd_enabled",
    "fieldtype": "Check",
    "label": "Ativar DirectD"
+  },
+  {
+   "depends_on": "eval:doc.directd_enabled || doc.boavista_risco_enabled || doc.dossie_quod_enabled || doc.scr_bacen_enabled",
+   "description": "Token da sua própria conta DirectD. Vale para os produtos automáticos e para Boa Vista, Dossiê QUOD e SCR Bacen.",
+   "fieldname": "directd_token",
+   "fieldtype": "Password",
+   "label": "Token de Acesso DirectD"
   },
   {
    "default": "0",
@@ -220,21 +236,21 @@
   },
   {
    "default": "0",
-   "description": "Boa Vista - Risco Positivo PJ, segundo bureau de score. Credencial da CredTech, nada pra configurar — cobrado R$18,00 da sua carteira de créditos por consulta.",
+   "description": "Consulta sob demanda pela DirectD, com o token DirectD acima. Cobrado pela DirectD na sua conta.",
    "fieldname": "boavista_risco_enabled",
    "fieldtype": "Check",
    "label": "Habilitar Boa Vista - Risco Positivo PJ"
   },
   {
    "default": "0",
-   "description": "Dossiê QUOD Completo, PF ou PJ. Credencial da CredTech, nada pra configurar — cobrado R$10,00 da sua carteira de créditos por consulta.",
+   "description": "Consulta sob demanda pela DirectD, com o token DirectD acima. Cobrado pela DirectD na sua conta.",
    "fieldname": "dossie_quod_enabled",
    "fieldtype": "Check",
    "label": "Habilitar Dossiê QUOD - Completo"
   },
   {
    "default": "0",
-   "description": "SCR Analítico - Resumo BACEN, exposição bancária real, PF ou PJ. Credencial da CredTech, nada pra configurar — cobrado R$6,00 da sua carteira de créditos por consulta.",
+   "description": "Consulta sob demanda pela DirectD, com o token DirectD acima. Cobrado pela DirectD na sua conta.",
    "fieldname": "scr_bacen_enabled",
    "fieldtype": "Check",
    "label": "Habilitar SCR Analítico (Resumo BACEN)"
@@ -242,7 +258,7 @@
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-10-30 23:50:00.000000",
+ "modified": "2026-11-02 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Cred Hub",
  "name": "Cred Hub Credit Settings",

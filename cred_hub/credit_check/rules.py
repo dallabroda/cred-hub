@@ -15,6 +15,13 @@ VERDICT_REJECTED = "Rejected"          # Reprovado no Pré-Filtro (falência, ex
 VERDICT_ERROR = "Error"                # Não verificado: um provedor habilitado falhou ou está sem credencial
 
 
+def pre_filter_needs_acknowledgement(verdict: str | None) -> bool:
+	"""Consulta a bureau final (Serasa, Boa Vista, QUOD, SCR) com pré-filtro diferente de
+	'Pre-Approved' (inclusive sem pré-análise) não é bloqueada: o operador vê o alerta e confirma
+	(decisão do dono, 02/11/2026, credtech#316 — "o sistema avisa, o operador decide")."""
+	return verdict != VERDICT_PRE_APPROVED
+
+
 def evaluate_credit_risk(
 	escavador_data: dict[str, Any],
 	infosimples_data: dict[str, Any],

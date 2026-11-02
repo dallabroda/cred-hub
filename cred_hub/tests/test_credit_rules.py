@@ -4,9 +4,7 @@ import pytest
 
 from cred_hub.credit_check.clients.escavador import parse_escavador_payload
 from cred_hub.credit_check.clients.serasa import (
-	BureauGateBlocked,
 	SerasaNotConfigured,
-	assert_pre_approved_for_bureau,
 	trigger_serasa_relato,
 )
 from cred_hub.credit_check.rules import (
@@ -16,6 +14,7 @@ from cred_hub.credit_check.rules import (
 	VERDICT_WARNING,
 	evaluate_credit_risk,
 	format_timeline_summary,
+	pre_filter_needs_acknowledgement,
 )
 
 
@@ -225,18 +224,15 @@ def test_format_timeline_summary_for_error_verdict():
 def test_trigger_serasa_relato_requires_real_credentials():
 	"""Sem endpoint/token do contrato do cliente, nunca finge sucesso (credtech#302)."""
 	with pytest.raises(SerasaNotConfigured):
-		trigger_serasa_relato("12345678000199", "user@example.com", "Pre-Approved")
+		trigger_serasa_relato("12345678000199", "user@example.com")
 
 
-def test_bureau_gate_blocking():
-	with pytest.raises(BureauGateBlocked):
-		assert_pre_approved_for_bureau("Rejected", "12345678000199")
-
-	with pytest.raises(BureauGateBlocked):
-		assert_pre_approved_for_bureau("Warning", "12345678000199")
-
-	# Pre-Approved passa sem erro
-	assert_pre_approved_for_bureau("Pre-Approved", "12345678000199")
+def test_pre_filter_alert_needs_acknowledgement_instead_of_blocking():
+	"""credtech#316: pré-filtro diferente de Pre-Approved não bloqueia bureau final; só exige que o
+	operador confirme o alerta."""
+	for verdict in (VERDICT_REJECTED, VERDICT_WARNING, VERDICT_ERROR, "Not Checked", None, ""):
+		assert pre_filter_needs_acknowledgement(verdict) is True
+	assert pre_filter_needs_acknowledgement(VERDICT_PRE_APPROVED) is False
 
 
 def test_format_timeline_summary():
