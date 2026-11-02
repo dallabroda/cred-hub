@@ -19,6 +19,7 @@ from cred_hub.credit_check.clients.serasa import (
 	trigger_serasa_relato,
 )
 from cred_hub.credit_check.enrich import get_credit_settings, run_background_check
+from cred_hub.credit_check import partners as partners_lib
 from cred_hub.credit_check.premium_bureaus import PREMIUM_BUREAUS
 from cred_hub.credit_check.rules import pre_filter_needs_acknowledgement
 
@@ -245,15 +246,21 @@ def _log_premium_bureau_query(
 	raw: dict[str, Any],
 	pre_filter_verdict: str,
 	warning_acknowledged: bool,
+	document: str = "",
+	contact_name: str | None = None,
 ) -> None:
 	"""Grava a auditoria da consulta ao bureau final: quem pediu, o pré-filtro mostrado, se o
 	operador confirmou um alerta e o preço de tabela do provedor (cobrado na conta do cliente; a
-	CredTech não cobra nada, por isso `client_price` fica 0)."""
+	CredTech não cobra nada, por isso `client_price` fica 0). `document` é o CPF ou CNPJ de quem foi
+	consultado; com `contact_name` a consulta é de um sócio, e `cnpj` guarda o da empresa."""
 	frappe.get_doc({
 		"doctype": "Cred Hub Premium Bureau Query",
 		"bureau": bureau,
 		"organization": organization_name,
 		"deal": deal_name,
+		"subject_type": "Partner" if contact_name else "Organization",
+		"contact": contact_name,
+		"document": document or cnpj,
 		"cnpj": cnpj,
 		"requested_by": frappe.session.user,
 		"requested_on": now_datetime(),
@@ -310,6 +317,7 @@ def _final_bureaus(settings_doc) -> list[dict[str, Any]]:
 			"provider": "Serasa Experian",
 			"price_reference": None,  # depende do contrato do cliente com a Serasa
 			"configured": bool(settings_doc.get("serasa_endpoint_url") and settings_doc.get("serasa_token")),
+			"partner_ok": False,  # Relato PJ é só de empresa
 		})
 	has_directd_token = bool(settings_doc.get("directd_token"))
 	for registry in PREMIUM_BUREAUS.values():
@@ -320,6 +328,7 @@ def _final_bureaus(settings_doc) -> list[dict[str, Any]]:
 				"provider": "DirectD",
 				"price_reference": registry.price_reference,
 				"configured": has_directd_token,
+				"partner_ok": registry.key in partners_lib.PARTNER_BUREAUS,
 			})
 	return bureaus
 
@@ -348,9 +357,13 @@ def request_bureau_final(
 	bureau: str = "serasa",
 	confirm_cost: bool = False,
 	acknowledged_warning: bool = False,
+	contact_name: str | None = None,
 ) -> dict[str, Any]:
 	"""Consulta um bureau final (Serasa ou Boa Vista / Dossiê QUOD / SCR Bacen pela DirectD) com a
 	chave do próprio cliente — a CredTech não cobra nada (credtech#316).
+
+	Com `contact_name` a consulta é de um sócio (pelo CPF completo do Contato), só nos bureaus que
+	aceitam CPF (Dossiê QUOD e SCR Bacen); sem CPF válido no Contato, não consulta.
 
 	Transparência: nada é consultado sem `confirm_cost` (a tela mostrou o preço de tabela e que
 	quem cobra é o provedor, na conta do cliente). Pré-filtro diferente de 'Pre-Approved' não
@@ -384,6 +397,13 @@ def request_bureau_final(
 	organization_name = ctx["organization"]
 	org_cnpj = ctx["cnpj"]
 
+	# Quem é consultado: a empresa (CNPJ) ou um sócio (CPF do Contato)
+	document, subject_name = org_cnpj, ""
+	if contact_name:
+		if not option.get("partner_ok"):
+			frappe.throw(_("{0} only accepts companies (CNPJ), not partners (CPF).").format(option["label"]))
+		document, subject_name = partners_lib.cpf_digits(organization_name, contact_name)
+
 	if bureau == "serasa":
 		endpoint_url = settings_doc.get("serasa_endpoint_url") or ""
 		serasa_token = settings_doc.get_password("serasa_token", raise_exception=False) or ""
@@ -399,7 +419,7 @@ def request_bureau_final(
 		registry = PREMIUM_BUREAUS[bureau]
 		token = settings_doc.get_password("directd_token", raise_exception=False) or ""
 		try:
-			result = registry.fetch(org_cnpj, token)
+			result = registry.fetch(document, token)
 		except (DirectDAuthError, DirectDError, ValueError) as e:
 			frappe.throw(_("{0} query failed: {1}").format(registry.label, str(e)))
 		status = "Concluído"
@@ -407,13 +427,25 @@ def request_bureau_final(
 
 	price_reference = option["price_reference"]
 	_log_premium_bureau_query(
-		bureau, organization_name, deal.name if deal else None, org_cnpj, price_reference or 0.0, status, raw, verdict, needs_ack
+		bureau,
+		organization_name,
+		deal.name if deal else None,
+		org_cnpj,
+		price_reference or 0.0,
+		status,
+		raw,
+		verdict,
+		needs_ack,
+		document=document,
+		contact_name=contact_name,
 	)
 
 	price_text = f"R$ {price_reference:.2f}" if price_reference else _("as per your contract")
 	message = _("Final bureau query ({0}) requested by {1}. Billed by {2} on the client's account (list price: {3}).").format(
 		option["label"], frappe.session.user, option["provider"], price_text
 	)
+	if contact_name:
+		message += " " + _("Partner consulted: {0}.").format(subject_name)
 	if needs_ack:
 		message += " " + _("Queried even with the pre-filter alert: {0}.").format(_verdict_label(verdict))
 	comment_target = deal or frappe.get_doc("CRM Organization", organization_name)
@@ -425,4 +457,101 @@ def request_bureau_final(
 		"price_reference": price_reference,
 		"warning_acknowledged": needs_ack,
 		"data": result,
+	}
+
+
+@frappe.whitelist()
+def get_partners(organization_name: str) -> list[dict[str, Any]]:
+	"""Sócios da Organização (Contatos ligados a ela) e se já têm CPF completo. O operador escolhe
+	quais consultar; nenhum vem marcado."""
+	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
+	_check_deal_and_org_permission(None, organization_name)
+	return partners_lib.partners_of(organization_name)
+
+
+@frappe.whitelist()
+def save_partner_cpf(organization_name: str, contact_name: str, cpf: str) -> dict[str, Any]:
+	"""Grava o CPF completo de um sócio (a Receita só mostra o CPF mascarado). Só aceita CPF válido."""
+	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
+	_check_deal_and_org_permission(None, organization_name)
+	return partners_lib.save_cpf(organization_name, contact_name, cpf)
+
+
+def _bureau_label(bureau: str) -> str:
+	if bureau == "serasa":
+		return "Serasa Experian (Relato PJ)"
+	registry = PREMIUM_BUREAUS.get(bureau)
+	return registry.label if registry else bureau
+
+
+@frappe.whitelist()
+def get_bureau_results(organization_name: str) -> list[dict[str, Any]]:
+	"""Todas as consultas a bureau final feitas para a Organização e os sócios dela, da mais recente
+	para a mais antiga, sem o retorno completo (use `get_bureau_result` para abrir um)."""
+	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
+	_check_deal_and_org_permission(None, organization_name)
+	rows = frappe.get_all(
+		"Cred Hub Premium Bureau Query",
+		filters={"organization": organization_name},
+		fields=[
+			"name",
+			"bureau",
+			"subject_type",
+			"contact",
+			"document",
+			"requested_by",
+			"requested_on",
+			"pre_filter_verdict",
+			"warning_acknowledged",
+			"cost",
+			"status",
+		],
+		order_by="requested_on desc",
+		limit_page_length=200,
+	)
+	contact_names = {
+		row.name: row.full_name
+		for row in frappe.get_all(
+			"Contact",
+			filters={"name": ("in", [r.contact for r in rows if r.contact] or [""])},
+			fields=["name", "full_name"],
+		)
+	}
+	return [
+		{
+			"name": row.name,
+			"bureau": row.bureau,
+			"bureau_label": _bureau_label(row.bureau),
+			"subject_type": row.subject_type or "Organization",
+			"subject_name": contact_names.get(row.contact, "") if row.contact else "",
+			"document": row.document or "",
+			"requested_by": row.requested_by,
+			"requested_on": row.requested_on,
+			"pre_filter_verdict": row.pre_filter_verdict or "",
+			"warning_acknowledged": bool(row.warning_acknowledged),
+			"price_reference": row.cost or 0.0,
+			"status": row.status or "",
+		}
+		for row in rows
+	]
+
+
+@frappe.whitelist()
+def get_bureau_result(query_name: str) -> dict[str, Any]:
+	"""O retorno completo de uma consulta a bureau final, exatamente como o provedor devolveu."""
+	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
+	if not frappe.db.exists("Cred Hub Premium Bureau Query", query_name):
+		frappe.throw(_("Query not found."))
+	doc = frappe.get_doc("Cred Hub Premium Bureau Query", query_name)
+	_check_deal_and_org_permission(doc.get("deal"), doc.get("organization"))
+	try:
+		raw = json.loads(doc.raw_response_json or "{}")
+	except ValueError:
+		raw = {"raw_text": doc.raw_response_json}
+	return {
+		"name": doc.name,
+		"bureau_label": _bureau_label(doc.bureau),
+		"document": doc.get("document") or doc.get("cnpj") or "",
+		"requested_on": doc.requested_on,
+		"raw": raw,
 	}
