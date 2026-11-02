@@ -2789,3 +2789,36 @@ msgstr "Risco médio"
 
 msgid "Low risk"
 msgstr "Risco baixo"
+
+msgid "A credit dossier is already being generated for this organization. Wait for it to finish."
+msgstr "Já há um dossiê de crédito sendo gerado para esta organização. Aguarde terminar."
+
+msgid "Minimum package: {0} is not enabled or has no credential in the Credit settings. An admin needs to turn it on or take it out of the package."
+msgstr "Pacote mínimo: {0} não está ligado ou está sem credencial nas configurações de Crédito. Um administrador precisa ligar ou tirar do pacote."
+
+msgid "The minimum package still needs paid queries: {0}. Only managers can run paid queries; ask a manager."
+msgstr "O pacote mínimo ainda precisa de consultas pagas: {0}. Só gestores podem fazer consultas pagas; peça a um gestor."
+
+msgid "The minimum package needs paid queries billed by the provider on your account: {0}. Confirm the cost to continue."
+msgstr "O pacote mínimo precisa de consultas pagas, cobradas pelo provedor na sua conta: {0}. Confirme o custo para continuar."
+
+msgid "Unknown item in the minimum package: {0}"
+msgstr "Item desconhecido no pacote mínimo: {0}"
+
+msgid "The minimum package needs at least one query of the company."
+msgstr "O pacote mínimo precisa de pelo menos uma consulta da empresa."
+
+msgid "Queries can be reused for at most {0} days."
+msgstr "As consultas podem ser reaproveitadas por no máximo {0} dias."
+
+msgid "not enabled in the Credit settings"
+msgstr "não está ligado nas configurações de Crédito"
+
+msgid "no API credential in the Credit settings"
+msgstr "sem credencial de API nas configurações de Crédito"
+
+msgid "Minimum package of the credit dossier: {0} queries made, {1} failed. List price billed by the provider on the client's account: R$ {2}."
+msgstr "Pacote mínimo do dossiê de crédito: {0} consultas feitas, {1} com falha. Preço de tabela cobrado pelo provedor na conta do cliente: R$ {2}."
+
+msgid "Failed: {0}."
+msgstr "Com falha: {0}."
