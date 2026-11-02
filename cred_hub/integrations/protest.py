@@ -1,6 +1,6 @@
 """Funil de Cobrança com protesto no cartório pela CENPROT (credtech#290, módulo 2).
 
-Ao ligar a CENPROT nas configurações, o site ganha o funil "Debt Collection" (Cobrança) com 8 etapas e os campos de
+Ao ligar a CENPROT nas configurações, o site ganha o funil "Debt Collection" (Cobrança) com 6 etapas e os campos de
 protesto no formulário do card. Depois:
 
 - **Enviar a protesto** (botão do card, ou o card entrar na etapa de envio, se o cliente ligou; desligado por
@@ -66,15 +66,16 @@ DECLARATION_FOR_SPECIES = {"DMI": "D", "DSI": "D", "CCB": "C", "CBI": "C"}
 ENDORSEMENT = {"Mandate endorsement": "M", "Transfer endorsement": "T", "Blank endorsement": "B"}
 COLLECTION_PIPELINE = "Debt Collection"
 # (etapa, tipo, cor, probabilidade, campo das configurações); nomes em inglês, pt-BR no .po
+# The 6 stages approved by the owner (02/11/2026). Won and Lost are not stages: they are the card status.
+# Only the registry stages are tied to a setting (the card moves there by itself when CENPROT answers); the other
+# stage settings (send, notified, paid, agreement) stay empty and a client may still pick stages for them.
 COLLECTION_STAGES = (
-	("Overdue / Friendly Notice", "Open", "orange", 10, None),
-	("Out-of-court Notice", "Ongoing", "amber", 20, None),
-	("Send to the Registry", "Ongoing", "blue", 40, "stage_send"),
-	("At the Registry", "Ongoing", "cyan", 50, "stage_at_registry"),
-	("Notified by the Registry", "Ongoing", "violet", 60, "stage_notified"),
-	("Protested", "Ongoing", "red", 40, "stage_protested"),
-	("Paid at the Registry", "Won", "green", 100, "stage_paid"),
-	("Agreement / Withdrawn", "Won", "teal", 100, "stage_agreement"),
+	("Backlog", "Open", "gray", 10, None),
+	("In negotiation", "Ongoing", "amber", 30, None),
+	("Registry Alert", "Ongoing", "green", 40, None),
+	("In the Registry", "Ongoing", "pink", 50, "stage_at_registry"),
+	("Protested", "Ongoing", "orange", 60, "stage_protested"),
+	("Legal / Lawsuit", "Ongoing", "purple", 40, None),
 )
 # IP de saída do servidor do HubTech: o IEPTB só aceita chamadas de IPs cadastrados pelo cliente no contrato
 OUTBOUND_IP = "2.31.80.97"
@@ -125,7 +126,7 @@ def _remember(settings, client):
 
 
 def create_collection_pipeline(settings):
-	"""Funil "Debt Collection" (Cobrança) com as 8 etapas e os campos de protesto; quem ligou a CENPROT fica como dono."""
+	"""Funil "Debt Collection" (Cobrança) com as 6 etapas e os campos de protesto; quem ligou a CENPROT fica como dono."""
 	pipeline = frappe.new_doc("CRM Pipeline")
 	pipeline.pipeline_name = COLLECTION_PIPELINE
 	pipeline.color = "orange"

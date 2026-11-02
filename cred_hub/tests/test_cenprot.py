@@ -237,6 +237,16 @@ class TestCollectionPipeline(IntegrationTestCase):
 	def stage(self, setting):
 		return self.settings.get(setting)
 
+	def pick(self, setting, label):
+		"""A client may still choose a stage for the optional automations (send, agreement...)."""
+		name = frappe.db.get_value(
+			"CRM Deal Status", {"pipeline": self.settings.collection_pipeline, "deal_status": label}, "name"
+		)
+		frappe.db.set_single_value(SETTINGS, setting, name)
+		frappe.clear_document_cache(SETTINGS, SETTINGS)
+		self.settings = frappe.get_single(SETTINGS)
+		return name
+
 	def deal(self, **fields):
 		first = frappe.get_all(
 			"CRM Deal Status", {"pipeline": self.settings.collection_pipeline}, pluck="name", order_by="position asc"
@@ -262,10 +272,17 @@ class TestCollectionPipeline(IntegrationTestCase):
 		stages = frappe.get_all(
 			"CRM Deal Status", {"pipeline": pipeline.name}, ["name", "deal_status", "type"], order_by="position asc"
 		)
-		self.assertEqual(len(stages), 8)
-		self.assertEqual(stages[2].name, self.stage("stage_send"))
-		self.assertEqual(stages[5].deal_status, "Protested")
-		self.assertEqual(stages[6].type, "Won")
+		# only the 6 approved stages; Won and Lost are the card status, never stages
+		self.assertEqual(
+			[stage.deal_status for stage in stages],
+			["Backlog", "In negotiation", "Registry Alert", "In the Registry", "Protested", "Legal / Lawsuit"],
+		)
+		self.assertEqual(stages[0].type, "Open")
+		self.assertFalse([stage for stage in stages if stage.type in ("Won", "Lost")])
+		self.assertEqual(self.stage("stage_at_registry"), stages[3].name)
+		self.assertEqual(self.stage("stage_protested"), stages[4].name)
+		for setting in ("stage_send", "stage_notified", "stage_paid", "stage_agreement"):
+			self.assertFalse(self.stage(setting), setting)
 		self.assertIn("protest_due_date", [row.fieldname for row in pipeline.fields])
 		self.assertEqual(self.settings.creditor_state, "SP")
 		self.assertEqual(self.settings.creditor_document, "11444777000161")
@@ -299,6 +316,7 @@ class TestCollectionPipeline(IntegrationTestCase):
 
 	def test_send_then_daily_check_moves_the_card_and_notifies(self):
 		deal = self.deal()
+		first_stage = deal.status  # no send stage in the new template: the card waits where it is
 		session = FakeCenprot(
 			EnviarTitulo=[answer("EnviarTitulo", "WS_SUC_201", "Título Coletado com Sucesso")],
 			ConsultarTitulo=[
@@ -311,7 +329,7 @@ class TestCollectionPipeline(IntegrationTestCase):
 			result = protest.send(deal.name)
 			self.assertTrue(result["ok"], result)
 			deal.reload()
-			self.assertEqual((deal.protest_status, deal.status), ("COLETADO", self.stage("stage_send")))
+			self.assertEqual((deal.protest_status, deal.status), ("COLETADO", first_stage))
 			self.assertEqual(deal.protest_debtor_document, "11222333000181")
 			self.assertTrue(deal.protest_sent_at)
 			protest.sync_all()
@@ -350,6 +368,7 @@ class TestCollectionPipeline(IntegrationTestCase):
 		def protest_jobs(enqueue):
 			return [c for c in enqueue.call_args_list if c.args and c.args[0].startswith("cred_hub.integrations.protest")]
 
+		self.pick("stage_send", "Registry Alert")
 		deal = self.deal()
 		with patch("frappe.enqueue") as enqueue:
 			deal.status = self.stage("stage_send")
@@ -385,6 +404,7 @@ class TestCollectionPipeline(IntegrationTestCase):
 		self.assertFalse(protest.withdraw(deal.name)["ok"])
 
 	def test_agreement_stage_withdraws_only_when_the_client_turned_it_on(self):
+		self.pick("stage_agreement", "Legal / Lawsuit")
 		deal = self.deal()
 		frappe.db.set_value("CRM Deal", deal.name, {"protest_status": "CONFIRMADO", "protest_sent_at": frappe.utils.now()})
 		deal.reload()
