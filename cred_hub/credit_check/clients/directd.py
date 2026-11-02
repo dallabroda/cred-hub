@@ -22,10 +22,12 @@ Sob demanda / Premium (bureaus pagos, gate de pré-aprovação — ver credit_ch
 from __future__ import annotations
 
 from typing import Any
+
 import requests
 
 from cred_hub.cnpj.mapping import only_digits
 from cred_hub.credit_check.clients.escavador import RE_BANKRUPTCY, RE_EXECUTION
+from cred_hub.credit_check.raw_capture import record
 
 DEFAULT_BASE_URL = "https://apiv3.directd.com.br"
 DEFAULT_TIMEOUT = 20
@@ -66,6 +68,7 @@ def _request_directd(endpoint: str, params: dict[str, str], token: str, base_url
 	except ValueError as e:
 		raise DirectDError(f"Resposta não-JSON da DirectD ({endpoint}): {response.text[:200]}") from e
 
+	record("DirectD", endpoint, data)
 	return data
 
 

@@ -1,0 +1,172 @@
+{
+ "reports": [
+  {
+   "reportName": "RELATORIO_AVANCADO_PJ_PME",
+   "identificationReport": {
+    "updateDate": "2026-09-16",
+    "documentNumber": "11222333000181",
+    "statusRegistration": "SITUACAO DO CNPJ EM 14/09/2026: ATIVA",
+    "statusCode": "2",
+    "statusCodeDescription": "ATIVA",
+    "companyName": "EXEMPLO LOGISTICA LTDA",
+    "address": {
+     "addressLine": "R EXEMPLO 100",
+     "zipCode": "01001000",
+     "district": "CENTRO",
+     "city": "SAO PAULO",
+     "state": "SP"
+    },
+    "companyUrl": "",
+    "partnership": "SOCIEDADE EMPRESARIA LIMITADA",
+    "companyRegister": "12345678",
+    "companyRegisterDate": "2025-03-19",
+    "companyFoundation": "2024-05-09",
+    "stateRegistration": "123456789012",
+    "economicActivity": "SERVICOS AUXILIARES DE TRANSPORTES",
+    "cnae": "5212500",
+    "serasaActiveCode": "S020700",
+    "nireNumber": "35000000001",
+    "predecessorList": [
+     {
+      "predecessorName": "ANTIGA EXEMPLO TRANSPORTES LTDA",
+      "predecessorDate": "2025-03-26"
+     }
+    ],
+    "reorganizations": [],
+    "legalNatureCode": "206"
+   },
+   "QSAReport": {
+    "companyData": {
+     "socialCapitalValue": 50000.0,
+     "accomplishedValue": 50000.0,
+     "informationUpdateDate": "2026-09-22",
+     "countryOrigin": "BRASIL",
+     "controlType": "PRIVADO",
+     "nature": "FECHADO"
+    },
+    "partnerCompleteReport": {
+     "partnersList": [
+      {
+       "documentType": "CPF",
+       "documentId": "52998224725",
+       "name": "MARIA EXEMPLO DA SILVA",
+       "status": "ATIVA",
+       "statusCode": "2",
+       "sinceDate": "2024-05-09",
+       "restrictionSign": false,
+       "documentConsistency": true,
+       "capitalTotalValue": 100.0,
+       "capitalVoterValue": 0.0
+      }
+     ]
+    },
+    "directorCompleteReport": {
+     "directorsList": [
+      {
+       "documentType": "CPF",
+       "documentId": "52998224725",
+       "name": "MARIA EXEMPLO DA SILVA",
+       "status": "ATIVA",
+       "statusCode": "2",
+       "role": "ADMINISTRADOR",
+       "sinceDate": "2024-05-09",
+       "restrictionSign": false,
+       "documentConsistency": true,
+       "informationUpdateDate": "2025-03-29"
+      }
+     ]
+    }
+   },
+   "negativeData": {
+    "pefin": {
+     "summary": {
+      "count": 0,
+      "balance": 0.0
+     }
+    },
+    "refin": {
+     "summary": {
+      "count": 0,
+      "balance": 0.0
+     }
+    },
+    "collectionRecords": {
+     "summary": {
+      "count": 0,
+      "balance": 0.0
+     }
+    },
+    "check": {
+     "summary": {
+      "count": 0,
+      "balance": 0.0
+     }
+    },
+    "notary": {
+     "summary": {
+      "count": 0,
+      "balance": 0.0
+     }
+    }
+   },
+   "facts": {
+    "judgementFilings": {
+     "summary": {
+      "count": 0,
+      "balance": 0.0
+     }
+    },
+    "bankrupts": {
+     "summary": {
+      "count": 0,
+      "balance": 0.0
+     }
+    },
+    "inquiryCompanyResponse": {
+     "results": [
+      {
+       "occurrenceDate": "2026-09-23",
+       "companyName": "BANCO EXEMPLO S.A.",
+       "companyDocumentId": "00000000000191",
+       "companyAlias": "BANCO EXEMPLO",
+       "daysQuantity": 1
+      }
+     ],
+     "quantity": {
+      "actual": 4,
+      "historical": [
+       {
+        "inquiryDate": "2026-08",
+        "occurrences": 7
+       },
+       {
+        "inquiryDate": "2026-07",
+        "occurrences": 10
+       }
+      ]
+     }
+    }
+   },
+   "score": {
+    "score": 275,
+    "scoreModel": "HPJ8",
+    "defaultRate": "00291",
+    "message": "PROBABILIDADE DE INADIMPLENCIA:  2,91%"
+   },
+   "scores": {
+    "scoreResponse": [
+     {
+      "score": 28577,
+      "scoreModel": "HLC1",
+      "message": "O LIMITE DE CREDITO PJ FOI CALCULADO COM BASE EM REFERENCIAIS DE NEGOCIOS",
+      "billing": true
+     }
+    ]
+   },
+   "negativeSummary": {},
+   "checkFilingsHistorical": {
+    "checkFilingsHistoricalResponse": []
+   }
+  }
+ ]
+}

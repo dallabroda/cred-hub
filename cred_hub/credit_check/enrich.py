@@ -41,6 +41,7 @@ from cred_hub.credit_check.platform_credentials import (
 	PlatformCredentialNotConfigured,
 	platform_cgu_api_key,
 )
+from cred_hub.credit_check.raw_capture import capture
 from cred_hub.credit_check.rules import (
 	VERDICT_ERROR,
 	evaluate_credit_risk,
@@ -266,11 +267,15 @@ def run_background_check(
 	# inteiro). Exceção deliberada ao fail-closed: falha do governo nunca trava o resto da esteira
 	# nem vira 'Error' geral — só fica "não verificado" nesse campo específico.
 	cgu_data: dict[str, Any] | None = None
+	# O retorno inteiro de cada chamada, como o provedor devolveu (credtech#316): o dossiê mostra tudo
+	raw_responses: list[dict[str, Any]] = []
 	skip_paid_providers = False
 	if settings.get("cgu_enabled"):
 		try:
 			cgu_api_key = platform_cgu_api_key()
-			cgu_data = fetch_ceis_cnep(digits, cgu_api_key)
+			with capture() as calls:
+				cgu_data = fetch_ceis_cnep(digits, cgu_api_key)
+			raw_responses.extend(calls)
 			if cgu_data.get("sanctioned") and settings.get("block_on_ceis_cnep", False):
 				skip_paid_providers = True
 		except PlatformCredentialNotConfigured as e:
@@ -296,7 +301,9 @@ def run_background_check(
 				failures.append(_("{0}: no API token configured").format(provider.label))
 				continue
 			try:
-				results[provider.data_slot] = provider.fetch(digits, provider.token)
+				with capture() as calls:
+					results[provider.data_slot] = provider.fetch(digits, provider.token)
+				raw_responses.extend(calls)
 				total_cost += provider.estimated_cost
 			except Exception as e:
 				frappe.log_error(
@@ -378,6 +385,7 @@ def run_background_check(
 				"directd_fgts": results["directd_fgts"],
 				"directd_sintegra": results["directd_sintegra"],
 				"failures": failures,
+				"raw_responses": raw_responses,
 			},
 			ensure_ascii=False,
 		),
