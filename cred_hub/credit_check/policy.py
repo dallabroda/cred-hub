@@ -44,7 +44,7 @@ Objetivo: recomendar se a operação pode seguir, usando só os dados consultado
 Como concluir:
 - Aprovar: sem restrições relevantes e capacidade compatível com o valor pedido.
 - Aprovar com ressalvas: há pontos de atenção que o analista deve tratar antes de liberar (por exemplo, pedir garantia, confirmar faturamento, reduzir a exposição).
-- Recusar: restrições graves e recentes, falência ou recuperação judicial, ou incapacidade evidente de pagar.
+- Recusar: restrições graves e recentes; restrições ativas (protestos, negativações ou cheques sem fundo) junto com score na faixa de risco mais alta do bureau (por exemplo, até 300 numa escala de 0 a 1000) ou probabilidade de inadimplência alta; falência ou recuperação judicial; ou incapacidade evidente de pagar.
 
 Dado que falta não vira aprovação: se uma informação importante faltou ou uma consulta falhou, diga qual e recomende no máximo "aprovar com ressalvas"."""
 
