@@ -2477,3 +2477,48 @@ msgstr "Um título aceita até {0} codevedores na CENPROT. Desmarque alguns sóc
 
 msgid "{0} number(s) marked 'do not disturb' were saved but not used as the main phone."
 msgstr "{0} número(s) marcado(s) como 'não perturbe' foram guardados, mas não viraram o telefone principal."
+
+msgid "Enter a valid CNPJ to run the test query against."
+msgstr "Informe um CNPJ válido para a consulta de teste."
+
+msgid "This test runs a real paid query, billed by the provider on your account (list price ~R$ {0}). Confirm the cost to continue."
+msgstr "Este teste faz uma consulta paga de verdade, cobrada pelo provedor na sua conta (preço de tabela ~R$ {0}). Confirme o custo para continuar."
+
+msgid "Connected to the Infosimples API successfully!"
+msgstr "Conectado à API da Infosimples com sucesso!"
+
+msgid "Connected to the DirectD API successfully!"
+msgstr "Conectado à API da DirectD com sucesso!"
+
+msgid "DirectD connection test failed: {0}"
+msgstr "O teste de conexão com a DirectD falhou: {0}"
+
+msgid "This bureau is not enabled in the Credit settings."
+msgstr "Este bureau não está ligado nas configurações de Crédito."
+
+msgid "Unknown bureau: {0}"
+msgstr "Bureau desconhecido: {0}"
+
+msgid "{0}: no API credential configured in the Credit settings."
+msgstr "{0}: nenhuma credencial de API cadastrada nas configurações de Crédito."
+
+msgid "This query is paid and billed by {0} on your account. Confirm the cost to continue."
+msgstr "Esta consulta é paga e cobrada por {0} na sua conta. Confirme o custo para continuar."
+
+msgid "The pre-filter result for this organization is {0}. Review the alert and confirm to query anyway."
+msgstr "O resultado do pré-filtro desta organização é {0}. Leia o alerta e confirme para consultar mesmo assim."
+
+msgid "{0} query failed: {1}"
+msgstr "A consulta a {0} falhou: {1}"
+
+msgid "as per your contract"
+msgstr "conforme o seu contrato"
+
+msgid "Final bureau query ({0}) requested by {1}. Billed by {2} on the client's account (list price: {3})."
+msgstr "Consulta a bureau final ({0}) pedida por {1}. Cobrada por {2} na conta do cliente (preço de tabela: {3})."
+
+msgid "Queried even with the pre-filter alert: {0}."
+msgstr "Consultado mesmo com o alerta do pré-filtro: {0}."
+
+msgid "Verification failed"
+msgstr "Verificação falhou"

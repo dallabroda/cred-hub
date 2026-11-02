@@ -164,6 +164,14 @@ def get_price_references() -> dict[str, Any]:
 	}
 
 
+def _verdict_label(verdict: str) -> str:
+	"""Nome do resultado do pré-filtro para mensagens ao operador. 'Error' (um provedor falhou) não
+	traduz como a palavra genérica 'Error', que valeria pra o app inteiro."""
+	if verdict == "Error":
+		return _("Verification failed")
+	return _(verdict)
+
+
 def _truthy(value: Any) -> bool:
 	"""Flags vindas do frontend chegam como bool, int ou string ("1", "true")."""
 	if isinstance(value, str):
@@ -369,7 +377,7 @@ def request_bureau_final(
 	needs_ack = pre_filter_needs_acknowledgement(verdict)
 	if needs_ack and not _truthy(acknowledged_warning):
 		frappe.throw(
-			_("The pre-filter result for this organization is {0}. Review the alert and confirm to query anyway.").format(_(verdict))
+			_("The pre-filter result for this organization is {0}. Review the alert and confirm to query anyway.").format(_verdict_label(verdict))
 		)
 
 	deal = ctx["deal"]
@@ -407,7 +415,7 @@ def request_bureau_final(
 		option["label"], frappe.session.user, option["provider"], price_text
 	)
 	if needs_ack:
-		message += " " + _("Queried even with the pre-filter alert: {0}.").format(_(verdict))
+		message += " " + _("Queried even with the pre-filter alert: {0}.").format(_verdict_label(verdict))
 	comment_target = deal or frappe.get_doc("CRM Organization", organization_name)
 	comment_target.add_comment("Comment", message)
 
