@@ -2,7 +2,7 @@
  "actions": [],
  "autoname": "hash",
  "creation": "2026-10-30 23:00:00.000000",
- "description": "Auditoria de consultas a bureaus pagos sob demanda (Serasa, Boa Vista, Dossiê QUOD, SCR Bacen) — custo pago ao fornecedor e preço cobrado do cliente.",
+ "description": "Auditoria de consultas a bureaus pagos sob demanda (Serasa, Boa Vista, Dossiê QUOD, SCR Bacen): quem pediu, o pré-filtro mostrado, se o operador confirmou um alerta, e o preço de tabela do provedor (cobrado na conta do cliente).",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
@@ -12,6 +12,8 @@
   "cnpj",
   "requested_by",
   "requested_on",
+  "pre_filter_verdict",
+  "warning_acknowledged",
   "section_billing",
   "cost",
   "client_price",
@@ -74,14 +76,14 @@
    "default": "0",
    "fieldname": "cost",
    "fieldtype": "Currency",
-   "label": "Custo pago ao fornecedor (R$)",
+   "label": "Preço de tabela do provedor (R$, referência)",
    "read_only": 1
   },
   {
    "default": "0",
    "fieldname": "client_price",
    "fieldtype": "Currency",
-   "label": "Preço cobrado do cliente (R$)",
+   "label": "Cobrado pela CredTech (R$)",
    "read_only": 1
   },
   {
@@ -101,11 +103,24 @@
    "label": "Payload JSON Completo",
    "options": "JSON",
    "read_only": 1
+  },
+  {
+   "fieldname": "pre_filter_verdict",
+   "fieldtype": "Data",
+   "label": "Pré-filtro mostrado ao operador",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "warning_acknowledged",
+   "fieldtype": "Check",
+   "label": "Consultou mesmo com alerta",
+   "read_only": 1
   }
  ],
  "in_create": 0,
  "links": [],
- "modified": "2026-10-30 23:00:00.000000",
+ "modified": "2026-11-02 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Cred Hub",
  "name": "Cred Hub Premium Bureau Query",

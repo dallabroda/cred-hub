@@ -2,10 +2,11 @@
 clientes), nunca do Cred Hub Credit Settings de cada empresa. Vêm do site_config/common_site_config,
 gravadas pelo deploy — mesmo padrão do ASAAS_API_KEY em billing.py.
 
-Decisão do dono (30/10/2026): Escavador e Serasa continuam com a chave do próprio cliente (conta
-dele, ele paga direto). Infosimples e DirectD (todos os produtos, automáticos e Premium) passam a
-rodar na conta da CredTech — cobrados do cliente via carteira de créditos, com markup de 20% —, e
-o Portal da Transparência (CGU) também passa a ser 1 chave só da CredTech, sem markup (é grátis).
+Decisão do dono (02/11/2026, credtech#316): todo bureau pago usa a chave do PRÓPRIO cliente
+(Infosimples, DirectD, Serasa, Escavador, Assertiva, CENPROT) — a CredTech só faz a ponte e não
+cobra consulta. Isso substitui a decisão de 30/10 (Infosimples e DirectD na conta da CredTech com
+20% de margem). Sobra aqui só o Portal da Transparência (CGU): a chave é gratuita, então continua
+1 só, da CredTech, sem custo pra ninguém.
 """
 
 from __future__ import annotations
@@ -24,16 +25,6 @@ def _conf(key: str, label: str) -> str:
 	return value
 
 
-def platform_directd_token() -> str:
-	"""Token DirectD da conta da CredTech — cobre todos os produtos (automáticos e Premium)."""
-	return _conf("credhub_directd_platform_token", "Token DirectD da plataforma")
-
-
-def platform_infosimples_token() -> str:
-	"""Token Infosimples da conta da CredTech."""
-	return _conf("credhub_infosimples_platform_token", "Token Infosimples da plataforma")
-
-
 def platform_cgu_api_key() -> str:
-	"""Chave do Portal da Transparência (CGU) da conta da CredTech — grátis, sem markup."""
+	"""Chave do Portal da Transparência (CGU) da conta da CredTech — grátis, sem custo pro cliente."""
 	return _conf("credhub_cgu_platform_api_key", "Chave do Portal da Transparência da plataforma")

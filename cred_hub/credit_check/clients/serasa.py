@@ -1,9 +1,8 @@
 """Integração sob demanda com o Serasa Experian (Relato PJ) — bureau final e tarifado.
 
-Regra de Segurança Arquitetural:
-Consultas ao Serasa (tarifadas por relatório completo, R$ 25 a R$ 40, pagas com a chave/contrato
-do próprio cliente) só podem ser acionadas quando o lead estiver estritamente 'Pre-Approved'
-(Aprovado no Pré-Filtro) da esteira de baixo custo.
+Consultas ao Serasa são tarifadas por relatório completo e pagas no contrato do próprio cliente.
+Desde 02/11/2026 (credtech#316) não há trava de pré-aprovação: o operador vê o resultado do
+pré-filtro, o motivo e o custo antes de confirmar (ver `request_bureau_final` em api.py).
 
 Nunca retorna sucesso simulado: sem credenciais reais configuradas, a chamada falha com um erro
 explícito — "Solicitado" só aparece quando o Serasa de fato respondeu.
@@ -17,10 +16,6 @@ import requests
 DEFAULT_TIMEOUT = 30
 
 
-class BureauGateBlocked(Exception):
-	"""Disparada quando uma consulta a birô caro é tentada sem aprovação prévia no pré-filtro."""
-
-
 class SerasaNotConfigured(Exception):
 	"""Disparada quando o cliente ainda não configurou a URL/token do contrato Serasa."""
 
@@ -29,31 +24,19 @@ class SerasaError(Exception):
 	"""Erro na comunicação com o Serasa Experian."""
 
 
-def assert_pre_approved_for_bureau(verdict: str, cnpj: str) -> None:
-	"""Garante que o CNPJ passou na esteira preliminar antes de consumir birô caro."""
-	if verdict != "Pre-Approved":
-		raise BureauGateBlocked(
-			f"Consulta ao birô final bloqueada para o CNPJ {cnpj}: parecer atual é '{verdict}'. "
-			"Apenas leads com 'Pre-Approved' podem ser consultados para evitar custos desnecessários."
-		)
-
-
 def trigger_serasa_relato(
 	cnpj: str,
 	user: str,
-	verdict: str,
 	endpoint_url: str = "",
 	token: str = "",
 	timeout: int = DEFAULT_TIMEOUT,
 ) -> dict[str, Any]:
-	"""Aciona a chamada real ao Serasa Relato PJ, com trava de pré-aprovação.
+	"""Aciona a chamada real ao Serasa Relato PJ.
 
 	`endpoint_url` e `token` vêm do contrato do próprio cliente com o Serasa (Cred Hub Credit
 	Settings) — cada cliente tem um endpoint próprio conforme seu plano. Sem os dois, a função
 	falha explicitamente — nunca finge que a consulta foi enviada.
 	"""
-	assert_pre_approved_for_bureau(verdict, cnpj)
-
 	endpoint_url = (endpoint_url or "").strip()
 	token = (token or "").strip()
 	if not endpoint_url or not token:
