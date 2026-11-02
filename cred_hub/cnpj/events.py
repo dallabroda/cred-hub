@@ -4,10 +4,22 @@ import frappe
 from frappe import _
 
 from cred_hub.cnpj.mapping import format_cnpj, is_valid_cnpj, only_digits
+from cred_hub.party.document import CPF, document_kind, format_cpf
 
 
 def validate(doc, method=None):
 	if not doc.get("cnpj"):
+		return
+	if document_kind(doc.cnpj) == CPF:
+		# Organização com CPF já foi barrada em cred_hub.party.events; no lead, o CPF vai para o contato do card
+		if doc.has_value_changed("cnpj"):
+			frappe.msgprint(
+				_("{0} is a CPF: when this lead becomes a card, it goes to the contact, not to an organization.").format(
+					format_cpf(doc.cnpj)
+				),
+				indicator="orange",
+				alert=True,
+			)
 		return
 	doc.cnpj = format_cnpj(doc.cnpj)
 	if not is_valid_cnpj(doc.cnpj) and doc.has_value_changed("cnpj"):

@@ -32,15 +32,11 @@ from cred_hub.integrations.assertiva import (
 	phones,
 	protocol_of,
 )
+from cred_hub.party.document import format_cpf
 
 PROVIDER = "Assertiva"
 OP_CNPJ, OP_CPF = "localize_cnpj", "localize_cpf"
 DEFAULT_PURPOSE = "Credit protection and collection"
-
-
-def format_cpf(value) -> str:
-	digits = only_digits(value)
-	return f"{digits[:3]}.{digits[3:6]}.{digits[6:9]}-{digits[9:]}" if len(digits) == 11 else (value or "")
 
 
 def _settings():

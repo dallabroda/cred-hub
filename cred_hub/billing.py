@@ -36,6 +36,7 @@ from frappe import _
 from frappe.utils import add_days, cint, date_diff, format_date, getdate, now_datetime
 
 from cred_hub.cnpj.mapping import is_valid_cnpj, only_digits
+from cred_hub.party.document import is_valid_cpf
 
 FREE_USERS = 1
 PRICE_PER_USER = 60
@@ -250,16 +251,6 @@ def _field_error(field, message):
 	return {"ok": False, "field": field, "message": message}
 
 
-def _is_valid_cpf(digits):
-	if len(digits) != 11 or digits == digits[0] * 11:
-		return False
-	for size in (9, 10):
-		total = sum(int(d) * (size + 1 - i) for i, d in enumerate(digits[:size]))
-		if digits[size] != str((total * 10 % 11) % 10):
-			return False
-	return True
-
-
 def _clean_payer(payer):
 	payer = frappe.parse_json(payer) if isinstance(payer, str) else (payer or {})
 	clean = {
@@ -272,7 +263,7 @@ def _clean_payer(payer):
 	if len(clean["name"]) < 3:
 		return None, _field_error("name", _("Enter the name of who pays."))
 	tax_id = clean["tax_id"]
-	if not (_is_valid_cpf(tax_id) if len(tax_id) == 11 else is_valid_cnpj(tax_id)):
+	if not (is_valid_cpf(tax_id) if len(tax_id) == 11 else is_valid_cnpj(tax_id)):
 		return None, _field_error("tax_id", _("Enter a valid CPF or CNPJ."))
 	if not frappe.utils.validate_email_address(clean["email"]):
 		return None, _field_error("email", _("Enter a valid e-mail address."))

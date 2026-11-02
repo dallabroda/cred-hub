@@ -2216,3 +2216,30 @@ msgstr "A CENPROT recusou a {0} do título {1}: {2}"
 
 msgid "CENPROT accepted the {0} of title {1}: {2}"
 msgstr "A CENPROT aceitou a {0} do título {1}: {2}"
+
+msgid "{0} is a CPF. People go in Contacts (CPF field); Organizations are only for companies with a CNPJ."
+msgstr "{0} é um CPF. Pessoa física fica em Contatos (campo CPF); Organização é só para empresa com CNPJ."
+
+msgid "This is a CPF"
+msgstr "Isso é um CPF"
+
+msgid "{0} is a CNPJ. Companies go in Organizations; the CPF field of a contact only takes a person's CPF."
+msgstr "{0} é um CNPJ. Empresa fica em Organizações; o campo CPF do contato é só para o CPF de uma pessoa."
+
+msgid "This is a CNPJ"
+msgstr "Isso é um CNPJ"
+
+msgid "The CPF {0} looks invalid (the check digits do not match)."
+msgstr "O CPF {0} parece inválido (os dígitos verificadores não conferem)."
+
+msgid "{0} is not a valid CPF or CNPJ."
+msgstr "{0} não é um CPF nem um CNPJ válido."
+
+msgid "Invalid document"
+msgstr "Documento inválido"
+
+msgid "The entry came with the CPF {0}: a person goes in the contact, not in an organization."
+msgstr "A entrada veio com o CPF {0}: pessoa física fica no contato, não numa organização."
+
+msgid "{0} is a CPF: when this lead becomes a card, it goes to the contact, not to an organization."
+msgstr "{0} é um CPF: quando este lead virar card, ele vai para o contato, não para uma organização."
