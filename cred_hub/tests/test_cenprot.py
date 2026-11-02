@@ -640,6 +640,19 @@ class TestCardTitles(IntegrationTestCase):
 		preview = protest.preview_row(twin.name, twin.titles[0].name)
 		self.assertTrue(any("same number" in problem for problem in preview["problems"]), preview["problems"])
 
+	def test_preview_lists_a_missing_cenprot_setup_with_the_other_problems(self):
+		deal = self.card(species="")
+		frappe.db.set_single_value(SETTINGS, "cenprot_enabled", 0)
+		frappe.clear_document_cache(SETTINGS, SETTINGS)
+		preview = protest.preview_row(deal.name, deal.titles[0].name)
+		self.assertIn("CENPROT is off", preview["problems"][0])
+		self.assertTrue(any("no default" in problem for problem in preview["problems"]), preview["problems"])
+		frappe.db.set_single_value(SETTINGS, "cenprot_enabled", 1)
+		frappe.db.set_single_value(SETTINGS, "cenprot_username", "")
+		frappe.clear_document_cache(SETTINGS, SETTINGS)
+		preview = protest.preview_row(deal.name, deal.titles[0].name)
+		self.assertIn("username and password", preview["problems"][0])
+
 	def test_errors_are_explained_and_keep_the_original_text(self):
 		text = cenprot.describe({"code": "WS_ERR_102", "message": "Host de Origem nao Permitido", "ok": False})
 		self.assertIn("WS_ERR_102", text)

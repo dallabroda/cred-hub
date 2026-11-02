@@ -1130,8 +1130,14 @@ def preview_row(deal: str, title_row: str, codebtors=None) -> dict:
 	row = _find_row(doc, title_row)
 	if not row:
 		frappe.throw(_("Title row not found."))
-	settings = _settings()
+	# Sem a CENPROT ligada ou sem usuário e senha, a tela mostra isso junto com o resto que falta (em vez de
+	# uma mensagem solta): o cliente vê de uma vez tudo o que precisa resolver
+	settings = get_settings()
 	problems, _title, _keys, notes = _collect_row(doc, row, settings, _as_list(codebtors))
+	if not settings.cenprot_enabled:
+		problems.insert(0, _("CENPROT is off. An admin turns it on in Settings > Integrations > Bureaus."))
+	elif not (settings.cenprot_username and secret(settings, "cenprot_password")):
+		problems.insert(0, _("Fill the CENPROT username and password in Settings > Bureaus."))
 	return {
 		"problems": problems,
 		"notes": notes,
