@@ -11,9 +11,11 @@ from __future__ import annotations
 
 import logging
 from typing import Any
+
 import requests
 
 from cred_hub.cnpj.mapping import only_digits
+from cred_hub.credit_check.raw_capture import record
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +116,7 @@ def _post_infosimples(endpoint: str, digits: str, token: str, base_url: str, tim
 	except ValueError as e:
 		raise InfosimplesError(f"Resposta não-JSON da Infosimples em {endpoint}: {response.text[:150]}") from e
 
+	record("Infosimples", endpoint, data)
 	return data
 
 

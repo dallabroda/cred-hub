@@ -22,6 +22,7 @@ from cred_hub.credit_check.clients.serasa import (
 	SerasaNotConfigured,
 )
 from cred_hub.credit_check.enrich import get_credit_settings, run_background_check
+from cred_hub.credit_check import dossier as credit_dossier
 from cred_hub.credit_check import partners as partners_lib
 from cred_hub.credit_check import template as credit_template
 from cred_hub.credit_check.premium_bureaus import PREMIUM_BUREAUS
@@ -619,3 +620,20 @@ def install_credit_template() -> dict[str, Any]:
 	frappe.only_for("System Manager")
 	pipeline = credit_template.install()
 	return {"pipeline": pipeline, **credit_template.status()}
+
+
+@frappe.whitelist()
+def generate_credit_dossier(organization_name: str, deal_name: str | None = None) -> dict[str, Any]:
+	"""Gera o dossiê (PDF 1): o retorno completo de todas as consultas da empresa e dos sócios, sem recomendação,
+	mais o JSON original de cada uma. Anexa na Organização (e no card, se vier de um). Cada geração é um arquivo novo."""
+	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
+	_check_deal_and_org_permission(deal_name, organization_name)
+	return credit_dossier.generate(organization_name, deal_name)
+
+
+@frappe.whitelist()
+def list_credit_dossiers(organization_name: str) -> list[dict[str, Any]]:
+	"""Os dossiês já gerados da Organização (PDF e JSON), do mais novo para o mais antigo."""
+	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
+	_check_deal_and_org_permission(None, organization_name)
+	return credit_dossier.list_files(organization_name)
