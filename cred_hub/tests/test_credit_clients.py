@@ -321,6 +321,39 @@ def test_directd_dossie_credito_completo_accepts_cpf_or_cnpj(mock_get):
 
 
 @patch("cred_hub.credit_check.clients.directd.requests.get")
+def test_directd_dossie_credito_completo_pessoa_fisica_cpf(mock_get):
+	"""credtech#316: Dossie QUOD Completo para CPF lê entidadeFisica/pessoaFisica."""
+	mock_resp = MagicMock()
+	mock_resp.status_code = 200
+	mock_resp.ok = True
+	mock_resp.json.return_value = {
+		"retorno": {
+			"entidadeFisica": {
+				"scoreEntidades": {"entidadeFisica": {"score": 680, "motivos": ["Pontualidade"]}},
+				"pendenciaFinanceira": {
+					"status": "Irregular",
+					"totalPendencia": "1250,50",
+					"protestos": [{"quantidade": "1", "valorTotal": "500,00"}],
+					"acoesJudiciais": [],
+					"negativacoes": [{"valor": 750.50}],
+				},
+			}
+		}
+	}
+	mock_get.return_value = mock_resp
+
+	res = fetch_dossie_credito_completo("12345678901", "token")
+	assert res["score"] == 680.0
+	assert res["has_protests"] is True
+	assert res["protests_count"] == 1
+	assert res["has_negativacoes"] is True
+	assert res["negativacoes_count"] == 1
+	assert res["total_pendencia"] == 1250.50
+	assert res["motivos"] == ["Pontualidade"]
+	assert res["status_pendencia"] == "Irregular" 
+
+
+@patch("cred_hub.credit_check.clients.directd.requests.get")
 def test_directd_scr_bacen_success(mock_get):
 	mock_resp = MagicMock()
 	mock_resp.status_code = 200

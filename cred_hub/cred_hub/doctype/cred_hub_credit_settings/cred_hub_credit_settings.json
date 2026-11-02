@@ -43,7 +43,9 @@
   "scr_bacen_enabled",
   "credit_pipeline",
   "section_opinion",
-  "allow_paid_extra_opinions"
+  "allow_paid_extra_opinions",
+  "section_package",
+  "dossier_package_json"
  ],
  "fields": [
   {
@@ -297,11 +299,23 @@
    "fieldname": "allow_paid_extra_opinions",
    "fieldtype": "Check",
    "label": "Permitir pareceres extras pagos"
+  },
+  {
+   "fieldname": "section_package",
+   "fieldtype": "Section Break",
+   "label": "Pacote mínimo do dossiê"
+  },
+  {
+   "description": "Configurado na tela de Bureaus de Crédito. Vazio = padrão (Dossiê QUOD e SCR Bacen da empresa, reaproveitando consultas de até 30 dias).",
+   "fieldname": "dossier_package_json",
+   "fieldtype": "Long Text",
+   "hidden": 1,
+   "label": "Pacote mínimo (JSON)"
   }
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-11-02 19:00:00.000000",
+ "modified": "2026-11-02 22:00:00.000000",
  "modified_by": "Administrator",
  "module": "Cred Hub",
  "name": "Cred Hub Credit Settings",

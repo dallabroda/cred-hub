@@ -319,14 +319,27 @@ def fetch_boa_vista_risco_pj(cnpj: str, token: str, base_url: str = DEFAULT_BASE
 
 def fetch_dossie_credito_completo(documento: str, token: str, base_url: str = DEFAULT_BASE_URL, timeout: int = DEFAULT_TIMEOUT) -> dict[str, Any]:
 	"""Dossiê QUOD - Completo (bureau pago sob demanda, R$ 6,99/consulta). Aceita CPF ou CNPJ —
-	usa o dado de `entidadeJuridica` quando é CNPJ."""
+	usa `entidadeJuridica` para CNPJ e `entidadeFisica`/`pessoaFisica` para CPF."""
 	params = _cpf_ou_cnpj_params(documento)
 
 	data = _request_directd("DossieCreditoCompleto", params, token, base_url, timeout)
 	retorno = data.get("retorno") or {}
-	pj = retorno.get("entidadeJuridica") or {}
-	score_block = (pj.get("scoreEntidades") or {}).get("entidadeJuridica") or {}
-	pendencia = pj.get("pendenciaFinanceira") or {}
+	entidade = (
+		retorno.get("entidadeJuridica")
+		or retorno.get("entidadeFisica")
+		or retorno.get("pessoaJuridica")
+		or retorno.get("pessoaFisica")
+		or {}
+	)
+	score_entidades = entidade.get("scoreEntidades") or {}
+	score_block = (
+		score_entidades.get("entidadeJuridica")
+		or score_entidades.get("entidadeFisica")
+		or score_entidades.get("pessoaJuridica")
+		or score_entidades.get("pessoaFisica")
+		or {}
+	)
+	pendencia = entidade.get("pendenciaFinanceira") or {}
 	protestos = pendencia.get("protestos") or []
 	acoes = pendencia.get("acoesJudiciais") or []
 	negativacoes = pendencia.get("negativacoes") or []
@@ -346,7 +359,7 @@ def fetch_dossie_credito_completo(documento: str, token: str, base_url: str = DE
 		"negativacoes_count": len(negativacoes),
 		"has_bankruptcy_recovery": len(falencias) > 0,
 		"has_bad_checks": len(cheques) > 0,
-		"socios": (pj.get("quadroSocietario") or {}).get("informacoes") or [],
+		"socios": (entidade.get("quadroSocietario") or {}).get("informacoes") or [],
 		"raw": retorno,
 	}
 
