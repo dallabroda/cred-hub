@@ -3,6 +3,7 @@
 import json
 
 import pytest
+import requests
 
 from cred_hub.credit_check.clients.vertex import (
 	VertexClient,
@@ -34,7 +35,10 @@ class FakeSession:
 
 	def post(self, url, headers=None, data=None, timeout=None):
 		self.calls.append({"url": url, "headers": headers, "body": json.loads(data)})
-		return self.responses.pop(0)
+		response = self.responses.pop(0)
+		if isinstance(response, Exception):
+			raise response
+		return response
 
 
 def _answer(obj, finish="STOP", thought="pensando..."):
@@ -98,6 +102,17 @@ def test_rate_limit_is_retried_once_then_succeeds(monkeypatch):
 	session = FakeSession(FakeResponse(429, {"error": "limite"}), _answer({"ok": 2}))
 	data, _result = _client(session).generate_json("gemini-3.8-flash", "s", "u", {})
 	assert data == {"ok": 2} and len(session.calls) == 2
+
+
+def test_timeout_is_retried_once_then_fails_clearly():
+	session = FakeSession(requests.ReadTimeout("lento"), _answer({"ok": 3}))
+	data, _result = _client(session).generate_json("gemini-3.8-flash", "s", "u", {})
+	assert data == {"ok": 3} and len(session.calls) == 2
+
+	session = FakeSession(requests.ReadTimeout("lento"), requests.ReadTimeout("lento"))
+	with pytest.raises(VertexError, match="Falha de rede"):
+		_client(session).generate_json("gemini-3.8-flash", "s", "u", {})
+	assert len(session.calls) == 2
 
 
 def test_model_missing_in_the_region_explains_it():

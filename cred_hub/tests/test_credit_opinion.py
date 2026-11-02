@@ -291,6 +291,25 @@ class TestOpinion(OpinionCase):
 		logs = frappe.get_all("Notification Log", filters={"for_user": admin.name, "document_type": opinion.DOCTYPE})
 		self.assertEqual(len(logs), 1)
 
+	def test_citations_of_false_and_empty_values_are_verified(self):
+		# teste real com o Gemini: "restrictionSign = false" e "offered_collateral = null" vinham como não verificados
+		cited = good_opinion()
+		cited["risks"] = [
+			{"title": "Sem garantia", "detail": "", "source": "Card", "field": "offered_collateral", "value": "null", "severity": "medium"},
+			{"title": "Objeto citado", "detail": "", "source": "Serasa", "field": "pefin", "value": '{"count": 0}', "severity": "low"},
+		]
+		cited["strengths"] = [
+			{"title": "Sócia sem restrição", "detail": "", "source": "Serasa", "field": "restrictionSign", "value": "false"},
+			{"title": "Sem sanções", "detail": "", "source": "CGU", "field": "return", "value": "[]"},
+		]
+		cleaned = opinion.validate(cited)
+		data = {"card": {"offered_collateral": None}, "partners": [{"restrictionSign": False}], "pefin": {"count": 0}, "return": []}
+		self.assertEqual(opinion.verify_citations(cleaned, data), 1)
+		self.assertTrue(cleaned["risks"][0]["verified"])
+		self.assertFalse(cleaned["risks"][1]["verified"])  # objeto não é um valor: continua marcado
+		self.assertTrue(cleaned["strengths"][0]["verified"])
+		self.assertTrue(cleaned["strengths"][1]["verified"])
+
 	def test_pdf_html_escapes_ai_text(self):
 		doc = frappe._dict(model="gemini-3.8-flash")
 		bad = good_opinion()

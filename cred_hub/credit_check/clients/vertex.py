@@ -138,6 +138,11 @@ class VertexClient:
 					data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
 					timeout=self.timeout,
 				)
+			except (requests.Timeout, requests.ConnectionError) as e:
+				# no teste real o Gemini às vezes passou do tempo limite numa chamada e respondeu bem na seguinte
+				if attempt == 0:
+					continue
+				raise VertexError(f"Falha de rede ao chamar o Gemini: {e}") from e
 			except requests.RequestException as e:
 				raise VertexError(f"Falha de rede ao chamar o Gemini: {e}") from e
 			# 429 (limite) e 503 (sobrecarga): espera um pouco e tenta de novo uma vez
