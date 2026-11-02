@@ -2243,3 +2243,96 @@ msgstr "A entrada veio com o CPF {0}: pessoa física fica no contato, não numa 
 
 msgid "{0} is a CPF: when this lead becomes a card, it goes to the contact, not to an organization."
 msgstr "{0} é um CPF: quando este lead virar card, ele vai para o contato, não para uma organização."
+
+msgid "Debtor CPF or CNPJ"
+msgstr "CPF ou CNPJ do sacado"
+
+msgid "Debtor name"
+msgstr "Nome do sacado"
+
+msgid "Cedente CNPJ"
+msgstr "CNPJ do cedente"
+
+msgid "Cedente name"
+msgstr "Nome do cedente"
+
+msgid "Species (CENPROT code)"
+msgstr "Espécie (código da CENPROT)"
+
+msgid "Original amount"
+msgstr "Valor original"
+
+msgid "Updated amount"
+msgstr "Valor atualizado"
+
+msgid "Digitable line"
+msgstr "Linha digitável"
+
+msgid "File not found."
+msgstr "Arquivo não encontrado."
+
+msgid "You can only import a file you uploaded."
+msgstr "Você só pode importar um arquivo que você enviou."
+
+msgid "Send the spreadsheet as .xlsx or .csv."
+msgstr "Envie a planilha em .xlsx ou .csv."
+
+msgid "The spreadsheet is empty."
+msgstr "A planilha está vazia."
+
+msgid "The spreadsheet has more than {0} lines. Split it in smaller files."
+msgstr "A planilha tem mais de {0} linhas. Divida em arquivos menores."
+
+msgid "invalid debtor CPF/CNPJ ({0})"
+msgstr "CPF/CNPJ do sacado inválido ({0})"
+
+msgid "invalid cedente CNPJ ({0})"
+msgstr "CNPJ do cedente inválido ({0})"
+
+msgid "no title number"
+msgstr "sem número do título"
+
+msgid "invalid due date"
+msgstr "vencimento inválido"
+
+msgid "invalid original amount"
+msgstr "valor original inválido"
+
+msgid "no issue date (needed to protest)"
+msgstr "sem data de emissão (necessária para protestar)"
+
+msgid "species {0} is not a registry code: choose it on the card"
+msgstr "a espécie {0} não é um código de cartório: escolha no card"
+
+msgid "no species: choose it on the card before protesting"
+msgstr "sem espécie: escolha no card antes de protestar"
+
+msgid "The collection pipeline has no open stage."
+msgstr "O funil de Cobrança não tem etapa em aberto."
+
+msgid "Choose the column of: {0}."
+msgstr "Escolha a coluna de: {0}."
+
+msgid "Turn on CENPROT and choose the collection pipeline in Settings > Bureaus first."
+msgstr "Primeiro ligue a CENPROT e escolha o funil de Cobrança em Configurações > Bureaus."
+
+msgid "The import is only for the collection pipeline."
+msgstr "A importação é só para o funil de Cobrança."
+
+msgid "lines {0}: {1}"
+msgstr "linhas {0}: {1}"
+
+msgid "Import of titles finished: {0} new cards, {1} updated cards, {2} new titles, {3} updated titles, {4} titles already at CENPROT left as they were, {5} lines with problems, {6} cards with errors."
+msgstr "Importação de títulos concluída: {0} cards novos, {1} cards atualizados, {2} títulos novos, {3} títulos atualizados, {4} títulos já na CENPROT ficaram como estavam, {5} linhas com problema, {6} cards com erro."
+
+msgid "Group the cards by"
+msgstr "Agrupar os cards por"
+
+msgid "Debtor and cedente"
+msgstr "Sacado e cedente"
+
+msgid "Debtor"
+msgstr "Sacado"
+
+msgid "How the spreadsheet import groups the titles in cards. The cedente is kept on each title either way."
+msgstr "Como a importação por planilha agrupa os títulos em cards. O cedente fica guardado em cada título nos dois casos."

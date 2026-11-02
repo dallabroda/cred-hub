@@ -258,10 +258,11 @@ def species_missing() -> str:
 	return _("Choose the title species (DMI, DSI, CCB...): it has no default.")
 
 
-def drawer_of(deal) -> dict | None:
-	"""Sacador do título: o cedente do card (segunda organização), que emitiu o título antecipado. Vai no
-	<sacador> do EnviarTitulo (manual v2.2: o <cedente> é o portador/apresentante). None sem cedente."""
-	name = deal.get("second_organization")
+def drawer_of(deal, row=None) -> dict | None:
+	"""Sacador do título: o cedente que emitiu o título antecipado, o da linha (credtech#315) ou, sem ele, o do
+	card (segunda organização). Vai no <sacador> do EnviarTitulo (manual v2.2: o <cedente> é o
+	portador/apresentante). None sem cedente."""
+	name = (row.get("cedente") if row is not None else None) or deal.get("second_organization")
 	if not name or name == deal.get("organization"):
 		return None
 	org = frappe.get_doc("CRM Organization", name)
@@ -785,7 +786,7 @@ def build_title_from_row(deal, row, settings) -> tuple[dict, dict]:
 	missing = _missing(creditor, {"nome": _("name"), "documento": _("CPF or CNPJ"), **address_labels})
 	if missing:
 		problems.append(_("Creditor in the settings without: {0}.").format(", ".join(missing)))
-	drawer = drawer_of(deal)
+	drawer = drawer_of(deal, row)
 	if drawer:
 		missing = _missing(drawer, {"nome": _("name"), "documento": _("CNPJ"), **address_labels})
 		if missing:
