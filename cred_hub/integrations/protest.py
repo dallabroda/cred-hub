@@ -654,3 +654,132 @@ def sync_all():
 			frappe.db.rollback()
 			frappe.log_error(title=f"Cred Hub: CENPROT status of {name} failed")
 	_remember(settings, client)
+
+
+def build_title_from_row(deal, row, settings) -> tuple[dict, dict]:
+	"""Monta o titulo a partir de uma linha da Child Table de titulos."""
+	code = only_digits(row.name or deal.name)
+	species = row.get("species") or settings.default_species or "DMI"
+	original_amt = flt(row.get("original_amount")) or flt(deal.get("deal_value"))
+	updated_amt = flt(row.get("updated_amount")) or original_amt
+	keys = {
+		"protest_species": species,
+		"protest_title_number": (row.get("title_number") or code[-11:]).strip(),
+		"protest_our_number": (row.get("our_number") or code[-15:]).strip(),
+		"protest_amount": original_amt,
+		"protest_balance": updated_amt,
+		"protest_declaration": DECLARATION_FOR_SPECIES.get(species, "A"),
+		"attachment": row.get("attachment"),
+	}
+	debtor = debtor_of(deal)
+	creditor = _creditor(settings)
+	problems = []
+	address_labels = {
+		"endereco": _("street"),
+		"cep": _("ZIP code (CEP)"),
+		"municipio": _("city"),
+		"uf": _("state (UF)"),
+		"bairro": _("neighborhood"),
+	}
+	missing = _missing(debtor, address_labels)
+	if missing:
+		problems.append(_("Debtor address without: {0}.").format(", ".join(missing)))
+	missing = _missing(creditor, {"nome": _("name"), "documento": _("CPF or CNPJ"), **address_labels})
+	if missing:
+		problems.append(_("Creditor in the settings without: {0}.").format(", ".join(missing)))
+	if not keys["protest_title_number"] or not keys["protest_our_number"]:
+		problems.append(_("Fill the title number and our number."))
+	if keys["protest_amount"] <= 0:
+		problems.append(_("Fill the title amount."))
+	issue, due = row.get("issue_date") or today(), row.get("due_date")
+	if not due:
+		problems.append(_("Fill the due date."))
+	elif getdate(due) >= getdate(today()):
+		problems.append(_("Only overdue titles go to protest: the due date must be before today."))
+
+	attachment_species = {"CCB", "CH", "NP", "CD", "CPS", "CA", "CL", "CM", "TA"}
+	if species in attachment_species and not keys.get("attachment"):
+		problems.append(_("Title of species {0} requires an attachment (PDF/document) before protesting.").format(species))
+
+	if problems:
+		raise TitleIncomplete(" ".join(problems))
+
+	title = {
+		"cedente": creditor,
+		"devedores": [debtor],
+		"divida": {
+			"especie": keys["protest_species"],
+			"numero": keys["protest_title_number"],
+			"nossoNumero": keys["protest_our_number"],
+			"valor": keys["protest_amount"],
+			"saldo": keys["protest_balance"],
+			"tipoEndosso": ENDORSEMENT.get(settings.default_endorsement or ""),
+			"aceite": "S" if settings.titles_accepted else "N",
+			"declaracaoPortador": keys["protest_declaration"],
+			"emissao": br_date(issue),
+			"vencimento": br_date(due),
+		},
+	}
+	if settings.cenprot_bearer_code:
+		title["geral"] = {"codPortador": settings.cenprot_bearer_code, "nomePortador": settings.cenprot_bearer_name}
+	keys["protest_debtor_document"] = debtor["documento"]
+	return title, keys
+
+
+def send_deal_title_row(deal_doc, row_name: str) -> dict:
+	settings = _settings()
+	target_row = None
+	for row in (getattr(deal_doc, "titles", []) or []):
+		if row.name == row_name or row.get("title_number") == row_name:
+			target_row = row
+			break
+	if not target_row:
+		return {"ok": False, "message": _("Title row not found.")}
+
+	row_status = (target_row.get("protest_status") or "").upper()
+	if row_status not in SENDABLE:
+		return {"ok": False, "message": _("This title is already at the registry (status {0}).").format(row_status)}
+
+	title, keys = build_title_from_row(deal_doc, target_row, settings)
+	client = _client(settings)
+	try:
+		result = client.send_title(title)
+	except CenprotError as e:
+		bureau_log.record(
+			PROVIDER, SEND, bureau_log.ERROR, document=keys["protest_debtor_document"], reference=deal_doc,
+			result_code=e.code, error=str(e),
+		)
+		return {"ok": False, "message": str(e)}
+	finally:
+		_remember(settings, client)
+
+	accepted = result["ok"] or result["duplicate"]
+	bureau_log.record(
+		PROVIDER, SEND,
+		bureau_log.SUCCESS if accepted else bureau_log.ERROR,
+		document=keys["protest_debtor_document"], reference=deal_doc,
+		result_code=result["code"], protocol=result.get("protocol") or "",
+		response=result["raw"], error="" if accepted else result["message"],
+	)
+	message = " ".join(filter(None, (result["code"], result["message"])))
+	if not accepted:
+		_note(deal_doc, _("CENPROT refused title {0}: {1}").format(target_row.title_number, message))
+		return {"ok": False, "message": message}
+
+	target_row.protest_status = "COLETADO"
+	target_row.protest_protocol = result.get("protocol") or ""
+	target_row.sent_at = now_datetime()
+	deal_doc.save(ignore_permissions=True)
+	frappe.db.commit()
+
+	_note(deal_doc, _("Title {0} sent to protest (Protocol: {1})").format(target_row.title_number, target_row.protest_protocol))
+	return {"ok": True, "message": _("Title sent to protest."), "protocol": target_row.protest_protocol}
+
+
+@frappe.whitelist(methods=["POST"])
+def send_row(deal: str, title_row: str) -> dict:
+	doc = _deal(deal, "write")
+	try:
+		return send_deal_title_row(doc, title_row)
+	except TitleIncomplete as e:
+		frappe.throw(str(e), title=_("The title cannot go to protest yet"))
