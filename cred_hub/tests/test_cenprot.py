@@ -544,3 +544,119 @@ class TestCardTitles(IntegrationTestCase):
 		self.assertIn("<nossoNumero>NN-2</nossoNumero>", consult)
 		notes = frappe.get_all("CRM Notification", {"reference_name": deal.name}, pluck="notification_text")
 		self.assertTrue(any("CONFIRMADO" in note for note in notes))
+
+	# Codevedores, avisos e erros (credtech#315)
+
+	def partner(self, first_name, cpf=None, address=True):
+		contact = frappe.get_doc(
+			{"doctype": "Contact", "first_name": first_name, "company_name": self.org.name, "cpf": cpf}
+		).insert()
+		if address:
+			frappe.get_doc(
+				{
+					"doctype": "Address",
+					"address_title": first_name,
+					"address_type": "Personal",
+					"address_line1": "Rua das Flores, 12",
+					"address_line2": "Centro",
+					"city": "Campinas",
+					"state": "SP",
+					"pincode": "13010-000",
+					"country": "Brazil",
+					"links": [{"link_doctype": "Contact", "link_name": contact.name}],
+				}
+			).insert()
+		return contact
+
+	def sent_devedores(self, session):
+		body = ET.fromstring(next(b for a, b in session.sent if a == "EnviarTitulo"))[0][0][1]
+		return body.findall("devedor")
+
+	def test_every_contact_of_the_company_is_a_candidate_with_what_is_missing(self):
+		complete = self.partner("Socio Completo", "529.982.247-25")
+		no_cpf = self.partner("Socio Sem Cpf")
+		no_address = self.partner("Socio Sem Endereco", "111.444.777-35", address=False)
+		deal = self.card()
+		preview = protest.preview_row(deal.name, deal.titles[0].name)
+		by_name = {c["name"]: c for c in preview["codebtors"]}
+		self.assertEqual(by_name["Socio Completo"]["missing"], [])
+		self.assertIn("valid CPF", by_name["Socio Sem Cpf"]["missing"])
+		self.assertTrue(any("street" in item for item in by_name["Socio Sem Endereco"]["missing"]))
+		self.assertEqual(by_name["Socio Completo"]["cpf"], "529.982.247-25")
+		self.assertEqual({complete.name, no_cpf.name, no_address.name}, {c["contact"] for c in preview["codebtors"]})
+		# a prévia não envia nada e o título em si está pronto
+		self.assertEqual(preview["problems"], [])
+
+	def test_codebtors_only_go_when_the_operator_marks_them(self):
+		partner = self.partner("Socio Completo", "529.982.247-25")
+		deal = self.card()
+		session = FakeCenprot(EnviarTitulo=[answer("EnviarTitulo", "WS_SUC_201", "Título Coletado com Sucesso")])
+		with patch("cred_hub.integrations.cenprot.requests.Session", return_value=session):
+			self.assertTrue(protest.send_row(deal.name, deal.titles[0].name)["ok"])
+		self.assertEqual(len(self.sent_devedores(session)), 1)
+
+		deal = self.card(title_number="NF-2", our_number="NN-77")
+		session = FakeCenprot(EnviarTitulo=[answer("EnviarTitulo", "WS_SUC_201", "Título Coletado com Sucesso")])
+		with patch("cred_hub.integrations.cenprot.requests.Session", return_value=session):
+			result = protest.send_row(deal.name, deal.titles[0].name, [partner.name])
+		self.assertTrue(result["ok"], result)
+		devedores = self.sent_devedores(session)
+		self.assertEqual([d.findtext("documento") for d in devedores], ["11222333000181", "52998224725"])
+		self.assertEqual([d.findtext("documentoTipo") for d in devedores], ["2", "1"])
+		self.assertEqual([d.findtext("principal") for d in devedores], ["S", "N"])
+		self.assertEqual(devedores[1].findtext("cep"), "13010000")
+		notes = frappe.get_all("Comment", {"reference_name": deal.name, "comment_type": "Comment"}, pluck="content")
+		self.assertTrue(any("co-debtor" in note.lower() and "Socio Completo" in note for note in notes))
+
+	def test_marked_codebtor_with_missing_data_blocks_the_send(self):
+		incomplete = self.partner("Socio Sem Cpf")
+		deal = self.card()
+		with self.assertRaises(protest.TitleIncomplete) as error:
+			protest.build_title_from_row(deal, deal.titles[0], self.settings, [incomplete.name])
+		self.assertIn("Socio Sem Cpf", str(error.exception))
+		self.assertEqual(len(error.exception.problems), 1)
+
+	def test_contact_of_another_company_never_goes(self):
+		other = frappe.get_doc(
+			{"doctype": "Contact", "first_name": "Estranho", "company_name": "Outra Empresa", "cpf": "529.982.247-25"}
+		).insert()
+		deal = self.card()
+		title, _keys = protest.build_title_from_row(deal, deal.titles[0], self.settings, [other.name])
+		self.assertEqual(len(title["devedores"]), 1)
+
+	def test_preview_warns_about_cuts_and_blocks_a_repeated_cenprot_key(self):
+		deal = self.card(title_number="NF-123456789012", our_number="NN-5")
+		preview = protest.preview_row(deal.name, deal.titles[0].name)
+		self.assertTrue(any("NF-12345678" in note for note in preview["notes"]), preview["notes"])
+		twin = self.deal(
+			second_organization=self.cedente.name,
+			titles=[
+				{"title_number": "NF-123456789012", "our_number": "NN-5", "species": "DMI", "due_date": add_days(today(), -10),
+				 "issue_date": add_days(today(), -60), "original_amount": 10},
+				{"title_number": "NF-123456789099", "our_number": "NN-5", "species": "DMI", "due_date": add_days(today(), -10),
+				 "issue_date": add_days(today(), -60), "original_amount": 10},
+			],
+		)
+		preview = protest.preview_row(twin.name, twin.titles[0].name)
+		self.assertTrue(any("same number" in problem for problem in preview["problems"]), preview["problems"])
+
+	def test_errors_are_explained_and_keep_the_original_text(self):
+		text = cenprot.describe({"code": "WS_ERR_102", "message": "Host de Origem nao Permitido", "ok": False})
+		self.assertIn("WS_ERR_102", text)
+		self.assertIn("IP", text)
+		self.assertIn("Host de Origem", text)
+		self.assertEqual(cenprot.describe({"code": "WS_ERR_999", "message": "novo", "ok": False}), "WS_ERR_999 novo")
+		self.assertEqual(cenprot.describe({"code": "WS_SUC_201", "message": "Ok", "ok": True}), "WS_SUC_201 Ok")
+
+	def test_central_failure_is_retried_once(self):
+		session = FakeCenprot(
+			EnviarTitulo=[
+				answer("EnviarTitulo", "WS_ERR_306", "Falha de Comunicação com a CENPROT"),
+				answer("EnviarTitulo", "WS_SUC_201", "Título Coletado com Sucesso"),
+			]
+		)
+		with patch("cred_hub.integrations.cenprot.time.sleep") as sleep:
+			result = CenprotClient("user", "pass", session=session).send_title(TITLE)
+		self.assertTrue(result["ok"])
+		self.assertEqual([a for a, _ in session.sent].count("EnviarTitulo"), 2)
+		sleep.assert_called_once()

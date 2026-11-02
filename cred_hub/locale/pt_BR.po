@@ -2336,3 +2336,132 @@ msgstr "Sacado"
 
 msgid "How the spreadsheet import groups the titles in cards. The cedente is kept on each title either way."
 msgstr "Como a importação por planilha agrupa os títulos em cards. O cedente fica guardado em cada título nos dois casos."
+
+msgid "Unexpected error at CENPROT. Try again; if it keeps happening, contact CENPROT support."
+msgstr "Erro inesperado na CENPROT. Tente de novo; se continuar, fale com o suporte da CENPROT."
+
+msgid "CENPROT refused the username or password. Check them in Settings > Bureaus."
+msgstr "A CENPROT recusou o usuário ou a senha. Confira em Configurações > Bureaus."
+
+msgid "CENPROT does not accept calls from this server. Register the HubTech server IP in your CENPROT contract (the IP is shown in Settings > Bureaus)."
+msgstr "A CENPROT não aceita chamadas deste servidor. Cadastre o IP do servidor do HubTech no seu contrato da CENPROT (o IP aparece em Configurações > Bureaus)."
+
+msgid "This CENPROT user is not allowed to do this operation. Ask CENPROT to enable it."
+msgstr "Este usuário da CENPROT não pode fazer esta operação. Peça à CENPROT para liberar."
+
+msgid "This CENPROT user is blocked. Contact CENPROT support."
+msgstr "Este usuário da CENPROT está bloqueado. Fale com o suporte da CENPROT."
+
+msgid "CENPROT already has this title."
+msgstr "A CENPROT já tem este título."
+
+msgid "A required field of the title is empty or wrong."
+msgstr "Um campo obrigatório do título está vazio ou errado."
+
+msgid "A field of the title was filled in the wrong way."
+msgstr "Um campo do título foi preenchido de forma errada."
+
+msgid "CENPROT does not know this operation."
+msgstr "A CENPROT não conhece esta operação."
+
+msgid "A field is bigger than CENPROT allows."
+msgstr "Um campo é maior do que a CENPROT permite."
+
+msgid "CENPROT could not look up the protest."
+msgstr "A CENPROT não conseguiu consultar o protesto."
+
+msgid "CENPROT could not reach the registry central right now. Try again in a few minutes."
+msgstr "A CENPROT não conseguiu falar com a central dos cartórios agora. Tente de novo em alguns minutos."
+
+msgid "The title cannot be changed in its current status."
+msgstr "O título não pode ser alterado no status em que está."
+
+msgid "The title is bigger than 16 MB."
+msgstr "O título é maior que 16 MB."
+
+msgid "The title cannot be removed now: it is already in a remittance or in a status that does not allow it."
+msgstr "O título não pode ser removido agora: já está numa remessa ou num status que não permite."
+
+msgid "CENPROT had an error processing this with the registry central. Try again later."
+msgstr "A CENPROT teve um erro ao processar isto com a central dos cartórios. Tente mais tarde."
+
+msgid "There is no title to look up in the request."
+msgstr "Não há título para consultar no pedido."
+
+msgid "CENPROT could not select the presenter, or the user has no access to it. Fill the presenter code in Settings > Bureaus."
+msgstr "A CENPROT não conseguiu escolher o apresentante, ou o usuário não tem acesso a ele. Preencha o código do apresentante em Configurações > Bureaus."
+
+msgid "The title already has this operation."
+msgstr "O título já tem esta operação."
+
+msgid "The title already has the authorization for this operation."
+msgstr "O título já tem a autorização para esta operação."
+
+msgid "The title cannot be cancelled in its current status."
+msgstr "O título não pode ser cancelado no status em que está."
+
+msgid "The title cannot be withdrawn (desistência) in its current status."
+msgstr "O título não pode ser retirado (desistência) no status em que está."
+
+msgid "This operation was already requested for the title."
+msgstr "Esta operação já foi pedida para o título."
+
+msgid "The title cannot be removed in its current status."
+msgstr "O título não pode ser removido no status em que está."
+
+msgid "The title is only collected (COLETADO): use the removal."
+msgstr "O título está só coletado (COLETADO): use a remoção."
+
+msgid "The registry has not sent all the information yet. Try again later."
+msgstr "O cartório ainda não mandou todas as informações. Tente mais tarde."
+
+msgid "CENPROT said"
+msgstr "A CENPROT disse"
+
+msgid "{0}: {1} «{2}» goes as «{3}»."
+msgstr "{0}: {1} «{2}» vai como «{3}»."
+
+msgid "{0}: address number «{1}» goes as «{2}» (digits only, up to {3})."
+msgstr "{0}: o número do endereço «{1}» vai como «{2}» (só dígitos, até {3})."
+
+msgid "empty"
+msgstr "vazio"
+
+msgid "{0}: the address has no number, it goes empty."
+msgstr "{0}: o endereço não tem número, ele vai vazio."
+
+msgid "complement"
+msgstr "complemento"
+
+msgid "number"
+msgstr "número"
+
+msgid "our number"
+msgstr "nosso número"
+
+msgid "Title"
+msgstr "Título"
+
+msgid "Co-debtor {0}"
+msgstr "Codevedor {0}"
+
+msgid "Creditor"
+msgstr "Credor"
+
+msgid "Cedente"
+msgstr "Cedente"
+
+msgid "valid CPF"
+msgstr "CPF válido"
+
+msgid "Co-debtor {0} without: {1}. Uncheck it or complete the contact."
+msgstr "Codevedor {0} sem: {1}. Desmarque ou complete o contato."
+
+msgid "This title would reach CENPROT with the same number, our number and due date as the title {0} of this card (the manual cuts the number at 11 and our number at 15 characters). Change one of them."
+msgstr "Este título chegaria à CENPROT com o mesmo número, nosso número e vencimento do título {0} deste card (o manual corta o número em 11 e o nosso número em 15 caracteres). Mude um dos dois."
+
+msgid "Title {0} went with {1} co-debtor(s): {2}."
+msgstr "O título {0} foi com {1} codevedor(es): {2}."
+
+msgid "The attachment is too big: CENPROT limits the document (in base64) to 5 MB, which is about 3.7 MB of file."
+msgstr "O anexo é grande demais: a CENPROT limita o documento (em base64) a 5 MB, o que dá uns 3,7 MB de arquivo."
