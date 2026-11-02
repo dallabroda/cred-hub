@@ -116,6 +116,17 @@ class TestCollectionImport(IntegrationTestCase):
 		self.assertEqual(stats["titles_locked"], 1)
 		self.assertEqual(frappe.db.get_value("CRM Deal Title", row.name, "updated_amount"), 1500)
 
+	def test_a_closed_card_never_receives_new_titles(self):
+		if not frappe.get_meta("CRM Deal").has_field("outcome"):
+			self.skipTest("crm sem o status do card")
+		line = f"{CNPJ_DEBTOR};DEVEDORA TESTE LTDA;{CNPJ_CEDENTE_A};CEDENTE A LTDA;NF-1;NN1;DMI;{br(-60)};{br(-10)};100;100"
+		self.import_sheet(self.sheet(line))
+		first = self.cards()[0].name
+		frappe.db.set_value("CRM Deal", first, "outcome", "Won")
+		stats = self.import_sheet(self.sheet(line.replace("NF-1;NN1", "NF-2;NN2")))
+		self.assertEqual((stats["cards_new"], stats["cards_update"]), (1, 0))
+		self.assertEqual(len(self.cards()), 2)
+
 	def test_grouping_by_debtor_keeps_the_cedente_on_each_title(self):
 		frappe.db.set_single_value(SETTINGS, "collection_grouping", importer.BY_DEBTOR)
 		frappe.clear_document_cache(SETTINGS, SETTINGS)

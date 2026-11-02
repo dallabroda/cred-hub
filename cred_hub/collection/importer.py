@@ -255,6 +255,9 @@ def find_card(pipeline, debtor, cedente_org, grouping) -> str | None:
 	if not stages:
 		return None
 	filters = {"pipeline": pipeline, "status": ("in", stages)}
+	# Card ganho ou perdido está fechado (status do card, credtech#315): título novo abre outro card
+	if frappe.get_meta(DEAL).has_field("outcome"):
+		filters["outcome"] = "In progress"
 	if grouping == BY_PAIR:
 		filters["second_organization"] = cedente_org or ("is", "not set")
 	doctype, name = debtor
