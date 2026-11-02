@@ -23,6 +23,16 @@ TOKEN_URL = f"{BASE_URL}/oauth2/v3/token"
 CNPJ_URL = f"{BASE_URL}/localize/v3/cnpj"
 CPF_URL = f"{BASE_URL}/localize/v3/cpf"
 TIMEOUT = 30
+# A resposta real traz o tipo do logradouro em código (`tipoLogradouro: "R"`) e o nome sem ele
+STREET_TYPES = {
+	"R": "RUA",
+	"AV": "AVENIDA",
+	"AL": "ALAMEDA",
+	"TV": "TRAVESSA",
+	"PC": "PRACA",
+	"ROD": "RODOVIA",
+	"EST": "ESTRADA",
+}
 ATTEMPTS = 3
 # Rótulo das configurações -> idFinalidade
 PURPOSES = {
@@ -253,6 +263,11 @@ def addresses(payload) -> list[dict]:
 		if not isinstance(item, dict):
 			continue
 		street = str(item.get("logradouro") or "").strip()
+		kind = str(item.get("tipoLogradouro") or "").strip().upper()
+		if street and kind:
+			name = STREET_TYPES.get(kind, kind)
+			if not street.upper().startswith((f"{name} ", f"{kind} ")):
+				street = f"{name} {street}"
 		zip_code = only_digits(item.get("cep"))
 		if not street or len(zip_code) != 8:
 			continue

@@ -35,10 +35,11 @@ CPF_RESPONSES = {
 			{"ddd": "19", "numero": "32510099", "tipo": "FIXO", "operadora": "CLARO", "scoreAssertividade": 60, "temWhatsApp": False},
 		],
 		"emails": [{"email": "carlos.esilva@gmail.com", "score": 92}],
+		# formato real da resposta: tipo do logradouro em código, número inteiro, CEP com hífen e sem nota
 		"enderecos": [
-			{"ranking": 2, "logradouro": "RUA ANTIGA", "numero": "5", "bairro": "CENTRO", "cidade": "SAO PAULO", "uf": "SP", "cep": "01000000", "scoreAssertividade": 40},
-			{"ranking": 1, "logradouro": "AVENIDA CORONEL SILVA TELLES", "numero": "1200", "complemento": "APTO 81", "bairro": "CAMBUI", "cidade": "CAMPINAS", "uf": "sp", "cep": "13024001", "scoreAssertividade": 94},
-			{"ranking": 3, "logradouro": "SEM CEP", "cidade": "X", "uf": "SP", "cep": "123", "scoreAssertividade": 99},
+			{"tipoLogradouro": "AV", "logradouro": "CORONEL SILVA TELLES", "numero": 1200, "complemento": "APTO 81", "bairro": "CAMBUI", "cidade": "CAMPINAS", "uf": "sp", "cep": "13024-001", "precisaoCep": "CONFIRMADA"},
+			{"tipoLogradouro": "R", "logradouro": "ANTIGA", "numero": 5, "complemento": None, "bairro": "CENTRO", "cidade": "SAO PAULO", "uf": "SP", "cep": "01000-000"},
+			{"tipoLogradouro": "R", "logradouro": "SEM CEP", "cidade": "X", "uf": "SP", "cep": "123"},
 		],
 	},
 	"98765432100": None,  # não localizado (404)
@@ -101,6 +102,38 @@ class TestAssertivaParsing(IntegrationTestCase):
 		partners = assertiva.partners(CNPJ_RESPONSE)
 		self.assertEqual([p["cpf"] for p in partners], ["12345678909", "98765432100"])
 		self.assertEqual(partners[0]["share"], 80.0)
+
+	def test_real_response_shape_is_read(self):
+		"""Estrutura da resposta real do Localize por CNPJ (cabecalho/resposta), com dados inventados."""
+		payload = {
+			"cabecalho": {"protocolo": "00000000-0000-0000-0000-000000000000", "funcionalidade": "CNPJ"},
+			"resposta": {
+				"telefones": {
+					"fixos": [{"numero": "(19) 3210-4455", "naoPerturbe": False, "aplicativos": {"whatsAppBusiness": False}, "operadora": "Claro"}],
+					"moveis": [{"numero": "(19) 99876-5432", "naoPerturbe": False, "aplicativos": {"whatsApp": True}, "operadora": "Vivo"}],
+				},
+				"enderecos": [
+					{"tipoLogradouro": "R", "logradouro": "DAS FLORES", "numero": 12, "complemento": None, "bairro": "CENTRO", "cidade": "CAMPINAS", "uf": "SP", "cep": "13010-000"}
+				],
+				"emails": [{"email": "contato@exemplo.com.br"}],
+				"socios": [
+					{"documento": "529.982.247-25", "nomeOuRazaoSocial": "FULANO DE TAL", "dataEntrada": "22/11/2023"},
+					{"documento": "11.222.333/0001-81", "nomeOuRazaoSocial": "EMPRESA TESTE LTDA.", "dataEntrada": "22/11/2023"},
+				],
+			},
+		}
+		self.assertEqual(assertiva.protocol_of(payload), "00000000-0000-0000-0000-000000000000")
+		# só sócio pessoa física vira contato; sócio empresa fica de fora
+		self.assertEqual([(p["cpf"], p["name"]) for p in assertiva.partners(payload)], [("52998224725", "FULANO DE TAL")])
+		found = assertiva.phones(payload)
+		first = found[0]
+		self.assertEqual((first["phone"], first["mobile"], first["whatsapp"]), ("+5519998765432", True, True))
+		address = assertiva.addresses(payload)[0]
+		self.assertEqual(
+			(address["street"], address["number"], address["neighborhood"], address["city"], address["state"], address["zip"]),
+			("RUA DAS FLORES", "12", "CENTRO", "CAMPINAS", "SP", "13010000"),
+		)
+		self.assertEqual(assertiva.emails(payload), ["contato@exemplo.com.br"])
 
 	def test_token_is_cached_and_renewed_on_401(self):
 		assertiva.forget_token()
