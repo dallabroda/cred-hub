@@ -23,6 +23,8 @@ from cred_hub.credit_check.clients.serasa import (
 )
 from cred_hub.credit_check.enrich import get_credit_settings, run_background_check
 from cred_hub.credit_check import dossier as credit_dossier
+from cred_hub.credit_check import opinion as credit_opinion
+from cred_hub.credit_check import policy as credit_policy
 from cred_hub.credit_check import partners as partners_lib
 from cred_hub.credit_check import template as credit_template
 from cred_hub.credit_check.premium_bureaus import PREMIUM_BUREAUS
@@ -637,3 +639,44 @@ def list_credit_dossiers(organization_name: str) -> list[dict[str, Any]]:
 	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
 	_check_deal_and_org_permission(None, organization_name)
 	return credit_dossier.list_files(organization_name)
+
+
+@frappe.whitelist()
+def get_credit_opinion_status(organization_name: str) -> dict[str, Any]:
+	"""Quantos pareceres da IA o mês já usou, se o próximo é extra (e quanto custa) e se a IA está configurada."""
+	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
+	_check_deal_and_org_permission(None, organization_name)
+	return credit_opinion.status()
+
+
+@frappe.whitelist()
+def request_credit_opinion(
+	organization_name: str, deal_name: str | None = None, confirm_extra_cost: bool = False
+) -> dict[str, Any]:
+	"""Pede o parecer de crédito da IA (PDF 2). Gera em segundo plano; acompanhe por list_credit_opinions."""
+	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
+	_check_deal_and_org_permission(deal_name, organization_name)
+	return credit_opinion.request(organization_name, deal_name, confirm_extra_cost)
+
+
+@frappe.whitelist()
+def list_credit_opinions(organization_name: str) -> list[dict[str, Any]]:
+	"""Os pareceres da Organização, do mais novo para o mais antigo, com a situação de cada um."""
+	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
+	_check_deal_and_org_permission(None, organization_name)
+	return credit_opinion.list_opinions(organization_name)
+
+
+@frappe.whitelist()
+def get_credit_policy() -> dict[str, Any]:
+	"""A política de crédito em vigor (ou a padrão) e o texto padrão, para "voltar ao padrão"."""
+	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
+	current = credit_policy.current()
+	return {**current, "default_methodology": credit_policy.DEFAULT_METHODOLOGY, "default_parameters": credit_policy.DEFAULT_PARAMETERS}
+
+
+@frappe.whitelist()
+def save_credit_policy(methodology: str, parameters: Any = None) -> dict[str, Any]:
+	"""Salva uma versão nova da política de crédito. Só administradores."""
+	frappe.only_for("System Manager")
+	return credit_policy.save(methodology, frappe.parse_json(parameters) if isinstance(parameters, str) else parameters)

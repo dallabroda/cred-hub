@@ -41,7 +41,9 @@
   "boavista_risco_enabled",
   "dossie_quod_enabled",
   "scr_bacen_enabled",
-  "credit_pipeline"
+  "credit_pipeline",
+  "section_opinion",
+  "allow_paid_extra_opinions"
  ],
  "fields": [
   {
@@ -283,11 +285,23 @@
    "label": "Funil Crédito PJ instalado",
    "options": "CRM Pipeline",
    "read_only": 1
+  },
+  {
+   "fieldname": "section_opinion",
+   "fieldtype": "Section Break",
+   "label": "Parecer de crédito (IA)"
+  },
+  {
+   "default": "0",
+   "description": "Cada empresa tem 30 pareceres por mês incluídos. Ligado, a partir do 31º cada parecer custa R$ 3,00 da carteira de créditos, com confirmação antes. Desligado, o parecer para até o mês seguinte.",
+   "fieldname": "allow_paid_extra_opinions",
+   "fieldtype": "Check",
+   "label": "Permitir pareceres extras pagos"
   }
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-11-02 18:00:00.000000",
+ "modified": "2026-11-02 19:00:00.000000",
  "modified_by": "Administrator",
  "module": "Cred Hub",
  "name": "Cred Hub Credit Settings",
