@@ -2549,3 +2549,57 @@ msgstr "Você não tem permissão para editar este contato."
 
 msgid "{0} has no valid CPF yet. Fill the CPF first."
 msgstr "{0} ainda não tem um CPF válido. Preencha o CPF primeiro."
+
+msgid "The Credit PJ funnel is already installed. Edit its stages in the funnel settings."
+msgstr "O funil Crédito PJ já está instalado. Edite as etapas nas configurações do funil."
+
+msgid "A funnel named {0} already exists."
+msgstr "Já existe um funil chamado {0}."
+
+msgid "Lead"
+msgstr "Lead"
+
+msgid "Qualification"
+msgstr "Qualificação"
+
+msgid "Documents"
+msgstr "Documentos"
+
+msgid "Queries"
+msgstr "Consultas"
+
+msgid "Analysis"
+msgstr "Análise"
+
+msgid "Committee"
+msgstr "Comitê"
+
+msgid "Credit Granted"
+msgstr "Crédito Concedido"
+
+msgid "Not Granted"
+msgstr "Crédito Não Concedido"
+
+msgid "Credit (PJ)"
+msgstr "Crédito (PJ)"
+
+msgid "Purpose of the credit"
+msgstr "Finalidade do crédito"
+
+msgid "Term (months)"
+msgstr "Prazo (meses)"
+
+msgid "Offered collateral"
+msgstr "Garantias oferecidas"
+
+msgid "Committee decision"
+msgstr "Decisão do comitê"
+
+msgid "Approved"
+msgstr "Aprovado"
+
+msgid "Approved with conditions"
+msgstr "Aprovado com condições"
+
+msgid "Not approved"
+msgstr "Não aprovado"

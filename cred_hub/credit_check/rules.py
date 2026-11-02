@@ -34,6 +34,10 @@ def evaluate_credit_risk(
 
 	Se algum provedor habilitado falhou (`provider_failures`), o parecer é sempre 'Error':
 	dado incompleto nunca pode virar aprovação por omissão (fail-open).
+
+	O sistema avisa e o operador decide (credtech#316): sem configuração, nada reprova. Cada achado vira um
+	aviso ('Warning'); só reprova o que o cliente ligou ('block_on_*') ou o limite que ele definiu (> 0).
+	Para factoring, FIDC e financeiras, empresa com protesto ou processo é o público normal, não um descarte.
 	"""
 	if provider_failures:
 		reasons_fail = [f"Falha na consulta: {item}" for item in provider_failures]
@@ -64,12 +68,12 @@ def evaluate_credit_risk(
 	cfg = settings or {}
 	max_lawsuits_defendant = int(cfg.get("max_lawsuits_defendant", 0))
 	max_lawsuit_value = float(cfg.get("max_lawsuit_value", 0.0))
-	block_on_bankruptcy = bool(cfg.get("block_on_bankruptcy", True))
+	block_on_bankruptcy = bool(cfg.get("block_on_bankruptcy", False))
 	max_pgfn_debt = float(cfg.get("max_pgfn_debt", 0.0))
-	block_on_cndt = bool(cfg.get("block_on_cndt", True))
-	block_on_protest = bool(cfg.get("block_on_protest", True))
-	block_on_fgts_irregular = bool(cfg.get("block_on_fgts_irregular", True))
-	block_on_ceis_cnep = bool(cfg.get("block_on_ceis_cnep", True))
+	block_on_cndt = bool(cfg.get("block_on_cndt", False))
+	block_on_protest = bool(cfg.get("block_on_protest", False))
+	block_on_fgts_irregular = bool(cfg.get("block_on_fgts_irregular", False))
+	block_on_ceis_cnep = bool(cfg.get("block_on_ceis_cnep", False))
 	min_directd_score = int(cfg.get("min_directd_score", 0))
 
 	reasons: list[str] = []
@@ -103,13 +107,10 @@ def evaluate_credit_risk(
 	defendant_count = int(escavador_data.get("defendant_count") or 0)
 	highest_lawsuit_val = float(escavador_data.get("highest_value") or 0.0)
 
-	if defendant_count > max_lawsuits_defendant:
-		if max_lawsuits_defendant == 0:
-			is_rejected = True
-			reasons.append(f"Figura como ré em {defendant_count} processo(s) judicial(is).")
-		else:
-			is_rejected = True
-			reasons.append(f"Número de processos como réu ({defendant_count}) excede o limite tolerado ({max_lawsuits_defendant}).")
+	# 0 = sem limite: só avisa. Só reprova quando o cliente definiu um limite (> 0) e ele foi excedido.
+	if max_lawsuits_defendant > 0 and defendant_count > max_lawsuits_defendant:
+		is_rejected = True
+		reasons.append(f"Número de processos como réu ({defendant_count}) excede o limite tolerado ({max_lawsuits_defendant}).")
 	elif defendant_count > 0:
 		warnings.append(f"Figura como ré em {defendant_count} processo(s) judicial(is).")
 
@@ -122,13 +123,10 @@ def evaluate_credit_risk(
 	pgfn_debt = float(pgfn.get("total_debt") or 0.0)
 	pgfn_inscriptions = int(pgfn.get("inscriptions_count") or 0)
 
-	if pgfn_debt > max_pgfn_debt:
-		if max_pgfn_debt == 0.0:
-			is_rejected = True
-			reasons.append(f"Inscrito na Dívida Ativa da União (PGFN) com débitos de R$ {pgfn_debt:,.2f}.")
-		else:
-			is_rejected = True
-			reasons.append(f"Dívida Ativa da União (R$ {pgfn_debt:,.2f}) excede a tolerância (R$ {max_pgfn_debt:,.2f}).")
+	# 0 = sem limite: só avisa. Só reprova quando o cliente definiu um limite (> 0) e ele foi excedido.
+	if max_pgfn_debt > 0.0 and pgfn_debt > max_pgfn_debt:
+		is_rejected = True
+		reasons.append(f"Dívida Ativa da União (R$ {pgfn_debt:,.2f}) excede a tolerância (R$ {max_pgfn_debt:,.2f}).")
 	elif pgfn_debt > 0.0 or pgfn_inscriptions > 0:
 		warnings.append(f"Possui débito inscrito na PGFN de R$ {pgfn_debt:,.2f} ({pgfn_inscriptions} inscrições).")
 

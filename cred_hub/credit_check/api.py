@@ -20,6 +20,7 @@ from cred_hub.credit_check.clients.serasa import (
 )
 from cred_hub.credit_check.enrich import get_credit_settings, run_background_check
 from cred_hub.credit_check import partners as partners_lib
+from cred_hub.credit_check import template as credit_template
 from cred_hub.credit_check.premium_bureaus import PREMIUM_BUREAUS
 from cred_hub.credit_check.rules import pre_filter_needs_acknowledgement
 
@@ -555,3 +556,19 @@ def get_bureau_result(query_name: str) -> dict[str, Any]:
 		"requested_on": doc.requested_on,
 		"raw": raw,
 	}
+
+
+@frappe.whitelist()
+def get_credit_template_status() -> dict[str, Any]:
+	"""Se o funil "Crédito PJ" já está instalado e quais etapas ele cria."""
+	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
+	return credit_template.status()
+
+
+@frappe.whitelist()
+def install_credit_template() -> dict[str, Any]:
+	"""Instala o funil "Crédito PJ" (6 etapas de análise, um ganho e uma perda, e 4 campos de crédito no Card).
+	Só administrador; uma vez por site. Nada é obrigatório por etapa e nada custa: o funil só organiza o trabalho."""
+	frappe.only_for("System Manager")
+	pipeline = credit_template.install()
+	return {"pipeline": pipeline, **credit_template.status()}

@@ -101,7 +101,7 @@ def get_credit_settings() -> dict[str, Any]:
 		# CGU: a empresa só liga/desliga — a chave (grátis) é da CredTech (platform_credentials.py).
 		# Escavador, Infosimples e DirectD: token do próprio cliente (credtech#316).
 		"cgu_enabled": bool(doc.get("cgu_enabled")),
-		"block_on_ceis_cnep": bool(doc.get("block_on_ceis_cnep", 1)),
+		"block_on_ceis_cnep": bool(doc.get("block_on_ceis_cnep", 0)),
 		"escavador_enabled": bool(doc.get("escavador_enabled")),
 		"escavador_token": doc.get_password("escavador_token") if doc.get("escavador_token") else "",
 		"infosimples_enabled": bool(doc.get("infosimples_enabled")),
@@ -115,11 +115,11 @@ def get_credit_settings() -> dict[str, Any]:
 		"check_second_organization": bool(doc.get("check_second_organization")),
 		"max_lawsuits_defendant": int(doc.get("max_lawsuits_defendant") or 0),
 		"max_lawsuit_value": float(doc.get("max_lawsuit_value") or 0.0),
-		"block_on_bankruptcy": bool(doc.get("block_on_bankruptcy", 1)),
+		"block_on_bankruptcy": bool(doc.get("block_on_bankruptcy", 0)),
 		"max_pgfn_debt": float(doc.get("max_pgfn_debt") or 0.0),
-		"block_on_cndt": bool(doc.get("block_on_cndt", 1)),
-		"block_on_protest": bool(doc.get("block_on_protest", 1)),
-		"block_on_fgts_irregular": bool(doc.get("block_on_fgts_irregular", 1)),
+		"block_on_cndt": bool(doc.get("block_on_cndt", 0)),
+		"block_on_protest": bool(doc.get("block_on_protest", 0)),
+		"block_on_fgts_irregular": bool(doc.get("block_on_fgts_irregular", 0)),
 	}
 
 
@@ -271,7 +271,7 @@ def run_background_check(
 		try:
 			cgu_api_key = platform_cgu_api_key()
 			cgu_data = fetch_ceis_cnep(digits, cgu_api_key)
-			if cgu_data.get("sanctioned") and settings.get("block_on_ceis_cnep", True):
+			if cgu_data.get("sanctioned") and settings.get("block_on_ceis_cnep", False):
 				skip_paid_providers = True
 		except PlatformCredentialNotConfigured as e:
 			frappe.log_error(title="Cred Hub: CGU sem credencial de plataforma", message=str(e))

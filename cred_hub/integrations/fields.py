@@ -53,6 +53,28 @@ DEAL_FIELDS = [
 DEAL_FORM_FIELDS = [f["fieldname"] for f in DEAL_FIELDS if f["fieldtype"] not in ("Tab Break", "Section Break", "Column Break")]
 
 
+# Campos do funil "Crédito PJ" no Card (credtech#316): só o que vale para qualquer operação de crédito. Valor
+# pedido = `deal_value` e faturamento anual = o da Organização (decisão do dono de 28/10: pertence à empresa),
+# então não ganham campo novo. Campos específicos de cada tipo de operação só entram quando um cliente real
+# pedir. Textos curtos de propósito: a linha do Card no MariaDB tem limite de tamanho.
+CREDIT_DECISIONS = ("Approved", "Approved with conditions", "Not approved")
+CREDIT_FIELDS = [
+	{"fieldname": "credit_section", "fieldtype": "Tab Break", "label": "Credit (PJ)"},
+	{"fieldname": "credit_purpose", "fieldtype": "Data", "label": "Purpose of the credit", "length": 80},
+	{"fieldname": "credit_term_months", "fieldtype": "Int", "label": "Term (months)"},
+	{"fieldname": "credit_collateral", "fieldtype": "Small Text", "label": "Offered collateral"},
+	{"fieldname": "credit_column", "fieldtype": "Column Break"},
+	{
+		"fieldname": "credit_decision",
+		"fieldtype": "Select",
+		"label": "Committee decision",
+		"options": "\n" + "\n".join(CREDIT_DECISIONS),
+		"length": 30,
+	},
+]
+CREDIT_FORM_FIELDS = ["credit_purpose", "credit_term_months", "credit_collateral", "credit_decision"]
+
+
 def _chained(fields, insert_after):
 	chained, previous = [], insert_after
 	for field in fields:
@@ -70,5 +92,5 @@ def _last_field(doctype, own) -> str:
 def custom_fields() -> dict:
 	return {
 		doctype: _chained(fields, _last_field(doctype, {f["fieldname"] for f in fields}))
-		for doctype, fields in (("Contact", CONTACT_FIELDS), ("CRM Deal", DEAL_FIELDS))
+		for doctype, fields in (("Contact", CONTACT_FIELDS), ("CRM Deal", DEAL_FIELDS + CREDIT_FIELDS))
 	}
