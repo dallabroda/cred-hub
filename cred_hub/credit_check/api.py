@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from typing import Any
 
@@ -14,9 +15,11 @@ from cred_hub.credit_check.clients.directd import DirectDAuthError, DirectDError
 from cred_hub.credit_check.clients.escavador import fetch_lawsuits
 from cred_hub.credit_check.clients.infosimples import InfosimplesError, query_pgfn
 from cred_hub.credit_check.clients.serasa import (
+	DEFAULT_REPORT,
+	SerasaClient,
+	SerasaDocumentNotFound,
 	SerasaError,
 	SerasaNotConfigured,
-	trigger_serasa_relato,
 )
 from cred_hub.credit_check.enrich import get_credit_settings, run_background_check
 from cred_hub.credit_check import partners as partners_lib
@@ -174,6 +177,50 @@ def _verdict_label(verdict: str) -> str:
 	return _(verdict)
 
 
+_SERASA_TOKEN_KEY = "cred_hub:serasa_token"
+
+
+def _serasa_report(settings_doc, cnpj: str) -> dict[str, Any]:
+	"""Consulta o Relatório Avançado PJ na Serasa com o contrato do cliente. O token (vale cerca de 1 hora) fica
+	em cache por credencial e ambiente, para não entrar de novo a cada consulta."""
+	client_id = settings_doc.get("serasa_client_id") or ""
+	environment = settings_doc.get("serasa_environment") or "Production"
+	secret = settings_doc.get_password("serasa_client_secret", raise_exception=False) or ""
+	key = f"{_SERASA_TOKEN_KEY}:{environment}:{hashlib.sha256(client_id.encode()).hexdigest()[:16]}"
+	cached = frappe.cache.get_value(key) or {}
+	client = SerasaClient(
+		client_id,
+		secret,
+		environment,
+		token=cached.get("token", ""),
+		token_expires=cached.get("expires", 0),
+	)
+	try:
+		return client.fetch_report(cnpj, settings_doc.get("serasa_report_name") or DEFAULT_REPORT)
+	finally:
+		if client.token:
+			frappe.cache.set_value(key, {"token": client.token, "expires": client.token_expires}, expires_in_sec=3300)
+
+
+@frappe.whitelist()
+def test_serasa_connection(client_id: str = "", client_secret: str = "", environment: str = "Production") -> dict[str, Any]:
+	"""Confere o client id e o client secret do contrato Serasa só entrando na API (login). Não faz consulta
+	nenhuma, então não custa nada. Sem valor digitado (ou com o segredo salvo, que volta mascarado), usa o salvo."""
+	frappe.only_for("System Manager")
+	settings_doc = frappe.get_single("Cred Hub Credit Settings")
+	client_id = (client_id or "").strip() or (settings_doc.get("serasa_client_id") or "")
+	client_secret = (client_secret or "").strip()
+	if not client_secret or _is_masked(client_secret):
+		client_secret = settings_doc.get_password("serasa_client_secret", raise_exception=False) or ""
+	try:
+		SerasaClient(client_id, client_secret, environment or "Production").login()
+	except SerasaNotConfigured as e:
+		frappe.throw(str(e))
+	except SerasaError as e:
+		frappe.throw(_("Serasa connection test failed: {0}").format(str(e)))
+	return {"ok": True, "message": _("Connected to Serasa successfully! This test makes no paid query.")}
+
+
 def _truthy(value: Any) -> bool:
 	"""Flags vindas do frontend chegam como bool, int ou string ("1", "true")."""
 	if isinstance(value, str):
@@ -314,10 +361,10 @@ def _final_bureaus(settings_doc) -> list[dict[str, Any]]:
 	if settings_doc.get("serasa_enabled"):
 		bureaus.append({
 			"key": "serasa",
-			"label": "Serasa Experian (Relato PJ)",
+			"label": "Serasa Experian (Relatório Avançado PJ)",
 			"provider": "Serasa Experian",
 			"price_reference": None,  # depende do contrato do cliente com a Serasa
-			"configured": bool(settings_doc.get("serasa_endpoint_url") and settings_doc.get("serasa_token")),
+			"configured": bool(settings_doc.get("serasa_client_id") and settings_doc.get("serasa_client_secret")),
 			"partner_ok": False,  # Relato PJ é só de empresa
 		})
 	has_directd_token = bool(settings_doc.get("directd_token"))
@@ -406,15 +453,15 @@ def request_bureau_final(
 		document, subject_name = partners_lib.cpf_digits(organization_name, contact_name)
 
 	if bureau == "serasa":
-		endpoint_url = settings_doc.get("serasa_endpoint_url") or ""
-		serasa_token = settings_doc.get_password("serasa_token", raise_exception=False) or ""
 		try:
-			result = trigger_serasa_relato(org_cnpj, frappe.session.user, endpoint_url, serasa_token)
+			result = _serasa_report(settings_doc, org_cnpj)
 		except SerasaNotConfigured as e:
 			frappe.throw(str(e))
-		except SerasaError as e:
+		except SerasaDocumentNotFound as e:
+			frappe.throw(_("Serasa does not have this document: {0}").format(str(e)))
+		except (SerasaError, ValueError) as e:
 			frappe.throw(_("Serasa query failed: {0}").format(str(e)))
-		status = result.get("status") or ""
+		status = "Concluído"
 		raw = result
 	else:
 		registry = PREMIUM_BUREAUS[bureau]
