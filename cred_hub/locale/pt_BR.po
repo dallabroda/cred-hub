@@ -2468,3 +2468,6 @@ msgstr "O anexo é grande demais: a CENPROT limita o documento (em base64) a 5 M
 
 msgid "{0} address(es) saved for the CENPROT."
 msgstr "{0} endereço(s) guardado(s) para a CENPROT."
+
+msgid "Fill the CENPROT username and password in Settings > Bureaus."
+msgstr "Preencha o usuário e a senha da CENPROT em Configurações > Bureaus."
