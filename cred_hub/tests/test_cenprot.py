@@ -483,6 +483,27 @@ class TestCardTitles(IntegrationTestCase):
 		}
 		return self.deal(second_organization=self.cedente.name, titles=[values])
 
+	def test_paid_title_is_not_sent_and_a_partly_paid_one_goes_with_its_balance(self):
+		deal = self.card()
+		row = deal.titles[0]
+		# 500 of the 1200 paid: the registry gets what is still owed
+		frappe.db.set_value("CRM Deal Title", row.name, {"updated_amount": 700, "paid_amount": 500})
+		deal.reload()
+		self.assertEqual(protest._row_keys(deal, deal.titles[0])["balance"], 700)
+		self.assertFalse(
+			[p for p in protest.preview_row(deal.name, row.name)["problems"] if "already paid" in p]
+		)
+		# everything paid: the balance stays 0 (it must not fall back to the original amount) and the send is blocked
+		frappe.db.set_value("CRM Deal Title", row.name, {"updated_amount": 0, "paid_amount": 1200})
+		deal.reload()
+		self.assertEqual(protest._row_keys(deal, deal.titles[0])["balance"], 0)
+		problems = protest.preview_row(deal.name, row.name)["problems"]
+		self.assertTrue(any("already paid" in p for p in problems), problems)
+		with patch("cred_hub.integrations.cenprot.requests.Session") as session:
+			with self.assertRaisesRegex(frappe.ValidationError, "already paid"):
+				protest.send_row(deal.name, row.name)
+		session.assert_not_called()
+
 	def test_imported_pending_title_is_sent_with_the_cedente_as_drawer(self):
 		deal = self.card()
 		row = deal.titles[0]

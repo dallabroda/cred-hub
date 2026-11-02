@@ -22,6 +22,7 @@ import hashlib
 from html import escape
 
 import frappe
+from crm.fcrm.doctype.crm_deal_title.crm_deal_title import balance_of
 from frappe import _
 from frappe.utils import cint, flt, getdate, now_datetime, today
 
@@ -762,7 +763,8 @@ def _row_keys(deal, row) -> dict:
 		"number": "" if number.upper() == "S/N" else number,
 		"our_number": (row.get("our_number") or "").strip() or _our_number_for(deal, row),
 		"amount": flt(row.get("original_amount")),
-		"balance": flt(row.get("updated_amount")) or flt(row.get("original_amount")),
+		# o que ainda se deve (pagamentos registrados já abatidos); título quitado fica com 0, não volta ao valor original
+		"balance": balance_of(row),
 	}
 
 
@@ -836,6 +838,8 @@ def _collect_row(deal, row, settings, selected=None):
 		problems.append(_("Fill the title number."))
 	if keys["amount"] <= 0:
 		problems.append(_("Fill the title amount."))
+	elif keys["balance"] <= 0:
+		problems.append(_("This title is already paid: there is nothing left to protest."))
 	issue, due = row.get("issue_date"), row.get("due_date")
 	if not issue:
 		problems.append(_("Fill the issue date."))
