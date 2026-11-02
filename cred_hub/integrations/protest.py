@@ -703,6 +703,9 @@ def sync_all():
 # "ainda não enviado".
 
 TITLE_ROW = "CRM Deal Title"
+# Codevedores por título: o limite da produção que já roda (o manual não fixa um)
+MAX_CODEBTORS = 8
+ADDRESS_KEYS = ("endereco", "numero", "complemento", "bairro", "municipio", "uf", "cep")
 # Espécies que o cartório só aceita com o documento (manual v2.2, "Espécies permitidas")
 # (DM/DS sem aceite também: NF + comprovante de entrega; mesma lista da tela)
 SPECIES_WITH_DOCUMENT = frozenset({"CCB", "CH", "NP", "CD", "CPS", "CA", "CL", "CM", "TA", "CT", "DM", "DS"})
@@ -776,7 +779,13 @@ def codebtor_candidates(deal) -> list[dict]:
 		fields=["name", "full_name", "cpf", "designation", "share_percentage", "mobile_no", "phone", "email_id"],
 		order_by="share_percentage desc, full_name asc",
 	)
-	labels = {"documento": _("valid CPF"), "nome": _("name"), **address_labels_()}
+	address_labels = address_labels_()
+	labels = {"documento": _("valid CPF"), "nome": _("name"), **address_labels}
+	try:
+		company = debtor_of(deal)
+	except TitleIncomplete:
+		company = None
+	company_has_address = bool(company) and not _missing(company, address_labels)
 	found = []
 	for contact in contacts:
 		party = _address_party(_contact_address(contact.name))
@@ -786,6 +795,11 @@ def codebtor_candidates(deal) -> list[dict]:
 			fone=contact.mobile_no or contact.phone,
 			email=contact.email_id,
 		)
+		address_from = "contact"
+		if _missing(party, address_labels) and company_has_address:
+			# Como na produção que já roda: o sócio sem endereço próprio vai com o da empresa, sem consulta extra
+			party.update({key: company.get(key) for key in ADDRESS_KEYS})
+			address_from = "company"
 		found.append(
 			{
 				"contact": contact.name,
@@ -794,6 +808,7 @@ def codebtor_candidates(deal) -> list[dict]:
 				"designation": contact.designation or "",
 				"share": contact.share_percentage,
 				"party": party,
+				"address_from": address_from,
 				"missing": _missing(party, labels),
 			}
 		)
@@ -869,6 +884,10 @@ def _collect_row(deal, row, settings, selected=None):
 
 	codebtors = []
 	candidates = {candidate["contact"]: candidate for candidate in codebtor_candidates(deal)}
+	if len({contact for contact in selected or [] if contact in candidates}) > MAX_CODEBTORS:
+		problems.append(
+			_("A title takes up to {0} co-debtors in CENPROT. Uncheck some of the partners.").format(MAX_CODEBTORS)
+		)
 	for contact in selected or []:
 		candidate = candidates.get(contact)
 		if not candidate:
@@ -1142,7 +1161,10 @@ def preview_row(deal: str, title_row: str, codebtors=None) -> dict:
 		"problems": problems,
 		"notes": notes,
 		"codebtors": [
-			{key: candidate[key] for key in ("contact", "name", "cpf", "designation", "share", "missing")}
+			{
+				key: candidate[key]
+				for key in ("contact", "name", "cpf", "designation", "share", "address_from", "missing")
+			}
 			for candidate in codebtor_candidates(doc)
 		],
 		"localize_on": bool(settings.get("assertiva_enabled")),

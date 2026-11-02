@@ -580,8 +580,11 @@ class TestCardTitles(IntegrationTestCase):
 		preview = protest.preview_row(deal.name, deal.titles[0].name)
 		by_name = {c["name"]: c for c in preview["codebtors"]}
 		self.assertEqual(by_name["Socio Completo"]["missing"], [])
+		self.assertEqual(by_name["Socio Completo"]["address_from"], "contact")
 		self.assertIn("valid CPF", by_name["Socio Sem Cpf"]["missing"])
-		self.assertTrue(any("street" in item for item in by_name["Socio Sem Endereco"]["missing"]))
+		# sem endereço próprio, o sócio vai com o da empresa (prática da produção): nada falta além do CPF
+		self.assertEqual(by_name["Socio Sem Endereco"]["missing"], [])
+		self.assertEqual(by_name["Socio Sem Endereco"]["address_from"], "company")
 		self.assertEqual(by_name["Socio Completo"]["cpf"], "529.982.247-25")
 		self.assertEqual({complete.name, no_cpf.name, no_address.name}, {c["contact"] for c in preview["codebtors"]})
 		# a prévia não envia nada e o título em si está pronto
@@ -607,6 +610,36 @@ class TestCardTitles(IntegrationTestCase):
 		self.assertEqual(devedores[1].findtext("cep"), "13010000")
 		notes = frappe.get_all("Comment", {"reference_name": deal.name, "comment_type": "Comment"}, pluck="content")
 		self.assertTrue(any("co-debtor" in note.lower() and "Socio Completo" in note for note in notes))
+
+	def test_codebtor_without_own_address_goes_with_the_company_address(self):
+		partner = self.partner("Socio Sem Endereco", "111.444.777-35", address=False)
+		deal = self.card()
+		session = FakeCenprot(EnviarTitulo=[answer("EnviarTitulo", "WS_SUC_201", "Título Coletado com Sucesso")])
+		with patch("cred_hub.integrations.cenprot.requests.Session", return_value=session):
+			result = protest.send_row(deal.name, deal.titles[0].name, [partner.name])
+		self.assertTrue(result["ok"], result)
+		devedores = self.sent_devedores(session)
+		self.assertEqual([d.findtext("documento") for d in devedores], ["11222333000181", "11144477735"])
+		self.assertEqual(devedores[1].findtext("cep"), devedores[0].findtext("cep"))
+		self.assertEqual(devedores[1].findtext("endereco"), devedores[0].findtext("endereco"))
+
+	def test_a_title_takes_at_most_eight_codebtors(self):
+		def make_cpf(base):
+			digits = [int(char) for char in base]
+			for size in (9, 10):
+				total = sum(digit * (size + 1 - index) for index, digit in enumerate(digits[:size]))
+				digits.append((total * 10 % 11) % 10)
+			return "".join(str(digit) for digit in digits)
+
+		names = [
+			self.partner(f"Socio Teste {index}", make_cpf(f"10000000{index}"), address=False).name
+			for index in range(9)
+		]
+		deal = self.card()
+		preview = protest.preview_row(deal.name, deal.titles[0].name, names)
+		self.assertTrue(any("up to 8 co-debtors" in problem for problem in preview["problems"]), preview["problems"])
+		preview = protest.preview_row(deal.name, deal.titles[0].name, names[:8])
+		self.assertFalse(any("co-debtors" in problem for problem in preview["problems"]), preview["problems"])
 
 	def test_marked_codebtor_with_missing_data_blocks_the_send(self):
 		incomplete = self.partner("Socio Sem Cpf")

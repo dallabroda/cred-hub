@@ -94,7 +94,10 @@ class TestAssertivaParsing(IntegrationTestCase):
 		}
 		self.assertEqual(assertiva.protocol_of(payload), "P-1")
 		phones = assertiva.phones(payload)
-		self.assertEqual(phones[0], {"phone": "+5548999887766", "mobile": True, "whatsapp": True, "score": 0, "carrier": ""})
+		self.assertEqual(
+			phones[0],
+			{"phone": "+5548999887766", "mobile": True, "whatsapp": True, "score": 0, "carrier": "", "dnd": False},
+		)
 		self.assertEqual(phones[1]["phone"], "+554832221100")
 		self.assertEqual(assertiva.partners(payload)[0]["cpf"], "12345678909")
 
@@ -102,6 +105,29 @@ class TestAssertivaParsing(IntegrationTestCase):
 		partners = assertiva.partners(CNPJ_RESPONSE)
 		self.assertEqual([p["cpf"] for p in partners], ["12345678909", "98765432100"])
 		self.assertEqual(partners[0]["share"], 80.0)
+
+	def test_do_not_disturb_number_is_saved_but_never_primary(self):
+		payload = {
+			"resposta": {
+				"telefones": {
+					"fixos": [],
+					"moveis": [
+						{"numero": "(19) 99876-5432", "naoPerturbe": True, "aplicativos": {"whatsApp": True}, "operadora": "Vivo"},
+						{"numero": "(19) 98765-4321", "naoPerturbe": False, "aplicativos": {"whatsApp": True}, "operadora": "Tim"},
+					],
+				}
+			}
+		}
+		found = assertiva.phones(payload)
+		self.assertEqual(sorted((p["phone"], p["dnd"]) for p in found), [("+5519987654321", False), ("+5519998765432", True)])
+		contact = frappe._dict(
+			phone_nos=[frappe._dict(phone=p["phone"], is_primary_mobile_no=0, is_primary_phone=0) for p in found],
+			mobile_no="",
+		)
+		localize._set_primary_phones(contact, found)
+		primary = [row.phone for row in contact.phone_nos if row.is_primary_mobile_no]
+		self.assertEqual(primary, ["+5519987654321"])
+		self.assertEqual(contact.phone_carrier, "Tim")
 
 	def test_real_response_shape_is_read(self):
 		"""Estrutura da resposta real do Localize por CNPJ (cabecalho/resposta), com dados inventados."""

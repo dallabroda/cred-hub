@@ -123,7 +123,7 @@ def enrich_organization(organization: str, force: int | str = 0) -> dict:
 		# sem frappe.throw: o histórico da tentativa (cobrada ou não) precisa ficar gravado
 		return {"ok": False, "message": str(e)}
 	summary = {"ok": True, "found": company is not None, "cached": cached, "paid_queries": 0 if cached else 1}
-	summary.update(created=0, updated=0, phones=0, whatsapp=0, emails=0, addresses=0, errors=[])
+	summary.update(created=0, updated=0, phones=0, whatsapp=0, emails=0, addresses=0, dnd=0, errors=[])
 	if company is None:
 		summary["message"] = _("Assertiva did not find this CNPJ.")
 		return summary
@@ -148,7 +148,7 @@ def enrich_organization(organization: str, force: int | str = 0) -> dict:
 			summary["errors"].append(_("{0}: the contact could not be saved.").format(person_name(partner["name"])))
 			continue
 		summary["created" if stats["created"] else "updated"] += 1
-		for key in ("phones", "whatsapp", "emails", "addresses"):
+		for key in ("phones", "whatsapp", "emails", "addresses", "dnd"):
 			summary[key] += stats[key]
 
 	_fill_company_contact(org, company)
@@ -162,6 +162,10 @@ def _summary_text(summary, protocol) -> str:
 	text = _("Assertiva Localize: {0} contact(s) created and {1} updated, {2} phone(s) ({3} with WhatsApp) and {4} e-mail(s).").format(
 		summary["created"], summary["updated"], summary["phones"], summary["whatsapp"], summary["emails"]
 	)
+	if summary.get("dnd"):
+		text += " " + _("{0} number(s) marked 'do not disturb' were saved but not used as the main phone.").format(
+			summary["dnd"]
+		)
 	if summary.get("addresses"):
 		text += " " + _("{0} address(es) saved for the CENPROT.").format(summary["addresses"])
 	if summary["cached"]:
@@ -218,7 +222,14 @@ def upsert_contact(org, partner, person, protocol) -> dict:
 
 	found_phones = phones(person) if person else []
 	found_emails = emails(person) if person else []
-	stats = {"created": not name, "phones": 0, "whatsapp": 0, "emails": 0, "addresses": 0}
+	stats = {
+		"created": not name,
+		"phones": 0,
+		"whatsapp": 0,
+		"emails": 0,
+		"addresses": 0,
+		"dnd": sum(1 for phone in found_phones if phone.get("dnd")),
+	}
 
 	known = {only_digits(row.phone) for row in contact.get("phone_nos") or []}
 	for phone in found_phones:
@@ -280,7 +291,7 @@ def _ensure_address(contact, person) -> int:
 
 
 def _set_primary_phones(contact, found_phones):
-	mobiles = [p for p in found_phones if p["mobile"]]
+	mobiles = [p for p in found_phones if p["mobile"] and not p.get("dnd")]
 	rows = contact.get("phone_nos") or []
 	if mobiles:
 		current = only_digits(contact.get("mobile_no"))
@@ -290,7 +301,7 @@ def _set_primary_phones(contact, found_phones):
 		contact.has_whatsapp = int(chosen["whatsapp"])
 		contact.phone_assertiveness = chosen["score"]
 		contact.phone_carrier = chosen["carrier"]
-	fixed = next((p for p in found_phones if not p["mobile"]), None)
+	fixed = next((p for p in found_phones if not p["mobile"] and not p.get("dnd")), None)
 	if fixed and not any(row.is_primary_phone for row in rows):
 		for row in rows:
 			if only_digits(row.phone) == only_digits(fixed["phone"]):

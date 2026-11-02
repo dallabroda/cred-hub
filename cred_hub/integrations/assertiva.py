@@ -235,6 +235,8 @@ def phones(payload) -> list[dict]:
 			"whatsapp": mobile and _has_whatsapp(item),
 			"score": max(min(cint(item.get("scoreAssertividade") or item.get("score")), 100), 0),
 			"carrier": str(item.get("operadora") or "").strip()[:40],
+			# "Não perturbe": o número fica salvo, mas nunca vira o telefone principal nem entra em disparo
+			"dnd": str(item.get("naoPerturbe")).strip().lower() in ("true", "1", "s", "sim"),
 		}
 		current = found.get(number)
 		if not current or (phone["whatsapp"], phone["score"]) > (current["whatsapp"], current["score"]):

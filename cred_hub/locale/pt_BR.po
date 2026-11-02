@@ -2471,3 +2471,9 @@ msgstr "{0} endereço(s) guardado(s) para a CENPROT."
 
 msgid "Fill the CENPROT username and password in Settings > Bureaus."
 msgstr "Preencha o usuário e a senha da CENPROT em Configurações > Bureaus."
+
+msgid "A title takes up to {0} co-debtors in CENPROT. Uncheck some of the partners."
+msgstr "Um título aceita até {0} codevedores na CENPROT. Desmarque alguns sócios."
+
+msgid "{0} number(s) marked 'do not disturb' were saved but not used as the main phone."
+msgstr "{0} número(s) marcado(s) como 'não perturbe' foram guardados, mas não viraram o telefone principal."
