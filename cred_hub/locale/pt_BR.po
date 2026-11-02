@@ -2522,3 +2522,30 @@ msgstr "Consultado mesmo com o alerta do pré-filtro: {0}."
 
 msgid "Verification failed"
 msgstr "Verificação falhou"
+
+msgid "{0} only accepts companies (CNPJ), not partners (CPF)."
+msgstr "{0} só aceita empresas (CNPJ), não sócios (CPF)."
+
+msgid "Partner consulted: {0}."
+msgstr "Sócio consultado: {0}."
+
+msgid "Query not found."
+msgstr "Consulta não encontrada."
+
+msgid "Partner not found."
+msgstr "Sócio não encontrado."
+
+msgid "This contact is not a partner of this organization."
+msgstr "Este contato não é sócio desta organização."
+
+msgid "You do not have permission to access this contact."
+msgstr "Você não tem permissão para acessar este contato."
+
+msgid "Enter a valid CPF."
+msgstr "Informe um CPF válido."
+
+msgid "You do not have permission to edit this contact."
+msgstr "Você não tem permissão para editar este contato."
+
+msgid "{0} has no valid CPF yet. Fill the CPF first."
+msgstr "{0} ainda não tem um CPF válido. Preencha o CPF primeiro."

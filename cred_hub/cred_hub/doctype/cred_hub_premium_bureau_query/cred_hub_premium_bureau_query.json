@@ -9,6 +9,9 @@
   "bureau",
   "organization",
   "deal",
+  "subject_type",
+  "contact",
+  "document",
   "cnpj",
   "requested_by",
   "requested_on",
@@ -116,11 +119,34 @@
    "fieldtype": "Check",
    "label": "Consultou mesmo com alerta",
    "read_only": 1
+  },
+  {
+   "default": "Organization",
+   "fieldname": "subject_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Consultado",
+   "options": "Organization\nPartner",
+   "read_only": 1
+  },
+  {
+   "fieldname": "contact",
+   "fieldtype": "Link",
+   "label": "Sócio",
+   "options": "Contact",
+   "read_only": 1
+  },
+  {
+   "fieldname": "document",
+   "fieldtype": "Data",
+   "label": "CPF ou CNPJ consultado",
+   "length": 18,
+   "read_only": 1
   }
  ],
  "in_create": 0,
  "links": [],
- "modified": "2026-11-02 12:00:00.000000",
+ "modified": "2026-11-02 15:00:00.000000",
  "modified_by": "Administrator",
  "module": "Cred Hub",
  "name": "Cred Hub Premium Bureau Query",
