@@ -17,6 +17,7 @@ Toda chamada fica em Cred Hub Bureau Query. Falha da CENPROT nunca usa frappe.th
 precisa ficar gravado.
 """
 
+import base64
 import hashlib
 from html import escape
 
@@ -28,12 +29,21 @@ from cred_hub.cnpj.mapping import is_valid_cnpj, only_digits
 from cred_hub.integrations import bureau_log, get_settings, secret
 from cred_hub.integrations.cenprot import (
 	AT_SIGHT,
+	DEBTOR_SIZES,
+	KNOWN_STATUSES,
 	OPERATION_FOR_STATUS,
+	OUR_NUMBER_SIZE,
+	PARTY_SIZES,
+	TITLE_NUMBER_SIZE,
 	CenprotClient,
 	CenprotError,
+	ascii_text,
 	br_date,
+	describe,
+	truncations,
 )
 from cred_hub.integrations.fields import DEAL_FORM_FIELDS
+from cred_hub.party.document import format_cpf, is_valid_cpf
 
 PROVIDER = "CENPROT"
 SEND, CONSULT, OPERATE = "enviar_titulo", "consultar_titulo", "operacao_titulo"
@@ -73,7 +83,11 @@ TOKEN_SECONDS = 1800
 
 
 class TitleIncomplete(Exception):
-	"""Falta dado para montar o título: nada foi enviado."""
+	"""Falta dado para montar o título: nada foi enviado. `problems` traz cada falta em separado."""
+
+	def __init__(self, problems):
+		self.problems = [problems] if isinstance(problems, str) else list(problems)
+		super().__init__(" ".join(self.problems))
 
 
 def forget_token():
@@ -241,10 +255,39 @@ def _missing(party: dict, labels: dict) -> list[str]:
 	return missing
 
 
+def address_labels_() -> dict:
+	return {
+		"endereco": _("street"),
+		"cep": _("ZIP code (CEP)"),
+		"municipio": _("city"),
+		"uf": _("state (UF)"),
+		"bairro": _("neighborhood"),
+	}
+
+
+def species_missing() -> str:
+	return _("Choose the title species (DMI, DSI, CCB...): it has no default.")
+
+
+def drawer_of(deal, row=None) -> dict | None:
+	"""Sacador do título: o cedente que emitiu o título antecipado, o da linha (credtech#315) ou, sem ele, o do
+	card (segunda organização). Vai no <sacador> do EnviarTitulo (manual v2.2: o <cedente> é o
+	portador/apresentante). None sem cedente."""
+	name = (row.get("cedente") if row is not None else None) or deal.get("second_organization")
+	if not name or name == deal.get("organization"):
+		return None
+	org = frappe.get_doc("CRM Organization", name)
+	address = frappe.get_doc("Address", org.address) if org.get("address") else None
+	party = _address_party(address, org.get("neighborhood"), org.get("city"), org.get("state"))
+	party.update(documento=only_digits(org.get("cnpj")), nome=org.organization_name)
+	return party
+
+
 def title_keys(deal, settings) -> dict:
-	"""Chaves do título no card; número e "nosso número" vazios recebem os dígitos do código do card."""
+	"""Chaves do título no card; número e "nosso número" vazios recebem os dígitos do código do card. A espécie
+	nunca tem padrão: sem ela não há protesto (dono, 02/11/2026)."""
 	code = only_digits(deal.name)
-	species = deal.get("protest_species") or settings.default_species or "DMI"
+	species = (deal.get("protest_species") or "").strip().upper()
 	amount = flt(deal.get("protest_amount")) or flt(deal.get("deal_value"))
 	return {
 		"protest_species": species,
@@ -261,14 +304,8 @@ def build_title(deal, settings) -> tuple[dict, dict]:
 	keys = title_keys(deal, settings)
 	debtor = debtor_of(deal)
 	creditor = _creditor(settings)
-	problems = []
-	address_labels = {
-		"endereco": _("street"),
-		"cep": _("ZIP code (CEP)"),
-		"municipio": _("city"),
-		"uf": _("state (UF)"),
-		"bairro": _("neighborhood"),
-	}
+	problems = [] if keys["protest_species"] else [species_missing()]
+	address_labels = address_labels_()
 	missing = _missing(debtor, address_labels)
 	if missing:
 		problems.append(_("Debtor address without: {0}.").format(", ".join(missing)))
@@ -409,7 +446,7 @@ def send_title(deal) -> dict:
 		response=result["raw"],
 		error="" if accepted else result["message"],
 	)
-	message = " ".join(filter(None, (result["code"], result["message"])))
+	message = describe(result)
 	if not accepted:
 		_save_keys(deal, {"protest_message": message[:500]})
 		_note(deal, _("CENPROT refused the title: {0}").format(message))
@@ -452,7 +489,7 @@ def refresh_title(deal, settings=None, client=None) -> dict:
 	checked = {"protest_checked_at": now_datetime()}
 	if not found or not found["status"]:
 		_save_keys(deal, checked)
-		message = " ".join(filter(None, (result["code"], result["message"]))) or _("no answer")
+		message = describe(result) or _("no answer")
 		return {"ok": False, "message": _("CENPROT did not find the title: {0}").format(message)}
 	previous = (deal.get("protest_status") or "").upper()
 	status = found["status"]
@@ -498,7 +535,7 @@ def withdraw_title(deal, justification: str = "") -> dict:
 		return {"ok": False, "message": str(e)}
 	finally:
 		_remember(settings, client)
-	message = " ".join(filter(None, (result["code"], result["message"])))
+	message = describe(result)
 	bureau_log.record(
 		PROVIDER,
 		OPERATE,
@@ -643,9 +680,12 @@ def sync_all():
 		filters={"protest_sent_at": ("is", "set"), "protest_status": ("not in", FINAL)},
 		pluck="name",
 	)
-	if not names:
+	has_rows = frappe.db.exists(TITLE_ROW, {"sent_at": ("is", "set"), "protest_status": ("not in", FINAL)})
+	if not names and not has_rows:
 		return
 	client = _client(settings)
+	if has_rows:
+		sync_rows(settings, client)
 	for name in names:
 		try:
 			refresh_title(frappe.get_doc(DEAL, name), settings, client)
@@ -654,3 +694,502 @@ def sync_all():
 			frappe.db.rollback()
 			frappe.log_error(title=f"Cred Hub: CENPROT status of {name} failed")
 	_remember(settings, client)
+
+
+# Títulos do card (tabela CRM Deal Title, credtech#315) ----------------------------------------------------------
+#
+# Cada linha da aba Títulos é um título próprio na CENPROT: envio, consulta diária e retirada por linha. O status
+# da linha só vale quando é um status da CENPROT; textos da tela ou da importação (ex.: "Pendente") contam como
+# "ainda não enviado".
+
+TITLE_ROW = "CRM Deal Title"
+# Codevedores por título: o limite da produção que já roda (o manual não fixa um)
+MAX_CODEBTORS = 8
+ADDRESS_KEYS = ("endereco", "numero", "complemento", "bairro", "municipio", "uf", "cep")
+# Espécies que o cartório só aceita com o documento (manual v2.2, "Espécies permitidas")
+# (DM/DS sem aceite também: NF + comprovante de entrega; mesma lista da tela)
+SPECIES_WITH_DOCUMENT = frozenset({"CCB", "CH", "NP", "CD", "CPS", "CA", "CL", "CM", "TA", "CT", "DM", "DS"})
+
+
+def row_status(row) -> str:
+	status = (row.get("protest_status") or "").strip().upper()
+	return status if status in KNOWN_STATUSES else ""
+
+
+def _our_number_for(deal, row) -> str:
+	"""Nosso número gerado quando o título não tem: dígitos do card + posição da linha (estável e único no card)."""
+	return f"{only_digits(deal.name)[-12:]}{cint(row.idx):03d}"[-OUR_NUMBER_SIZE:]
+
+
+def _find_row(deal, row_name: str):
+	return next((row for row in deal.get("titles") or [] if row.name == row_name), None)
+
+
+DOCUMENT_MAX_BYTES = 5 * 1024 * 1024
+DOCUMENT_EXTENSIONS = ("pdf", "jpg", "jpeg", "png")
+
+
+def _document_of(row) -> tuple[dict | None, str]:
+	"""(<documento> do EnviarTitulo, problema) a partir do anexo da linha (manual v2.2: até 5 MB)."""
+	url = row.get("attachment")
+	if not url:
+		return None, ""
+	name = frappe.db.get_value("File", {"file_url": url}, "name")
+	if not name:
+		return None, _("The attachment of title {0} was not found.").format(row.get("title_number") or "")
+	file = frappe.get_doc("File", name)
+	extension = (file.file_name or url).rsplit(".", 1)[-1].lower()
+	if extension not in DOCUMENT_EXTENSIONS:
+		return None, _("The attachment must be PDF, JPG or PNG (CENPROT).")
+	content = file.get_content()
+	if isinstance(content, str):
+		content = content.encode()
+	encoded = base64.b64encode(content).decode()
+	if len(encoded) > DOCUMENT_MAX_BYTES:
+		return None, _(
+			"The attachment is too big: CENPROT limits the document (in base64) to 5 MB, which is about 3.7 MB of file."
+		)
+	extension = "jpg" if extension == "jpeg" else extension
+	return {"extensao": extension, "base64": encoded}, ""
+
+
+def _row_keys(deal, row) -> dict:
+	species = (row.get("species") or "").strip().upper()
+	number = (row.get("title_number") or "").strip()
+	return {
+		"species": species,
+		"number": "" if number.upper() == "S/N" else number,
+		"our_number": (row.get("our_number") or "").strip() or _our_number_for(deal, row),
+		"amount": flt(row.get("original_amount")),
+		"balance": flt(row.get("updated_amount")) or flt(row.get("original_amount")),
+	}
+
+
+def codebtor_candidates(deal) -> list[dict]:
+	"""Possíveis codevedores do título: TODOS os contatos da organização devedora (sócios trazidos pela Receita,
+	pelo Localizar ou cadastrados à mão). Mandar os sócios junto com o devedor é opcional, quem decide é o
+	operador a cada envio (credtech#315). O Localizar só automatiza o preenchimento: o CPF e o endereço também
+	podem ser digitados no contato. Cada candidato diz o que falta para ir, conforme o que a CENPROT exige."""
+	organization = deal.get("organization")
+	if not organization:
+		return []
+	contacts = frappe.get_all(
+		"Contact",
+		filters={"company_name": organization},
+		fields=["name", "full_name", "cpf", "designation", "share_percentage", "mobile_no", "phone", "email_id"],
+		order_by="share_percentage desc, full_name asc",
+	)
+	address_labels = address_labels_()
+	labels = {"documento": _("valid CPF"), "nome": _("name"), **address_labels}
+	try:
+		company = debtor_of(deal)
+	except TitleIncomplete:
+		company = None
+	company_has_address = bool(company) and not _missing(company, address_labels)
+	found = []
+	for contact in contacts:
+		party = _address_party(_contact_address(contact.name))
+		party.update(
+			documento=only_digits(contact.cpf) if is_valid_cpf(contact.cpf) else "",
+			nome=contact.full_name,
+			fone=contact.mobile_no or contact.phone,
+			email=contact.email_id,
+		)
+		address_from = "contact"
+		if _missing(party, address_labels) and company_has_address:
+			# Como na produção que já roda: o sócio sem endereço próprio vai com o da empresa, sem consulta extra
+			party.update({key: company.get(key) for key in ADDRESS_KEYS})
+			address_from = "company"
+		found.append(
+			{
+				"contact": contact.name,
+				"name": contact.full_name,
+				"cpf": format_cpf(contact.cpf) if contact.cpf else "",
+				"designation": contact.designation or "",
+				"share": contact.share_percentage,
+				"party": party,
+				"address_from": address_from,
+				"missing": _missing(party, labels),
+			}
+		)
+	return found
+
+
+def _as_list(value) -> list:
+	if isinstance(value, str):
+		value = frappe.parse_json(value) if value.strip() else []
+	return list(value or [])
+
+
+def _cenprot_key(number, our_number, due) -> tuple:
+	"""Como o título chega na CENPROT depois dos cortes de tamanho do manual."""
+	return (ascii_text(number, TITLE_NUMBER_SIZE), ascii_text(our_number, OUR_NUMBER_SIZE), str(due or ""))
+
+
+def _collect_row(deal, row, settings, selected=None):
+	"""(problemas que impedem o envio, título, chaves, avisos) de uma linha da aba Títulos. Nada é enviado nem
+	cobrado aqui. `selected` são os contatos que o operador marcou para ir como codevedores."""
+	keys = _row_keys(deal, row)
+	problems = [] if keys["species"] else [species_missing()]
+	if not keys["number"]:
+		problems.append(_("Fill the title number."))
+	if keys["amount"] <= 0:
+		problems.append(_("Fill the title amount."))
+	issue, due = row.get("issue_date"), row.get("due_date")
+	if not issue:
+		problems.append(_("Fill the issue date."))
+	if not due:
+		problems.append(_("Fill the due date."))
+	elif getdate(due) >= getdate(today()):
+		problems.append(_("Only overdue titles go to protest: the due date must be before today."))
+	if keys["species"] in SPECIES_WITH_DOCUMENT and not row.get("attachment"):
+		problems.append(
+			_("Title of species {0} requires an attachment (PDF/document) before protesting.").format(keys["species"])
+		)
+	document, problem = _document_of(row)
+	if problem:
+		problems.append(problem)
+
+	mine = _cenprot_key(keys["number"], keys["our_number"], due)
+	for other in deal.get("titles") or []:
+		if other.name != row.name and _cenprot_key(
+			_row_keys(deal, other)["number"], _row_keys(deal, other)["our_number"], other.get("due_date")
+		) == mine:
+			problems.append(
+				_(
+					"This title would reach CENPROT with the same number, our number and due date as the title {0} of this card (the manual cuts the number at 11 and our number at 15 characters). Change one of them."
+				).format(other.get("title_number"))
+			)
+			break
+
+	try:
+		debtor = debtor_of(deal)
+	except TitleIncomplete as e:
+		problems.extend(e.problems)
+		debtor = None
+	address_labels = address_labels_()
+	if debtor:
+		missing = _missing(debtor, address_labels)
+		if missing:
+			problems.append(_("Debtor address without: {0}.").format(", ".join(missing)))
+	creditor = _creditor(settings)
+	missing = _missing(creditor, {"nome": _("name"), "documento": _("CPF or CNPJ"), **address_labels})
+	if missing:
+		problems.append(_("Creditor in the settings without: {0}.").format(", ".join(missing)))
+	drawer = drawer_of(deal, row)
+	if drawer:
+		missing = _missing(drawer, {"nome": _("name"), "documento": _("CNPJ"), **address_labels})
+		if missing:
+			problems.append(_("Cedente (drawer of the title) without: {0}.").format(", ".join(missing)))
+
+	codebtors = []
+	candidates = {candidate["contact"]: candidate for candidate in codebtor_candidates(deal)}
+	if len({contact for contact in selected or [] if contact in candidates}) > MAX_CODEBTORS:
+		problems.append(
+			_("A title takes up to {0} co-debtors in CENPROT. Uncheck some of the partners.").format(MAX_CODEBTORS)
+		)
+	for contact in selected or []:
+		candidate = candidates.get(contact)
+		if not candidate:
+			continue  # só vai quem é candidato: contato de outra empresa nunca entra por aqui
+		if candidate["missing"]:
+			problems.append(
+				_("Co-debtor {0} without: {1}. Uncheck it or complete the contact.").format(
+					candidate["name"], ", ".join(candidate["missing"])
+				)
+			)
+		else:
+			codebtors.append(candidate["party"])
+
+	if not debtor:
+		return problems, None, keys, []
+	title = {
+		"cedente": creditor,
+		"devedores": [debtor, *codebtors],
+		"divida": {
+			"especie": keys["species"],
+			"numero": keys["number"],
+			"nossoNumero": keys["our_number"],
+			"valor": keys["amount"],
+			"saldo": keys["balance"],
+			"tipoEndosso": ENDORSEMENT.get(settings.default_endorsement or ""),
+			"aceite": "S" if settings.titles_accepted else "N",
+			# Com anexo vai a imagem do título ("I"); sem anexo, a declaração da espécie
+			"declaracaoPortador": "I" if document else DECLARATION_FOR_SPECIES.get(keys["species"], "A"),
+			"emissao": br_date(issue) if issue else "",
+			"vencimento": br_date(due) if due else "",
+		},
+	}
+	if document:
+		title["divida"]["documento"] = document
+	if drawer:
+		title["sacador"] = drawer
+	if settings.cenprot_bearer_code:
+		title["geral"] = {"codPortador": settings.cenprot_bearer_code, "nomePortador": settings.cenprot_bearer_name}
+	keys["debtor_document"] = debtor["documento"]
+	parties = [(_("Debtor"), debtor, DEBTOR_SIZES)]
+	parties += [(_("Co-debtor {0}").format(party["nome"]), party, DEBTOR_SIZES) for party in codebtors]
+	parties.append((_("Creditor"), creditor, PARTY_SIZES))
+	if drawer:
+		parties.append((_("Cedente"), drawer, PARTY_SIZES))
+	notes = truncations(parties, title["divida"])
+	return problems, title, keys, notes
+
+
+def build_title_from_row(deal, row, settings, codebtors=None) -> tuple[dict, dict]:
+	"""(título para a CENPROT, chaves usadas) a partir de uma linha da aba Títulos. TitleIncomplete com tudo o que
+	falta, antes de qualquer chamada paga. `codebtors`: contatos que o operador marcou para ir junto."""
+	problems, title, keys, notes = _collect_row(deal, row, settings, codebtors)
+	if problems:
+		raise TitleIncomplete(problems)
+	keys["notes"] = notes
+	return title, keys
+
+
+def _row_consult(deal, row) -> dict:
+	"""As chaves com que a linha foi enviada (número, nosso número, vencimento e o documento do devedor)."""
+	debtor = debtor_of(deal)
+	return {
+		"devedor": {"documento": debtor["documento"], "nome": ""},
+		"divida": {
+			"numero": row.get("title_number"),
+			"nossoNumero": row.get("our_number"),
+			"especie": row.get("species"),
+			"vencimento": br_date(row.get("due_date")) if row.get("due_date") else AT_SIGHT,
+			"emissao": br_date(row.get("issue_date")),
+		},
+		"protocolo": row.get("protest_protocol"),
+	}
+
+
+def _set_row(row, values: dict):
+	frappe.db.set_value(TITLE_ROW, row.name, values, update_modified=False)
+	row.update(values)
+
+
+def send_deal_title_row(deal, row_name: str, codebtors=None) -> dict:
+	settings = _settings()
+	row = _find_row(deal, row_name)
+	if not row:
+		return {"ok": False, "message": _("Title row not found.")}
+	status = row_status(row)
+	if status not in SENDABLE:
+		return {"ok": False, "message": _("This title is already at the registry (status {0}).").format(status)}
+
+	title, keys = build_title_from_row(deal, row, settings, codebtors)
+	client = _client(settings)
+	try:
+		result = client.send_title(title)
+	except CenprotError as e:
+		bureau_log.record(
+			PROVIDER, SEND, bureau_log.ERROR, document=keys["debtor_document"], reference=deal,
+			result_code=e.code, error=str(e),
+		)
+		return {"ok": False, "message": str(e)}
+	finally:
+		_remember(settings, client)
+
+	accepted = result["ok"] or result["duplicate"]
+	bureau_log.record(
+		PROVIDER,
+		SEND,
+		bureau_log.SUCCESS if accepted else bureau_log.ERROR,
+		document=keys["debtor_document"],
+		reference=deal,
+		result_code=result["code"],
+		protocol=result.get("protocol") or "",
+		response=result["raw"],
+		error="" if accepted else result["message"],
+	)
+	message = describe(result)
+	if not accepted:
+		_note(deal, _("CENPROT refused title {0}: {1}").format(keys["number"], message))
+		return {"ok": False, "message": _("CENPROT refused the title: {0}").format(message)}
+
+	# Grava as chaves usadas no envio: a consulta diária e a retirada precisam das mesmas
+	_set_row(
+		row,
+		{
+			"title_number": keys["number"],
+			"our_number": keys["our_number"],
+			"species": keys["species"],
+			"protest_status": "COLETADO",
+			"protest_protocol": result.get("protocol") or row.get("protest_protocol") or "",
+			"sent_at": now_datetime(),
+		},
+	)
+	if result["duplicate"]:
+		_note(deal, _("CENPROT already had title {0} ({1}). Checking its status at the registry.").format(keys["number"], message))
+		refresh_title_row(deal, row, settings, client)
+	else:
+		_note(deal, _("Title {0} sent to protest at CENPROT: {1}").format(keys["number"], message))
+	if len(title["devedores"]) > 1:
+		_note(
+			deal,
+			_("Title {0} went with {1} co-debtor(s): {2}.").format(
+				keys["number"],
+				len(title["devedores"]) - 1,
+				", ".join(debtor["nome"] for debtor in title["devedores"][1:]),
+			),
+		)
+	return {"ok": True, "message": _("Title sent to protest."), "status": row.get("protest_status")}
+
+
+def refresh_title_row(deal, row, settings=None, client=None) -> dict:
+	"""Consulta o título da linha; mudou o status, grava, registra no card e avisa o responsável."""
+	settings = settings or _settings()
+	if not row.get("sent_at"):
+		return {"ok": False, "message": _("This title was not sent to protest.")}
+	own_client = client is None
+	client = client or _client(settings)
+	try:
+		consult = _row_consult(deal, row)
+		result = client.consult_title(consult)
+	except (CenprotError, TitleIncomplete) as e:
+		bureau_log.record(
+			PROVIDER, CONSULT, bureau_log.ERROR, reference=deal, result_code=getattr(e, "code", ""), error=str(e)
+		)
+		return {"ok": False, "message": str(e)}
+	finally:
+		if own_client:
+			_remember(settings, client)
+	found = result["title"]
+	if not found or not found["status"]:
+		message = describe(result) or _("no answer")
+		return {"ok": False, "message": _("CENPROT did not find the title: {0}").format(message)}
+	previous = row_status(row)
+	status = found["status"]
+	_set_row(row, {"protest_status": status, "protest_protocol": found["protocol"] or row.get("protest_protocol") or ""})
+	if status != previous:
+		bureau_log.record(
+			PROVIDER, CONSULT, bureau_log.SUCCESS, document=consult["devedor"]["documento"], reference=deal,
+			result_code=status, protocol=found["protocol"], response=result["raw"],
+		)
+		text = _("Protest of title {0} ({1}): the registry status changed from {2} to {3}.").format(
+			row.get("title_number"), deal.name, previous or "-", status
+		)
+		if found["message"]:
+			text += " " + found["message"]
+		_note(deal, text)
+		_notify(deal, text)
+	return {"ok": True, "status": status, "changed": status != previous, "message": found["message"]}
+
+
+def withdraw_title_row(deal, row_name: str, justification: str = "") -> dict:
+	"""Tira o título da linha do cartório pela operação que o status permite (manual v2.2): REMOCAO antes de ir
+	ao cartório, DESISTENCIA confirmado e CANCELAMENTO protestado."""
+	settings = _settings()
+	row = _find_row(deal, row_name)
+	if not row:
+		return {"ok": False, "message": _("Title row not found.")}
+	status = row_status(row)
+	operation = OPERATION_FOR_STATUS.get(status)
+	if not operation:
+		return {"ok": False, "message": _("A title in status {0} cannot be withdrawn or cancelled.").format(status or "-")}
+	client = _client(settings)
+	try:
+		consult = _row_consult(deal, row)
+		result = client.operate_title(consult, operation, justification)
+	except (CenprotError, TitleIncomplete) as e:
+		bureau_log.record(
+			PROVIDER, OPERATE, bureau_log.ERROR, reference=deal, result_code=getattr(e, "code", ""), error=str(e)
+		)
+		return {"ok": False, "message": str(e)}
+	finally:
+		_remember(settings, client)
+	message = describe(result)
+	bureau_log.record(
+		PROVIDER,
+		OPERATE,
+		bureau_log.SUCCESS if result["ok"] else bureau_log.ERROR,
+		document=consult["devedor"]["documento"],
+		reference=deal,
+		result_code=result["code"],
+		response=result["raw"],
+		error="" if result["ok"] else message,
+	)
+	if not result["ok"]:
+		_note(deal, _("CENPROT refused the {0} of title {1}: {2}").format(operation, row.get("title_number"), message))
+		return {"ok": False, "message": _("CENPROT refused the {0} of the title: {1}").format(operation, message)}
+	_note(deal, _("CENPROT accepted the {0} of title {1}: {2}").format(operation, row.get("title_number"), message))
+	if operation == "REMOCAO":
+		# Removido antes de ir ao cartório: a linha volta a "não enviado" e pode ser enviada de novo
+		_set_row(row, {"protest_status": "", "protest_protocol": "", "sent_at": None})
+	else:
+		# Desistência e cancelamento: o status novo vem da consulta à CENPROT
+		refresh_title_row(deal, row, settings)
+	return {"ok": True, "operation": operation, "message": message, "status": row.get("protest_status")}
+
+
+def sync_rows(settings, client):
+	"""Rotina diária: atualiza as linhas enviadas que ainda estão em andamento no cartório."""
+	rows = frappe.get_all(
+		TITLE_ROW,
+		filters={"parenttype": DEAL, "sent_at": ("is", "set"), "protest_status": ("not in", FINAL)},
+		fields=["name", "parent"],
+	)
+	for parent in sorted({row.parent for row in rows}):
+		try:
+			deal = frappe.get_doc(DEAL, parent)
+			for row in deal.get("titles") or []:
+				if row.get("sent_at") and row_status(row) not in FINAL:
+					refresh_title_row(deal, row, settings, client)
+			frappe.db.commit()
+		except Exception:
+			frappe.db.rollback()
+			frappe.log_error(title=f"Cred Hub: CENPROT status of the titles of {parent} failed")
+
+
+@frappe.whitelist()
+def preview_row(deal: str, title_row: str, codebtors=None) -> dict:
+	"""O que a tela mostra antes de enviar um título (nada é enviado nem cobrado): o que impede o envio, os avisos
+	(cortes de tamanho do manual) e os possíveis codevedores, com o que falta em cada um. Mandar os sócios junto
+	é opcional; o Localizar só automatiza o preenchimento (credtech#315)."""
+	doc = _deal(deal, "read")
+	row = _find_row(doc, title_row)
+	if not row:
+		frappe.throw(_("Title row not found."))
+	# Sem a CENPROT ligada ou sem usuário e senha, a tela mostra isso junto com o resto que falta (em vez de
+	# uma mensagem solta): o cliente vê de uma vez tudo o que precisa resolver
+	settings = get_settings()
+	problems, _title, _keys, notes = _collect_row(doc, row, settings, _as_list(codebtors))
+	if not settings.cenprot_enabled:
+		problems.insert(0, _("CENPROT is off. An admin turns it on in Settings > Integrations > Bureaus."))
+	elif not (settings.cenprot_username and secret(settings, "cenprot_password")):
+		problems.insert(0, _("Fill the CENPROT username and password in Settings > Bureaus."))
+	return {
+		"problems": problems,
+		"notes": notes,
+		"codebtors": [
+			{
+				key: candidate[key]
+				for key in ("contact", "name", "cpf", "designation", "share", "address_from", "missing")
+			}
+			for candidate in codebtor_candidates(doc)
+		],
+		"localize_on": bool(settings.get("assertiva_enabled")),
+		"organization": doc.get("organization"),
+	}
+
+
+@frappe.whitelist(methods=["POST"])
+def send_row(deal: str, title_row: str, codebtors=None) -> dict:
+	doc = _deal(deal, "write")
+	try:
+		return send_deal_title_row(doc, title_row, _as_list(codebtors))
+	except TitleIncomplete as e:
+		frappe.throw(str(e), title=_("The title cannot go to protest yet"))
+
+
+@frappe.whitelist(methods=["POST"])
+def refresh_row(deal: str, title_row: str) -> dict:
+	doc = _deal(deal, "read")
+	row = _find_row(doc, title_row)
+	if not row:
+		return {"ok": False, "message": _("Title row not found.")}
+	return refresh_title_row(doc, row)
+
+
+@frappe.whitelist(methods=["POST"])
+def withdraw_row(deal: str, title_row: str, justification: str | None = None) -> dict:
+	return withdraw_title_row(_deal(deal, "write"), title_row, (justification or "").strip())

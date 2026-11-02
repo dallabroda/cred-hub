@@ -2165,3 +2165,315 @@ msgstr "Retirada e cancelamento podem ter custas do cartório. Desligado até um
 
 msgid "With the option above on, moving a card here asks the registry to withdraw or cancel the protest."
 msgstr "Com a opção acima ligada, mover um card para cá pede ao cartório a retirada ou o cancelamento do protesto."
+
+msgid "Choose the title species (DMI, DSI, CCB...): it has no default."
+msgstr "Escolha a espécie do título (DMI, DSI, CCB...): ela não tem padrão."
+
+msgid "Cedente (drawer of the title) without: {0}."
+msgstr "Cedente (sacador do título) sem: {0}."
+
+msgid "CNPJ"
+msgstr "CNPJ"
+
+msgid "Fill the title number."
+msgstr "Preencha o número do título."
+
+msgid "Fill the title amount."
+msgstr "Preencha o valor do título."
+
+msgid "Title row not found."
+msgstr "Título não encontrado no card."
+
+msgid "Title of species {0} requires an attachment (PDF/document) before protesting."
+msgstr "Título da espécie {0} precisa de anexo (PDF ou documento) antes do protesto."
+
+msgid "The attachment of title {0} was not found."
+msgstr "O anexo do título {0} não foi encontrado."
+
+msgid "The attachment must be PDF, JPG or PNG (CENPROT)."
+msgstr "O anexo precisa ser PDF, JPG ou PNG (CENPROT)."
+
+msgid "The attachment is larger than 5 MB, the CENPROT limit."
+msgstr "O anexo passa de 5 MB, o limite da CENPROT."
+
+msgid "CENPROT refused title {0}: {1}"
+msgstr "A CENPROT recusou o título {0}: {1}"
+
+msgid "CENPROT already had title {0} ({1}). Checking its status at the registry."
+msgstr "A CENPROT já tinha o título {0} ({1}). Consultando o status no cartório."
+
+msgid "Title {0} sent to protest at CENPROT: {1}"
+msgstr "Título {0} enviado a protesto na CENPROT: {1}"
+
+msgid "This title was not sent to protest."
+msgstr "Este título não foi enviado a protesto."
+
+msgid "Protest of title {0} ({1}): the registry status changed from {2} to {3}."
+msgstr "Protesto do título {0} ({1}): o status no cartório mudou de {2} para {3}."
+
+msgid "CENPROT refused the {0} of title {1}: {2}"
+msgstr "A CENPROT recusou a {0} do título {1}: {2}"
+
+msgid "CENPROT accepted the {0} of title {1}: {2}"
+msgstr "A CENPROT aceitou a {0} do título {1}: {2}"
+
+msgid "{0} is a CPF. People go in Contacts (CPF field); Organizations are only for companies with a CNPJ."
+msgstr "{0} é um CPF. Pessoa física fica em Contatos (campo CPF); Organização é só para empresa com CNPJ."
+
+msgid "This is a CPF"
+msgstr "Isso é um CPF"
+
+msgid "{0} is a CNPJ. Companies go in Organizations; the CPF field of a contact only takes a person's CPF."
+msgstr "{0} é um CNPJ. Empresa fica em Organizações; o campo CPF do contato é só para o CPF de uma pessoa."
+
+msgid "This is a CNPJ"
+msgstr "Isso é um CNPJ"
+
+msgid "The CPF {0} looks invalid (the check digits do not match)."
+msgstr "O CPF {0} parece inválido (os dígitos verificadores não conferem)."
+
+msgid "{0} is not a valid CPF or CNPJ."
+msgstr "{0} não é um CPF nem um CNPJ válido."
+
+msgid "Invalid document"
+msgstr "Documento inválido"
+
+msgid "The entry came with the CPF {0}: a person goes in the contact, not in an organization."
+msgstr "A entrada veio com o CPF {0}: pessoa física fica no contato, não numa organização."
+
+msgid "{0} is a CPF: when this lead becomes a card, it goes to the contact, not to an organization."
+msgstr "{0} é um CPF: quando este lead virar card, ele vai para o contato, não para uma organização."
+
+msgid "Debtor CPF or CNPJ"
+msgstr "CPF ou CNPJ do sacado"
+
+msgid "Debtor name"
+msgstr "Nome do sacado"
+
+msgid "Cedente CNPJ"
+msgstr "CNPJ do cedente"
+
+msgid "Cedente name"
+msgstr "Nome do cedente"
+
+msgid "Species (CENPROT code)"
+msgstr "Espécie (código da CENPROT)"
+
+msgid "Original amount"
+msgstr "Valor original"
+
+msgid "Updated amount"
+msgstr "Valor atualizado"
+
+msgid "Digitable line"
+msgstr "Linha digitável"
+
+msgid "File not found."
+msgstr "Arquivo não encontrado."
+
+msgid "You can only import a file you uploaded."
+msgstr "Você só pode importar um arquivo que você enviou."
+
+msgid "Send the spreadsheet as .xlsx or .csv."
+msgstr "Envie a planilha em .xlsx ou .csv."
+
+msgid "The spreadsheet is empty."
+msgstr "A planilha está vazia."
+
+msgid "The spreadsheet has more than {0} lines. Split it in smaller files."
+msgstr "A planilha tem mais de {0} linhas. Divida em arquivos menores."
+
+msgid "invalid debtor CPF/CNPJ ({0})"
+msgstr "CPF/CNPJ do sacado inválido ({0})"
+
+msgid "invalid cedente CNPJ ({0})"
+msgstr "CNPJ do cedente inválido ({0})"
+
+msgid "no title number"
+msgstr "sem número do título"
+
+msgid "invalid due date"
+msgstr "vencimento inválido"
+
+msgid "invalid original amount"
+msgstr "valor original inválido"
+
+msgid "no issue date (needed to protest)"
+msgstr "sem data de emissão (necessária para protestar)"
+
+msgid "species {0} is not a registry code: choose it on the card"
+msgstr "a espécie {0} não é um código de cartório: escolha no card"
+
+msgid "no species: choose it on the card before protesting"
+msgstr "sem espécie: escolha no card antes de protestar"
+
+msgid "The collection pipeline has no open stage."
+msgstr "O funil de Cobrança não tem etapa em aberto."
+
+msgid "Choose the column of: {0}."
+msgstr "Escolha a coluna de: {0}."
+
+msgid "Turn on CENPROT and choose the collection pipeline in Settings > Bureaus first."
+msgstr "Primeiro ligue a CENPROT e escolha o funil de Cobrança em Configurações > Bureaus."
+
+msgid "The import is only for the collection pipeline."
+msgstr "A importação é só para o funil de Cobrança."
+
+msgid "lines {0}: {1}"
+msgstr "linhas {0}: {1}"
+
+msgid "Import of titles finished: {0} new cards, {1} updated cards, {2} new titles, {3} updated titles, {4} titles already at CENPROT left as they were, {5} lines with problems, {6} cards with errors."
+msgstr "Importação de títulos concluída: {0} cards novos, {1} cards atualizados, {2} títulos novos, {3} títulos atualizados, {4} títulos já na CENPROT ficaram como estavam, {5} linhas com problema, {6} cards com erro."
+
+msgid "Group the cards by"
+msgstr "Agrupar os cards por"
+
+msgid "Debtor and cedente"
+msgstr "Sacado e cedente"
+
+msgid "Debtor"
+msgstr "Sacado"
+
+msgid "How the spreadsheet import groups the titles in cards. The cedente is kept on each title either way."
+msgstr "Como a importação por planilha agrupa os títulos em cards. O cedente fica guardado em cada título nos dois casos."
+
+msgid "Unexpected error at CENPROT. Try again; if it keeps happening, contact CENPROT support."
+msgstr "Erro inesperado na CENPROT. Tente de novo; se continuar, fale com o suporte da CENPROT."
+
+msgid "CENPROT refused the username or password. Check them in Settings > Bureaus."
+msgstr "A CENPROT recusou o usuário ou a senha. Confira em Configurações > Bureaus."
+
+msgid "CENPROT does not accept calls from this server. Register the HubTech server IP in your CENPROT contract (the IP is shown in Settings > Bureaus)."
+msgstr "A CENPROT não aceita chamadas deste servidor. Cadastre o IP do servidor do HubTech no seu contrato da CENPROT (o IP aparece em Configurações > Bureaus)."
+
+msgid "This CENPROT user is not allowed to do this operation. Ask CENPROT to enable it."
+msgstr "Este usuário da CENPROT não pode fazer esta operação. Peça à CENPROT para liberar."
+
+msgid "This CENPROT user is blocked. Contact CENPROT support."
+msgstr "Este usuário da CENPROT está bloqueado. Fale com o suporte da CENPROT."
+
+msgid "CENPROT already has this title."
+msgstr "A CENPROT já tem este título."
+
+msgid "A required field of the title is empty or wrong."
+msgstr "Um campo obrigatório do título está vazio ou errado."
+
+msgid "A field of the title was filled in the wrong way."
+msgstr "Um campo do título foi preenchido de forma errada."
+
+msgid "CENPROT does not know this operation."
+msgstr "A CENPROT não conhece esta operação."
+
+msgid "A field is bigger than CENPROT allows."
+msgstr "Um campo é maior do que a CENPROT permite."
+
+msgid "CENPROT could not look up the protest."
+msgstr "A CENPROT não conseguiu consultar o protesto."
+
+msgid "CENPROT could not reach the registry central right now. Try again in a few minutes."
+msgstr "A CENPROT não conseguiu falar com a central dos cartórios agora. Tente de novo em alguns minutos."
+
+msgid "The title cannot be changed in its current status."
+msgstr "O título não pode ser alterado no status em que está."
+
+msgid "The title is bigger than 16 MB."
+msgstr "O título é maior que 16 MB."
+
+msgid "The title cannot be removed now: it is already in a remittance or in a status that does not allow it."
+msgstr "O título não pode ser removido agora: já está numa remessa ou num status que não permite."
+
+msgid "CENPROT had an error processing this with the registry central. Try again later."
+msgstr "A CENPROT teve um erro ao processar isto com a central dos cartórios. Tente mais tarde."
+
+msgid "There is no title to look up in the request."
+msgstr "Não há título para consultar no pedido."
+
+msgid "CENPROT could not select the presenter, or the user has no access to it. Fill the presenter code in Settings > Bureaus."
+msgstr "A CENPROT não conseguiu escolher o apresentante, ou o usuário não tem acesso a ele. Preencha o código do apresentante em Configurações > Bureaus."
+
+msgid "The title already has this operation."
+msgstr "O título já tem esta operação."
+
+msgid "The title already has the authorization for this operation."
+msgstr "O título já tem a autorização para esta operação."
+
+msgid "The title cannot be cancelled in its current status."
+msgstr "O título não pode ser cancelado no status em que está."
+
+msgid "The title cannot be withdrawn (desistência) in its current status."
+msgstr "O título não pode ser retirado (desistência) no status em que está."
+
+msgid "This operation was already requested for the title."
+msgstr "Esta operação já foi pedida para o título."
+
+msgid "The title cannot be removed in its current status."
+msgstr "O título não pode ser removido no status em que está."
+
+msgid "The title is only collected (COLETADO): use the removal."
+msgstr "O título está só coletado (COLETADO): use a remoção."
+
+msgid "The registry has not sent all the information yet. Try again later."
+msgstr "O cartório ainda não mandou todas as informações. Tente mais tarde."
+
+msgid "CENPROT said"
+msgstr "A CENPROT disse"
+
+msgid "{0}: {1} «{2}» goes as «{3}»."
+msgstr "{0}: {1} «{2}» vai como «{3}»."
+
+msgid "{0}: address number «{1}» goes as «{2}» (digits only, up to {3})."
+msgstr "{0}: o número do endereço «{1}» vai como «{2}» (só dígitos, até {3})."
+
+msgid "empty"
+msgstr "vazio"
+
+msgid "{0}: the address has no number, it goes empty."
+msgstr "{0}: o endereço não tem número, ele vai vazio."
+
+msgid "complement"
+msgstr "complemento"
+
+msgid "number"
+msgstr "número"
+
+msgid "our number"
+msgstr "nosso número"
+
+msgid "Title"
+msgstr "Título"
+
+msgid "Co-debtor {0}"
+msgstr "Codevedor {0}"
+
+msgid "Creditor"
+msgstr "Credor"
+
+msgid "Cedente"
+msgstr "Cedente"
+
+msgid "valid CPF"
+msgstr "CPF válido"
+
+msgid "Co-debtor {0} without: {1}. Uncheck it or complete the contact."
+msgstr "Codevedor {0} sem: {1}. Desmarque ou complete o contato."
+
+msgid "This title would reach CENPROT with the same number, our number and due date as the title {0} of this card (the manual cuts the number at 11 and our number at 15 characters). Change one of them."
+msgstr "Este título chegaria à CENPROT com o mesmo número, nosso número e vencimento do título {0} deste card (o manual corta o número em 11 e o nosso número em 15 caracteres). Mude um dos dois."
+
+msgid "Title {0} went with {1} co-debtor(s): {2}."
+msgstr "O título {0} foi com {1} codevedor(es): {2}."
+
+msgid "The attachment is too big: CENPROT limits the document (in base64) to 5 MB, which is about 3.7 MB of file."
+msgstr "O anexo é grande demais: a CENPROT limita o documento (em base64) a 5 MB, o que dá uns 3,7 MB de arquivo."
+
+msgid "{0} address(es) saved for the CENPROT."
+msgstr "{0} endereço(s) guardado(s) para a CENPROT."
+
+msgid "Fill the CENPROT username and password in Settings > Bureaus."
+msgstr "Preencha o usuário e a senha da CENPROT em Configurações > Bureaus."
+
+msgid "A title takes up to {0} co-debtors in CENPROT. Uncheck some of the partners."
+msgstr "Um título aceita até {0} codevedores na CENPROT. Desmarque alguns sócios."
+
+msgid "{0} number(s) marked 'do not disturb' were saved but not used as the main phone."
+msgstr "{0} número(s) marcado(s) como 'não perturbe' foram guardados, mas não viraram o telefone principal."

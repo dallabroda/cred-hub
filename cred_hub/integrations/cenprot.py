@@ -8,6 +8,7 @@ e `cenprot/README.md` da documentação de APIs (credtech#290, módulo 2).
 - Valores com ponto decimal; vencimento à vista como 99/99/9999.
 """
 
+import time
 import unicodedata
 from datetime import datetime
 from xml.etree import ElementTree as ET
@@ -44,6 +45,39 @@ AT_SIGHT = "99/99/9999"
 PARTY_SIZES = {"nome": 100, "endereco": 100, "numero": 10, "complemento": 50, "bairro": 20, "municipio": 50}
 DEBTOR_SIZES = {"nome": 45, "endereco": 40, "numero": 5, "complemento": 20, "bairro": 20, "municipio": 20}
 TITLE_NUMBER_SIZE, OUR_NUMBER_SIZE = 11, 15
+CENTRAL_UNAVAILABLE = "WS_ERR_306"
+RETRY_WAIT_SECONDS = 3
+
+# Mensagens do manual v2.2 (págs. 20 e 21) em linguagem do operador; o texto original da CENPROT vai junto.
+# Os textos são msgids em inglês; o pt-BR fica em locale/pt_BR.po.
+ERROR_HINTS = {
+	"WS_ERR_001": "Unexpected error at CENPROT. Try again; if it keeps happening, contact CENPROT support.",
+	"WS_ERR_101": "CENPROT refused the username or password. Check them in Settings > Bureaus.",
+	"WS_ERR_102": "CENPROT does not accept calls from this server. Register the HubTech server IP in your CENPROT contract (the IP is shown in Settings > Bureaus).",
+	"WS_ERR_103": "This CENPROT user is not allowed to do this operation. Ask CENPROT to enable it.",
+	"WS_ERR_104": "This CENPROT user is blocked. Contact CENPROT support.",
+	"WS_ERR_300": "CENPROT already has this title.",
+	"WS_ERR_301": "A required field of the title is empty or wrong.",
+	"WS_ERR_302": "A field of the title was filled in the wrong way.",
+	"WS_ERR_303": "CENPROT does not know this operation.",
+	"WS_ERR_304": "A field is bigger than CENPROT allows.",
+	"WS_ERR_305": "CENPROT could not look up the protest.",
+	"WS_ERR_306": "CENPROT could not reach the registry central right now. Try again in a few minutes.",
+	"WS_ERR_307": "The title cannot be changed in its current status.",
+	"WS_ERR_308": "The title is bigger than 16 MB.",
+	"WS_ERR_309": "The title cannot be removed now: it is already in a remittance or in a status that does not allow it.",
+	"WS_ERR_310": "CENPROT had an error processing this with the registry central. Try again later.",
+	"WS_ERR_311": "There is no title to look up in the request.",
+	"WS_ERR_312": "CENPROT could not select the presenter, or the user has no access to it. Fill the presenter code in Settings > Bureaus.",
+	"WS_ERR_2016": "The title already has this operation.",
+	"WS_ERR_2017": "The title already has the authorization for this operation.",
+	"WS_INF_201": "The title cannot be cancelled in its current status.",
+	"WS_INF_202": "The title cannot be withdrawn (desistência) in its current status.",
+	"WS_INF_203": "This operation was already requested for the title.",
+	"WS_INF_204": "The title cannot be removed in its current status.",
+	"WS_INF_205": "The title is only collected (COLETADO): use the removal.",
+	"WS_INF_206": "The registry has not sent all the information yet. Try again later.",
+}
 
 
 class CenprotError(Exception):
@@ -107,8 +141,9 @@ def _party(tag: str, party: dict, sizes: dict, extra: str = "") -> str:
 
 
 def title_xml(title: dict) -> str:
-	"""Conteúdo do <titulo> do EnviarTitulo (sem o token). `title` traz cedente, devedores, divida e, opcional,
-	geral (codPortador/nomePortador)."""
+	"""Conteúdo do <titulo> do EnviarTitulo (sem o token). `title` traz cedente, devedores, divida e, opcionais,
+	geral (codPortador/nomePortador), sacador (quem emitiu o título, ex.: o cedente da antecipação) e
+	divida.documento (imagem do título em base64). Ordem das tags como no manual v2.2."""
 	parts = [_tag("alteracao", "N")]
 	general = title.get("geral") or {}
 	if general.get("codPortador"):
@@ -120,6 +155,9 @@ def title_xml(title: dict) -> str:
 			+ "</geral>"
 		)
 	parts.append(_party("cedente", title["cedente"], PARTY_SIZES))
+	if title.get("sacador"):
+		# O sacador não tem <codigo> (manual v2.2); os tamanhos são os do cedente
+		parts.append(_party("sacador", {**title["sacador"], "codigo": ""}, PARTY_SIZES))
 	debtors = title["devedores"]
 	for index, debtor in enumerate(debtors):
 		extra = ""
@@ -144,8 +182,61 @@ def title_xml(title: dict) -> str:
 		_tag("emissao", debt["emissao"]),
 		_tag("vencimento", debt["vencimento"]),
 	]
+	document = debt.get("documento")
+	if document:
+		debt_parts.append(
+			"<documento>"
+			+ _tag("extensao", document["extensao"])
+			+ _tag("documentoBase64", document["base64"])
+			+ "</documento>"
+		)
 	parts.append(f"<divida>{''.join(debt_parts)}</divida>")
 	return "".join(parts)
+
+
+def describe(result: dict) -> str:
+	"""«CÓDIGO — o que significa (CENPROT: texto original)». Código sem explicação mostra só o que a CENPROT disse."""
+	code, raw = result.get("code") or "", (result.get("message") or "").strip()
+	hint = ERROR_HINTS.get(code)
+	if not hint or result.get("ok"):
+		return " ".join(filter(None, (code, raw)))
+	text = f"{code} — {_(hint)}"
+	return f"{text} ({_('CENPROT said')}: {raw})" if raw and raw.lower() != "null" else text
+
+
+def truncations(parties: list[tuple[str, dict, dict]], debt: dict) -> list[str]:
+	"""Avisos do que o manual obriga a cortar: `parties` é [(rótulo, parte, tamanhos)] e `debt` a dívida. O envio
+	corta em silêncio (senão a CENPROT recusa com WS_ERR_304); aqui o operador vê antes e corrige se quiser."""
+	notes = []
+
+	def check(label, field, original, sent):
+		if str(original or "").strip() and sent != ascii_text(original):
+			notes.append(
+				_("{0}: {1} «{2}» goes as «{3}».").format(label, field, " ".join(str(original).split()), sent)
+			)
+
+	for label, party, sizes in parties:
+		for key, field in (
+			("nome", _("name")),
+			("endereco", _("street")),
+			("complemento", _("complement")),
+			("bairro", _("neighborhood")),
+			("municipio", _("city")),
+		):
+			check(label, field, party.get(key), ascii_text(party.get(key), sizes[key]))
+		number = str(party.get("numero") or "").strip()
+		sent_number = digits(number)[: sizes["numero"]]
+		if number and sent_number != number:
+			notes.append(
+				_("{0}: address number «{1}» goes as «{2}» (digits only, up to {3}).").format(
+					label, number, sent_number or _("empty"), sizes["numero"]
+				)
+			)
+		elif not number:
+			notes.append(_("{0}: the address has no number, it goes empty.").format(label))
+	check(_("Title"), _("number"), debt.get("numero"), ascii_text(debt.get("numero"), TITLE_NUMBER_SIZE))
+	check(_("Title"), _("our number"), debt.get("nossoNumero"), ascii_text(debt.get("nossoNumero"), OUR_NUMBER_SIZE))
+	return notes
 
 
 def _local(element) -> str:
@@ -290,6 +381,12 @@ class CenprotClient:
 		result = result_of(root)
 		if result["code"] == INVALID_TOKEN:
 			self.authenticate()
+			root, raw = self._post(action, build(self.token))
+			result = result_of(root)
+		if result["code"] == CENTRAL_UNAVAILABLE:
+			# A central dos cartórios falhou: uma nova tentativa é segura (título que já tivesse entrado volta como
+			# WS_ERR_300, tratado como duplicado)
+			time.sleep(RETRY_WAIT_SECONDS)
 			root, raw = self._post(action, build(self.token))
 			result = result_of(root)
 		return result, root, raw

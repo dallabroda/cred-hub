@@ -39,6 +39,7 @@
   "titles_accepted",
   "collection_section",
   "collection_pipeline",
+  "collection_grouping",
   "auto_send_on_stage",
   "auto_withdraw_on_stage",
   "stage_send",
@@ -235,7 +236,9 @@
    "fieldtype": "Select",
    "label": "Default title type",
    "options": "DMI\nDSI\nCBI\nCCB\nDM\nDS\nNP\nCH\nCD\nCPS\nCA\nCL\nCM\nTA\nDD",
-   "default": "DMI"
+   "default": "",
+   "hidden": 1,
+   "description": "Not used: the title species has no default (owner, 02/11/2026)."
   },
   {
    "fieldname": "default_endorsement",
@@ -260,6 +263,14 @@
    "label": "Collection pipeline",
    "options": "CRM Pipeline",
    "description": "Created when CENPROT is enabled."
+  },
+  {
+   "fieldname": "collection_grouping",
+   "fieldtype": "Select",
+   "label": "Group the cards by",
+   "options": "Debtor and cedente\nDebtor",
+   "default": "Debtor and cedente",
+   "description": "How the spreadsheet import groups the titles in cards. The cedente is kept on each title either way."
   },
   {
    "fieldname": "auto_send_on_stage",
@@ -319,7 +330,7 @@
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-10-30 09:00:00.000000",
+ "modified": "2026-11-02 16:00:00.000000",
  "modified_by": "Administrator",
  "module": "Cred Hub",
  "name": "Cred Hub Provider Settings",

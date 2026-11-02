@@ -23,6 +23,16 @@ TOKEN_URL = f"{BASE_URL}/oauth2/v3/token"
 CNPJ_URL = f"{BASE_URL}/localize/v3/cnpj"
 CPF_URL = f"{BASE_URL}/localize/v3/cpf"
 TIMEOUT = 30
+# A resposta real traz o tipo do logradouro em código (`tipoLogradouro: "R"`) e o nome sem ele
+STREET_TYPES = {
+	"R": "RUA",
+	"AV": "AVENIDA",
+	"AL": "ALAMEDA",
+	"TV": "TRAVESSA",
+	"PC": "PRACA",
+	"ROD": "RODOVIA",
+	"EST": "ESTRADA",
+}
 ATTEMPTS = 3
 # Rótulo das configurações -> idFinalidade
 PURPOSES = {
@@ -225,6 +235,8 @@ def phones(payload) -> list[dict]:
 			"whatsapp": mobile and _has_whatsapp(item),
 			"score": max(min(cint(item.get("scoreAssertividade") or item.get("score")), 100), 0),
 			"carrier": str(item.get("operadora") or "").strip()[:40],
+			# "Não perturbe": o número fica salvo, mas nunca vira o telefone principal nem entra em disparo
+			"dnd": str(item.get("naoPerturbe")).strip().lower() in ("true", "1", "s", "sim"),
 		}
 		current = found.get(number)
 		if not current or (phone["whatsapp"], phone["score"]) > (current["whatsapp"], current["score"]):
@@ -243,6 +255,38 @@ def emails(payload) -> list[str]:
 		score = cint(item.get("score")) if isinstance(item, dict) else 0
 		scored[address] = max(score, scored.get(address, 0))
 	return sorted(scored, key=lambda address: -scored[address])
+
+
+def addresses(payload) -> list[dict]:
+	"""Endereços da pessoa, do melhor para o pior (documentação 4.2: `enderecos` com `scoreAssertividade`). Só
+	entra endereço com logradouro e CEP de 8 dígitos: sem eles a CENPROT não aceita o devedor."""
+	found = []
+	for item in body_of(payload).get("enderecos") or []:
+		if not isinstance(item, dict):
+			continue
+		street = str(item.get("logradouro") or "").strip()
+		kind = str(item.get("tipoLogradouro") or "").strip().upper()
+		if street and kind:
+			name = STREET_TYPES.get(kind, kind)
+			if not street.upper().startswith((f"{name} ", f"{kind} ")):
+				street = f"{name} {street}"
+		zip_code = only_digits(item.get("cep"))
+		if not street or len(zip_code) != 8:
+			continue
+		found.append(
+			{
+				"street": street,
+				"number": str(item.get("numero") or "").strip(),
+				"complement": str(item.get("complemento") or "").strip(),
+				"neighborhood": str(item.get("bairro") or "").strip(),
+				"city": str(item.get("cidade") or "").strip(),
+				"state": str(item.get("uf") or "").strip().upper()[:2],
+				"zip": zip_code,
+				"score": max(min(cint(item.get("scoreAssertividade") or item.get("score")), 100), 0),
+				"ranking": cint(item.get("ranking")) or 999,
+			}
+		)
+	return sorted(found, key=lambda address: (-address["score"], address["ranking"]))
 
 
 def partners(payload) -> list[dict]:

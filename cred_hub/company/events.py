@@ -20,7 +20,13 @@ def on_update(doc, method=None):
 
 
 def _on_update(doc):
-	if doc.get("company_checked_on") or not company_name(doc):
+	if getattr(frappe.flags, "in_import", False):
+		return
+	name = company_name(doc)
+	if doc.get("company_checked_on") or not name:
+		return
+	# Não buscar presença digital para Sacados/Cedentes de cobrança
+	if name.endswith("-Sacado") or name.endswith("-Cedente") or str(doc.name).endswith("-Sacado") or str(doc.name).endswith("-Cedente"):
 		return
 	# Com CNPJ válido, espera a Receita responder (traz porte/CNAE para o piso SEBRAE); o job do
 	# CNPJ salva o documento de novo e este gatilho dispara outra vez.

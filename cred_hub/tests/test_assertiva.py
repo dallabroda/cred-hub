@@ -35,6 +35,12 @@ CPF_RESPONSES = {
 			{"ddd": "19", "numero": "32510099", "tipo": "FIXO", "operadora": "CLARO", "scoreAssertividade": 60, "temWhatsApp": False},
 		],
 		"emails": [{"email": "carlos.esilva@gmail.com", "score": 92}],
+		# formato real da resposta: tipo do logradouro em código, número inteiro, CEP com hífen e sem nota
+		"enderecos": [
+			{"tipoLogradouro": "AV", "logradouro": "CORONEL SILVA TELLES", "numero": 1200, "complemento": "APTO 81", "bairro": "CAMBUI", "cidade": "CAMPINAS", "uf": "sp", "cep": "13024-001", "precisaoCep": "CONFIRMADA"},
+			{"tipoLogradouro": "R", "logradouro": "ANTIGA", "numero": 5, "complemento": None, "bairro": "CENTRO", "cidade": "SAO PAULO", "uf": "SP", "cep": "01000-000"},
+			{"tipoLogradouro": "R", "logradouro": "SEM CEP", "cidade": "X", "uf": "SP", "cep": "123"},
+		],
 	},
 	"98765432100": None,  # não localizado (404)
 }
@@ -88,7 +94,10 @@ class TestAssertivaParsing(IntegrationTestCase):
 		}
 		self.assertEqual(assertiva.protocol_of(payload), "P-1")
 		phones = assertiva.phones(payload)
-		self.assertEqual(phones[0], {"phone": "+5548999887766", "mobile": True, "whatsapp": True, "score": 0, "carrier": ""})
+		self.assertEqual(
+			phones[0],
+			{"phone": "+5548999887766", "mobile": True, "whatsapp": True, "score": 0, "carrier": "", "dnd": False},
+		)
 		self.assertEqual(phones[1]["phone"], "+554832221100")
 		self.assertEqual(assertiva.partners(payload)[0]["cpf"], "12345678909")
 
@@ -96,6 +105,61 @@ class TestAssertivaParsing(IntegrationTestCase):
 		partners = assertiva.partners(CNPJ_RESPONSE)
 		self.assertEqual([p["cpf"] for p in partners], ["12345678909", "98765432100"])
 		self.assertEqual(partners[0]["share"], 80.0)
+
+	def test_do_not_disturb_number_is_saved_but_never_primary(self):
+		payload = {
+			"resposta": {
+				"telefones": {
+					"fixos": [],
+					"moveis": [
+						{"numero": "(19) 99876-5432", "naoPerturbe": True, "aplicativos": {"whatsApp": True}, "operadora": "Vivo"},
+						{"numero": "(19) 98765-4321", "naoPerturbe": False, "aplicativos": {"whatsApp": True}, "operadora": "Tim"},
+					],
+				}
+			}
+		}
+		found = assertiva.phones(payload)
+		self.assertEqual(sorted((p["phone"], p["dnd"]) for p in found), [("+5519987654321", False), ("+5519998765432", True)])
+		contact = frappe._dict(
+			phone_nos=[frappe._dict(phone=p["phone"], is_primary_mobile_no=0, is_primary_phone=0) for p in found],
+			mobile_no="",
+		)
+		localize._set_primary_phones(contact, found)
+		primary = [row.phone for row in contact.phone_nos if row.is_primary_mobile_no]
+		self.assertEqual(primary, ["+5519987654321"])
+		self.assertEqual(contact.phone_carrier, "Tim")
+
+	def test_real_response_shape_is_read(self):
+		"""Estrutura da resposta real do Localize por CNPJ (cabecalho/resposta), com dados inventados."""
+		payload = {
+			"cabecalho": {"protocolo": "00000000-0000-0000-0000-000000000000", "funcionalidade": "CNPJ"},
+			"resposta": {
+				"telefones": {
+					"fixos": [{"numero": "(19) 3210-4455", "naoPerturbe": False, "aplicativos": {"whatsAppBusiness": False}, "operadora": "Claro"}],
+					"moveis": [{"numero": "(19) 99876-5432", "naoPerturbe": False, "aplicativos": {"whatsApp": True}, "operadora": "Vivo"}],
+				},
+				"enderecos": [
+					{"tipoLogradouro": "R", "logradouro": "DAS FLORES", "numero": 12, "complemento": None, "bairro": "CENTRO", "cidade": "CAMPINAS", "uf": "SP", "cep": "13010-000"}
+				],
+				"emails": [{"email": "contato@exemplo.com.br"}],
+				"socios": [
+					{"documento": "529.982.247-25", "nomeOuRazaoSocial": "FULANO DE TAL", "dataEntrada": "22/11/2023"},
+					{"documento": "11.222.333/0001-81", "nomeOuRazaoSocial": "EMPRESA TESTE LTDA.", "dataEntrada": "22/11/2023"},
+				],
+			},
+		}
+		self.assertEqual(assertiva.protocol_of(payload), "00000000-0000-0000-0000-000000000000")
+		# só sócio pessoa física vira contato; sócio empresa fica de fora
+		self.assertEqual([(p["cpf"], p["name"]) for p in assertiva.partners(payload)], [("52998224725", "FULANO DE TAL")])
+		found = assertiva.phones(payload)
+		first = found[0]
+		self.assertEqual((first["phone"], first["mobile"], first["whatsapp"]), ("+5519998765432", True, True))
+		address = assertiva.addresses(payload)[0]
+		self.assertEqual(
+			(address["street"], address["number"], address["neighborhood"], address["city"], address["state"], address["zip"]),
+			("RUA DAS FLORES", "12", "CENTRO", "CAMPINAS", "SP", "13010000"),
+		)
+		self.assertEqual(assertiva.emails(payload), ["contato@exemplo.com.br"])
 
 	def test_token_is_cached_and_renewed_on_401(self):
 		assertiva.forget_token()
@@ -182,6 +246,17 @@ class TestLocalizeOrganization(IntegrationTestCase):
 		self.assertEqual(carlos.email_id, "carlos.esilva@gmail.com")
 		self.assertEqual(carlos.assertiva_protocol, "LOC-20261029-88321")
 		self.assertEqual(len(carlos.phone_nos), 3)
+		# o melhor endereço (e só ele) vira o endereço do contato, no formato que o envio à CENPROT lê
+		links = frappe.get_all(
+			"Dynamic Link", {"link_doctype": "Contact", "link_name": carlos.name, "parenttype": "Address"}, pluck="parent"
+		)
+		self.assertEqual(len(links), 1)
+		address = frappe.get_doc("Address", links[0])
+		self.assertEqual(
+			(address.address_line1, address.address_line2, address.city, address.state, address.pincode),
+			("AVENIDA CORONEL SILVA TELLES, 1200", "APTO 81, CAMBUI", "CAMPINAS", "SP", "13024001"),
+		)
+		self.assertEqual(result["addresses"], 1)
 
 		mariana = frappe.get_doc("Contact", {"company_name": self.org.name, "cpf": "987.654.321-00"})
 		self.assertEqual(mariana.full_name, "Mariana Souza Silva")
@@ -208,6 +283,10 @@ class TestLocalizeOrganization(IntegrationTestCase):
 		self.assertEqual(len(calls), 6)
 		self.assertFalse(forced["cached"])
 		self.assertEqual(frappe.db.count("Contact", {"company_name": self.org.name}), 2)
+		# nova consulta paga não duplica o endereço
+		self.assertEqual(
+			frappe.db.count("Dynamic Link", {"link_doctype": "Contact", "link_name": self.carlos.name, "parenttype": "Address"}), 1
+		)
 		status = localize.get_status(self.org.name)
 		self.assertTrue(status["enabled"] and status["has_cnpj"] and status["last_query_on"])
 

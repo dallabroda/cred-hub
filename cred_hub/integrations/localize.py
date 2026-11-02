@@ -27,20 +27,17 @@ from cred_hub.integrations.assertiva import (
 	PURPOSES,
 	AssertivaClient,
 	AssertivaError,
+	addresses,
 	emails,
 	partners,
 	phones,
 	protocol_of,
 )
+from cred_hub.party.document import format_cpf
 
 PROVIDER = "Assertiva"
 OP_CNPJ, OP_CPF = "localize_cnpj", "localize_cpf"
 DEFAULT_PURPOSE = "Credit protection and collection"
-
-
-def format_cpf(value) -> str:
-	digits = only_digits(value)
-	return f"{digits[:3]}.{digits[3:6]}.{digits[6:9]}-{digits[9:]}" if len(digits) == 11 else (value or "")
 
 
 def _settings():
@@ -126,7 +123,7 @@ def enrich_organization(organization: str, force: int | str = 0) -> dict:
 		# sem frappe.throw: o histórico da tentativa (cobrada ou não) precisa ficar gravado
 		return {"ok": False, "message": str(e)}
 	summary = {"ok": True, "found": company is not None, "cached": cached, "paid_queries": 0 if cached else 1}
-	summary.update(created=0, updated=0, phones=0, whatsapp=0, emails=0, errors=[])
+	summary.update(created=0, updated=0, phones=0, whatsapp=0, emails=0, addresses=0, dnd=0, errors=[])
 	if company is None:
 		summary["message"] = _("Assertiva did not find this CNPJ.")
 		return summary
@@ -151,7 +148,7 @@ def enrich_organization(organization: str, force: int | str = 0) -> dict:
 			summary["errors"].append(_("{0}: the contact could not be saved.").format(person_name(partner["name"])))
 			continue
 		summary["created" if stats["created"] else "updated"] += 1
-		for key in ("phones", "whatsapp", "emails"):
+		for key in ("phones", "whatsapp", "emails", "addresses", "dnd"):
 			summary[key] += stats[key]
 
 	_fill_company_contact(org, company)
@@ -165,6 +162,12 @@ def _summary_text(summary, protocol) -> str:
 	text = _("Assertiva Localize: {0} contact(s) created and {1} updated, {2} phone(s) ({3} with WhatsApp) and {4} e-mail(s).").format(
 		summary["created"], summary["updated"], summary["phones"], summary["whatsapp"], summary["emails"]
 	)
+	if summary.get("dnd"):
+		text += " " + _("{0} number(s) marked 'do not disturb' were saved but not used as the main phone.").format(
+			summary["dnd"]
+		)
+	if summary.get("addresses"):
+		text += " " + _("{0} address(es) saved for the CENPROT.").format(summary["addresses"])
 	if summary["cached"]:
 		text += " " + _("Saved result, at no cost.")
 	else:
@@ -219,7 +222,14 @@ def upsert_contact(org, partner, person, protocol) -> dict:
 
 	found_phones = phones(person) if person else []
 	found_emails = emails(person) if person else []
-	stats = {"created": not name, "phones": 0, "whatsapp": 0, "emails": 0}
+	stats = {
+		"created": not name,
+		"phones": 0,
+		"whatsapp": 0,
+		"emails": 0,
+		"addresses": 0,
+		"dnd": sum(1 for phone in found_phones if phone.get("dnd")),
+	}
 
 	known = {only_digits(row.phone) for row in contact.get("phone_nos") or []}
 	for phone in found_phones:
@@ -244,11 +254,44 @@ def upsert_contact(org, partner, person, protocol) -> dict:
 		contact.save(ignore_permissions=True)
 	else:
 		contact.insert(ignore_permissions=True)
+	stats["addresses"] = _ensure_address(contact, person)
 	return stats
 
 
+def _ensure_address(contact, person) -> int:
+	"""O melhor endereço da consulta por CPF vira o endereço do contato, que a CENPROT exige para mandar o sócio
+	como codevedor. Contato que já tem endereço (digitado pelo cliente, por exemplo) não é alterado."""
+	if not person:
+		return 0
+	if frappe.db.exists(
+		"Dynamic Link", {"link_doctype": "Contact", "link_name": contact.name, "parenttype": "Address"}
+	):
+		return 0
+	best = next(iter(addresses(person)), None)
+	if not best:
+		return 0
+	# a vírgula separa o número do logradouro e o bairro fica por último na linha 2 (o que o envio à CENPROT lê)
+	street = f"{best['street']}, {best['number']}" if best["number"] else best["street"]
+	line2 = ", ".join(part for part in (best["complement"], best["neighborhood"]) if part) if best["neighborhood"] else ""
+	frappe.get_doc(
+		{
+			"doctype": "Address",
+			"address_title": (contact.full_name or contact.name)[:100],
+			"address_type": "Personal",
+			"address_line1": street,
+			"address_line2": line2,
+			"city": best["city"],
+			"state": best["state"],
+			"pincode": best["zip"],
+			"country": "Brazil",
+			"links": [{"link_doctype": "Contact", "link_name": contact.name}],
+		}
+	).insert(ignore_permissions=True)
+	return 1
+
+
 def _set_primary_phones(contact, found_phones):
-	mobiles = [p for p in found_phones if p["mobile"]]
+	mobiles = [p for p in found_phones if p["mobile"] and not p.get("dnd")]
 	rows = contact.get("phone_nos") or []
 	if mobiles:
 		current = only_digits(contact.get("mobile_no"))
@@ -258,7 +301,7 @@ def _set_primary_phones(contact, found_phones):
 		contact.has_whatsapp = int(chosen["whatsapp"])
 		contact.phone_assertiveness = chosen["score"]
 		contact.phone_carrier = chosen["carrier"]
-	fixed = next((p for p in found_phones if not p["mobile"]), None)
+	fixed = next((p for p in found_phones if not p["mobile"] and not p.get("dnd")), None)
 	if fixed and not any(row.is_primary_phone for row in rows):
 		for row in rows:
 			if only_digits(row.phone) == only_digits(fixed["phone"]):

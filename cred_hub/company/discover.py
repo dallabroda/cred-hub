@@ -24,6 +24,7 @@ BLACKLIST = {
 	"apontador.com.br", "telelistas.net", "guiamais.com.br", "solutudo.com.br", "jusbrasil.com.br",
 	"cnpj.services", "receitafederal.gov.br", "opencorporates.com", "zoominfo.com", "dnb.com", "kompass.com",
 	"lusha.com", "rocketreach.co", "apollo.io", "cylex.com.br", "restaurantguru.com.br",
+	"netflix.com", "playpark.com", "azcardinals.com", "sacado.fr", "sacado.xyz", "soundcloud.com", "onepiece-cardgame.com", "mississaugavotes.ca",
 }
 # Sufixos de dois níveis comuns; o resto assume TLD simples (evita depender de tldextract)
 _TWO_LEVEL = {"com", "org", "net", "gov", "edu", "ind", "adv", "eco", "art", "blog", "co"}
@@ -238,10 +239,16 @@ def wikidata(http, name: str) -> dict:
 
 
 def find_site(searcher: Searcher, name: str) -> str:
-	for q in (f'"{name}" site oficial', f"{name} site oficial"):
+	clean_name = re.sub(r"-(?:Sacado|Cedente)$", "", name, flags=re.IGNORECASE).strip()
+	words = [re.sub(r"[^a-z0-9]", "", _ascii(w)) for w in name_words(clean_name) if len(w) >= 4]
+	for q in (f'"{clean_name}" site oficial', f"{clean_name} site oficial"):
 		for h in searcher.hits(q):
-			if not is_blacklisted(h["url"]):
-				return root_url(h["url"])
+			url = h["url"]
+			if not is_blacklisted(url):
+				host = registered_domain(url).split(".")[0].lower()
+				# Valida que o domínio tenha relação com o nome da empresa
+				if words and any(w in host or host in w for w in words):
+					return root_url(url)
 	return ""
 
 

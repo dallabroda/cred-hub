@@ -260,7 +260,8 @@
    "read": 1,
    "write": 1,
    "create": 1,
-   "role": "System Manager"
+   "role": "System Manager",
+   "delete": 1
   },
   {
    "read": 1,
