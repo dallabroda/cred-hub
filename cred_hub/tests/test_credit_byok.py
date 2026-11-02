@@ -155,3 +155,31 @@ class TestCreditClientKeys(IntegrationTestCase):
 		for key in ("escavador", "infosimples", "directd_score", "boavista_risco", "dossie_quod", "scr_bacen"):
 			self.assertGreater(prices[key], 0)
 		self.assertEqual(set(prices["test_connection"]), {"escavador", "infosimples", "directd"})
+
+	def test_serasa_report_is_stored_whole_and_billed_to_the_clients_contract(self):
+		frappe.db.set_single_value(SETTINGS, "serasa_enabled", 1)
+		frappe.db.set_single_value(SETTINGS, "serasa_client_id", "serasa-id")
+		frappe.clear_document_cache(SETTINGS, SETTINGS)
+		report = {"reports": [{"reportName": "RELATORIO_AVANCADO_PJ_PME", "score": {"score": 275}}]}
+
+		with patch.object(api, "_serasa_report", return_value=report) as serasa:
+			# sem o client secret o Serasa ainda não está configurado
+			options = {item["key"]: item for item in api.get_final_bureau_options(organization_name=self.org.name)["bureaus"]}
+			self.assertFalse(options["serasa"]["configured"])
+			with self.assertRaises(frappe.ValidationError):
+				api.request_bureau_final(organization_name=self.org.name, bureau="serasa", confirm_cost=1)
+
+			settings = frappe.get_single(SETTINGS)
+			settings.serasa_client_secret = "serasa-secret"
+			settings.save()
+			# o pré-filtro desta organização ainda não rodou ("Not Checked"): o operador confirma o alerta
+			result = api.request_bureau_final(
+				organization_name=self.org.name, bureau="serasa", confirm_cost=1, acknowledged_warning=1
+			)
+
+		self.assertEqual(serasa.call_args.args[1], self.org.cnpj)
+		self.assertEqual(result["status"], "Concluído")
+		log = frappe.get_last_doc("Cred Hub Premium Bureau Query", filters={"organization": self.org.name})
+		self.assertEqual(log.bureau, "serasa")
+		self.assertEqual(frappe.parse_json(log.raw_response_json), report)
+		self.assertEqual(billing.wallet_balance(), self.balance_before)

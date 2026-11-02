@@ -1,12 +1,7 @@
 """Testes unitários do motor de regras e parsers de análise de crédito (sem Frappe)."""
 
-import pytest
 
 from cred_hub.credit_check.clients.escavador import parse_escavador_payload
-from cred_hub.credit_check.clients.serasa import (
-	SerasaNotConfigured,
-	trigger_serasa_relato,
-)
 from cred_hub.credit_check.rules import (
 	VERDICT_ERROR,
 	VERDICT_PRE_APPROVED,
@@ -220,12 +215,6 @@ def test_format_timeline_summary_for_error_verdict():
 	text = format_timeline_summary(evaluation, "12.345.678/0001-99")
 	assert "Não verificado" in text
 	assert "Aprovado" not in text
-
-
-def test_trigger_serasa_relato_requires_real_credentials():
-	"""Sem endpoint/token do contrato do cliente, nunca finge sucesso (credtech#302)."""
-	with pytest.raises(SerasaNotConfigured):
-		trigger_serasa_relato("12345678000199", "user@example.com")
 
 
 def test_pre_filter_alert_needs_acknowledgement_instead_of_blocking():

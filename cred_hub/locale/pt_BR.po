@@ -2603,3 +2603,12 @@ msgstr "Aprovado com condições"
 
 msgid "Not approved"
 msgstr "Não aprovado"
+
+msgid "Serasa does not have this document: {0}"
+msgstr "O Serasa não tem este documento: {0}"
+
+msgid "Serasa connection test failed: {0}"
+msgstr "O teste de conexão com o Serasa falhou: {0}"
+
+msgid "Connected to Serasa successfully! This test makes no paid query."
+msgstr "Conectado ao Serasa com sucesso! Este teste não faz consulta paga."
