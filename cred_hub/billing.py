@@ -638,8 +638,10 @@ def wallet_balance() -> float:
 
 
 def spend_credits(amount: float, description: str = "") -> None:
-	"""Debita `amount` da carteira pra pagar um bureau Premium. Levanta InsufficientCreditsError
-	sem debitar nada se o saldo não cobrir — nunca deixa a carteira negativa."""
+	"""Debita `amount` da carteira pra pagar um bureau Premium com trava de linha (FOR UPDATE).
+	Levanta InsufficientCreditsError sem debitar nada se o saldo não cobrir — nunca deixa a carteira negativa."""
+	if frappe.db:
+		frappe.db.sql("SELECT value FROM `tabSingles` WHERE doctype = %s AND field = 'balance' FOR UPDATE", (WALLET,))
 	wallet = _wallet()
 	balance = wallet.balance or 0
 	if balance < amount:
@@ -651,6 +653,17 @@ def spend_credits(amount: float, description: str = "") -> None:
 		)
 	wallet.balance = balance - amount
 	wallet.total_spent = (wallet.total_spent or 0) + amount
+	wallet.flags.ignore_permissions = True
+	wallet.save()
+
+
+def refund_credits(amount: float, description: str = "") -> None:
+	"""Estorna `amount` para a carteira em caso de falha na consulta externa ou cancelamento."""
+	if frappe.db:
+		frappe.db.sql("SELECT value FROM `tabSingles` WHERE doctype = %s AND field = 'balance' FOR UPDATE", (WALLET,))
+	wallet = _wallet()
+	wallet.balance = (wallet.balance or 0) + amount
+	wallet.total_spent = max(0.0, (wallet.total_spent or 0) - amount)
 	wallet.flags.ignore_permissions = True
 	wallet.save()
 

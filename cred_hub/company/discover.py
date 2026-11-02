@@ -247,7 +247,8 @@ def find_site(searcher: Searcher, name: str) -> str:
 
 def linkedin_from_site(http, site: str) -> str:
 	try:
-		html = http.get(site, timeout=TIMEOUT).text
+		from cred_hub.email_company import safe_http
+		html = safe_http.fetch(site, max_bytes=512 * 1024, max_redirects=3).text
 	except Exception:
 		return ""
 	for m in LINKEDIN_RE.finditer(html):

@@ -157,10 +157,24 @@ def send_webhook(webhook_name: str, event_name: str, payload_data: dict, referen
 	response_text = ""
 
 	try:
-		resp = requests.post(doc.webhook_url, data=payload_json, headers=headers, timeout=10)
-		status_code = resp.status_code
-		response_text = resp.text[:2000]
-		status = "Success" if resp.ok else "Failed"
+		from cred_hub.email_company import safe_http
+		host = safe_http.check_url(doc.webhook_url)
+		parts = safe_http.urlsplit(doc.webhook_url)
+		scheme = parts.scheme.lower()
+		safe_http.resolve_public(host, parts.port or safe_http.PORTS[scheme])
+
+		session = safe_http._session()
+		try:
+			resp = session.post(doc.webhook_url, data=payload_json, headers=headers, timeout=10, allow_redirects=False)
+			status_code = resp.status_code
+			response_text = resp.text[:2000]
+			status = "Success" if resp.ok else "Failed"
+		finally:
+			session.close()
+	except safe_http.BlockedAddress as exc:
+		response_text = f"Security error: Destination blocked ({exc})"
+		status_code = 0
+		status = "Failed"
 	except Exception as exc:
 		response_text = f"Connection error: {str(exc)[:1500]}"
 		status_code = 0

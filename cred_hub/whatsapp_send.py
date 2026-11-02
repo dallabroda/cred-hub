@@ -88,14 +88,14 @@ def _conversations(account_id, token, contact_id):
 
 
 def _reference(deal, contact):
-	"""O card ou o contato de onde sai a mensagem; quem envia precisa poder ver o registro."""
+	"""O card ou o contato de onde sai a mensagem; quem envia precisa ter permissão de escrita no registro."""
 	if deal:
 		doc = frappe.get_doc("CRM Deal", deal)
 	elif contact:
 		doc = frappe.get_doc("Contact", contact)
 	else:
 		frappe.throw(_("Choose a card or a contact."))
-	doc.check_permission("read")
+	doc.check_permission("write")
 	return doc
 
 

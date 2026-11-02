@@ -8,6 +8,15 @@ from frappe import _
 def get_comments(reference_doctype: str, reference_name: str, limit: int = 50) -> list[dict]:
 	"""Retorna os comentários da timeline de um registro após verificar a permissão de leitura no registro pai."""
 	# Confere permissão de leitura no documento referenciado
+	key_info = getattr(frappe.local, "credhub_api_key", None)
+	if key_info:
+		from cred_hub.api_keys import RESOURCES, _scopes
+
+		scopes = _scopes(key_info["name"])
+		read_scope, _write = RESOURCES.get(reference_doctype, (None, None))
+		if read_scope and read_scope not in scopes:
+			frappe.throw(_("This API key is not allowed to read {0}.").format(reference_doctype), frappe.PermissionError)
+
 	frappe.get_lazy_doc(reference_doctype, reference_name, check_permission="read")
 
 	return frappe.get_all(

@@ -9,7 +9,7 @@ import frappe
 from frappe import _
 from frappe.utils import now_datetime
 
-from cred_hub.billing import InsufficientCreditsError, spend_credits, wallet_balance
+from cred_hub.billing import InsufficientCreditsError, refund_credits, spend_credits, wallet_balance
 from cred_hub.credit_check.clients.directd import DirectDAuthError, DirectDError
 from cred_hub.credit_check.clients.escavador import fetch_lawsuits
 from cred_hub.credit_check.clients.serasa import (
@@ -250,28 +250,28 @@ def request_bureau_final(
 	except BureauGateBlocked as e:
 		frappe.throw(str(e))
 
-	# Saldo de créditos checado ANTES de gastar com a DirectD — nunca a CredTech paga sem o cliente
-	# ter saldo pra cobrir (ver billing.py:spend_credits).
-	balance = wallet_balance()
-	if balance < registry.client_price:
-		frappe.throw(
-			_("Insufficient credits: balance is R$ {0}, this costs R$ {1}. Add credits to continue.").format(
-				f"{balance:.2f}", f"{registry.client_price:.2f}"
-			),
-			InsufficientCreditsError,
-		)
+	# Saldo de créditos debitado ANTES de gastar com a DirectD — nunca a CredTech paga sem o cliente
+	# ter saldo pra cobrir (evita TOCTOU e esgotamento da conta da plataforma). Em caso de falha externa, estorna.
+	spend_credits(registry.client_price, description=f"{registry.label} — {org_cnpj}")
+	frappe.db.commit()
 
 	try:
 		token = platform_directd_token()
 	except PlatformDirectDNotConfigured as e:
+		refund_credits(registry.client_price, description=f"Estorno: {registry.label} — {org_cnpj}")
+		frappe.db.commit()
 		frappe.throw(str(e))
 
 	try:
 		result = registry.fetch(org_cnpj, token)
 	except (DirectDAuthError, DirectDError) as e:
+		refund_credits(registry.client_price, description=f"Estorno: {registry.label} — {org_cnpj}")
+		frappe.db.commit()
 		frappe.throw(_("{0} query failed: {1}").format(registry.label, str(e)))
-
-	spend_credits(registry.client_price, description=f"{registry.label} — {org_cnpj}")
+	except Exception:
+		refund_credits(registry.client_price, description=f"Estorno: {registry.label} — {org_cnpj}")
+		frappe.db.commit()
+		raise
 	_log_premium_bureau_query(
 		bureau, organization_name, deal_name, org_cnpj, registry.cost, registry.client_price, "Concluído", result.get("raw") or result
 	)
