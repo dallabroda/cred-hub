@@ -38,7 +38,8 @@
   "serasa_token",
   "boavista_risco_enabled",
   "dossie_quod_enabled",
-  "scr_bacen_enabled"
+  "scr_bacen_enabled",
+  "credit_pipeline"
  ],
  "fields": [
   {
@@ -60,7 +61,7 @@
    "label": "Ativar Etapa 0 (CEIS/CNEP)"
   },
   {
-   "default": "1",
+   "default": "0",
    "depends_on": "eval:doc.cgu_enabled",
    "fieldname": "block_on_ceis_cnep",
    "fieldtype": "Check",
@@ -171,7 +172,8 @@
    "default": "0",
    "fieldname": "max_lawsuits_defendant",
    "fieldtype": "Int",
-   "label": "Máximo de Processos como Réu Tolerados"
+   "label": "Máximo de Processos como Réu Tolerados",
+   "description": "0 = sem limite: só avisa. Acima de 0, reprova quando o número de processos como réu passa do limite."
   },
   {
    "default": "0",
@@ -180,7 +182,7 @@
    "label": "Valor Máximo de Causa Tolerado (R$)"
   },
   {
-   "default": "1",
+   "default": "0",
    "fieldname": "block_on_bankruptcy",
    "fieldtype": "Check",
    "label": "Reprovar Imediatamente se houver Falência / Recuperação"
@@ -189,22 +191,23 @@
    "default": "0",
    "fieldname": "max_pgfn_debt",
    "fieldtype": "Currency",
-   "label": "Valor Máximo em Dívida Ativa da União (PGFN) Tolerado (R$)"
+   "label": "Valor Máximo em Dívida Ativa da União (PGFN) Tolerado (R$)",
+   "description": "0 = sem limite: só avisa. Acima de 0, reprova quando a dívida passa do valor."
   },
   {
-   "default": "1",
+   "default": "0",
    "fieldname": "block_on_cndt",
    "fieldtype": "Check",
    "label": "Reprovar se constar no BNDT (Trabalhista)"
   },
   {
-   "default": "1",
+   "default": "0",
    "fieldname": "block_on_protest",
    "fieldtype": "Check",
    "label": "Reprovar se houver Protestos em Cartório (CENPROT)"
   },
   {
-   "default": "1",
+   "default": "0",
    "depends_on": "eval:doc.directd_fgts_enabled",
    "fieldname": "block_on_fgts_irregular",
    "fieldtype": "Check",
@@ -254,11 +257,18 @@
    "fieldname": "scr_bacen_enabled",
    "fieldtype": "Check",
    "label": "Habilitar SCR Analítico (Resumo BACEN)"
+  },
+  {
+   "fieldname": "credit_pipeline",
+   "fieldtype": "Link",
+   "label": "Funil Crédito PJ instalado",
+   "options": "CRM Pipeline",
+   "read_only": 1
   }
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-11-02 12:00:00.000000",
+ "modified": "2026-11-02 16:00:00.000000",
  "modified_by": "Administrator",
  "module": "Cred Hub",
  "name": "Cred Hub Credit Settings",
