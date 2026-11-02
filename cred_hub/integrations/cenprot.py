@@ -107,8 +107,9 @@ def _party(tag: str, party: dict, sizes: dict, extra: str = "") -> str:
 
 
 def title_xml(title: dict) -> str:
-	"""Conteúdo do <titulo> do EnviarTitulo (sem o token). `title` traz cedente, devedores, divida e, opcional,
-	geral (codPortador/nomePortador)."""
+	"""Conteúdo do <titulo> do EnviarTitulo (sem o token). `title` traz cedente, devedores, divida e, opcionais,
+	geral (codPortador/nomePortador), sacador (quem emitiu o título, ex.: o cedente da antecipação) e
+	divida.documento (imagem do título em base64). Ordem das tags como no manual v2.2."""
 	parts = [_tag("alteracao", "N")]
 	general = title.get("geral") or {}
 	if general.get("codPortador"):
@@ -120,6 +121,9 @@ def title_xml(title: dict) -> str:
 			+ "</geral>"
 		)
 	parts.append(_party("cedente", title["cedente"], PARTY_SIZES))
+	if title.get("sacador"):
+		# O sacador não tem <codigo> (manual v2.2); os tamanhos são os do cedente
+		parts.append(_party("sacador", {**title["sacador"], "codigo": ""}, PARTY_SIZES))
 	debtors = title["devedores"]
 	for index, debtor in enumerate(debtors):
 		extra = ""
@@ -144,6 +148,14 @@ def title_xml(title: dict) -> str:
 		_tag("emissao", debt["emissao"]),
 		_tag("vencimento", debt["vencimento"]),
 	]
+	document = debt.get("documento")
+	if document:
+		debt_parts.append(
+			"<documento>"
+			+ _tag("extensao", document["extensao"])
+			+ _tag("documentoBase64", document["base64"])
+			+ "</documento>"
+		)
 	parts.append(f"<divida>{''.join(debt_parts)}</divida>")
 	return "".join(parts)
 

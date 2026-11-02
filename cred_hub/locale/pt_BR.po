@@ -2165,3 +2165,54 @@ msgstr "Retirada e cancelamento podem ter custas do cartório. Desligado até um
 
 msgid "With the option above on, moving a card here asks the registry to withdraw or cancel the protest."
 msgstr "Com a opção acima ligada, mover um card para cá pede ao cartório a retirada ou o cancelamento do protesto."
+
+msgid "Choose the title species (DMI, DSI, CCB...): it has no default."
+msgstr "Escolha a espécie do título (DMI, DSI, CCB...): ela não tem padrão."
+
+msgid "Cedente (drawer of the title) without: {0}."
+msgstr "Cedente (sacador do título) sem: {0}."
+
+msgid "CNPJ"
+msgstr "CNPJ"
+
+msgid "Fill the title number."
+msgstr "Preencha o número do título."
+
+msgid "Fill the title amount."
+msgstr "Preencha o valor do título."
+
+msgid "Title row not found."
+msgstr "Título não encontrado no card."
+
+msgid "Title of species {0} requires an attachment (PDF/document) before protesting."
+msgstr "Título da espécie {0} precisa de anexo (PDF ou documento) antes do protesto."
+
+msgid "The attachment of title {0} was not found."
+msgstr "O anexo do título {0} não foi encontrado."
+
+msgid "The attachment must be PDF, JPG or PNG (CENPROT)."
+msgstr "O anexo precisa ser PDF, JPG ou PNG (CENPROT)."
+
+msgid "The attachment is larger than 5 MB, the CENPROT limit."
+msgstr "O anexo passa de 5 MB, o limite da CENPROT."
+
+msgid "CENPROT refused title {0}: {1}"
+msgstr "A CENPROT recusou o título {0}: {1}"
+
+msgid "CENPROT already had title {0} ({1}). Checking its status at the registry."
+msgstr "A CENPROT já tinha o título {0} ({1}). Consultando o status no cartório."
+
+msgid "Title {0} sent to protest at CENPROT: {1}"
+msgstr "Título {0} enviado a protesto na CENPROT: {1}"
+
+msgid "This title was not sent to protest."
+msgstr "Este título não foi enviado a protesto."
+
+msgid "Protest of title {0} ({1}): the registry status changed from {2} to {3}."
+msgstr "Protesto do título {0} ({1}): o status no cartório mudou de {2} para {3}."
+
+msgid "CENPROT refused the {0} of title {1}: {2}"
+msgstr "A CENPROT recusou a {0} do título {1}: {2}"
+
+msgid "CENPROT accepted the {0} of title {1}: {2}"
+msgstr "A CENPROT aceitou a {0} do título {1}: {2}"
