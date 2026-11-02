@@ -1,0 +1,224 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-11-02 19:00:00.000000",
+ "description": "Parecer de crédito escrito pela IA (credtech#316): uma recomendação a partir dos retornos das consultas e da política de crédito; quem decide é o analista. Guarda o que foi enviado, o que voltou, o modelo e o custo.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "organization",
+  "deal",
+  "status",
+  "result",
+  "requested_by",
+  "requested_on",
+  "month",
+  "is_extra",
+  "extra_charged",
+  "section_ai",
+  "model",
+  "policy_version",
+  "prompt_tokens",
+  "output_tokens",
+  "thinking_tokens",
+  "cost_usd",
+  "seconds",
+  "section_result",
+  "summary",
+  "opinion_json",
+  "pdf_url",
+  "error",
+  "section_input",
+  "input_json"
+ ],
+ "fields": [
+  {
+   "fieldname": "organization",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Organização",
+   "options": "CRM Organization",
+   "read_only": 1
+  },
+  {
+   "fieldname": "deal",
+   "fieldtype": "Link",
+   "label": "Card",
+   "options": "CRM Deal",
+   "read_only": 1
+  },
+  {
+   "default": "Queued",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Situação",
+   "options": "Queued\nDone\nFailed",
+   "read_only": 1
+  },
+  {
+   "fieldname": "result",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Resultado",
+   "options": "\nApprove\nApprove with reservations\nReject",
+   "read_only": 1
+  },
+  {
+   "fieldname": "requested_by",
+   "fieldtype": "Link",
+   "label": "Pedido por",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "requested_on",
+   "fieldtype": "Datetime",
+   "label": "Pedido em",
+   "read_only": 1
+  },
+  {
+   "fieldname": "month",
+   "fieldtype": "Data",
+   "label": "Mês (AAAA-MM)",
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "is_extra",
+   "fieldtype": "Check",
+   "label": "Parecer extra (além dos incluídos no mês)",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "extra_charged",
+   "fieldtype": "Currency",
+   "label": "Cobrado como parecer extra (R$)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_ai",
+   "fieldtype": "Section Break",
+   "label": "IA"
+  },
+  {
+   "fieldname": "model",
+   "fieldtype": "Data",
+   "label": "Modelo",
+   "read_only": 1
+  },
+  {
+   "fieldname": "policy_version",
+   "fieldtype": "Int",
+   "label": "Versão da política",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "prompt_tokens",
+   "fieldtype": "Int",
+   "label": "Tokens de entrada",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "output_tokens",
+   "fieldtype": "Int",
+   "label": "Tokens de saída",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "thinking_tokens",
+   "fieldtype": "Int",
+   "label": "Tokens de raciocínio",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "cost_usd",
+   "fieldtype": "Float",
+   "label": "Custo para a CredTech (US$)",
+   "precision": "6",
+   "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "seconds",
+   "fieldtype": "Float",
+   "label": "Duração (s)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_result",
+   "fieldtype": "Section Break",
+   "label": "Parecer"
+  },
+  {
+   "fieldname": "summary",
+   "fieldtype": "Small Text",
+   "label": "Resumo",
+   "read_only": 1
+  },
+  {
+   "fieldname": "opinion_json",
+   "fieldtype": "Code",
+   "label": "Parecer (JSON)",
+   "options": "JSON",
+   "read_only": 1
+  },
+  {
+   "fieldname": "pdf_url",
+   "fieldtype": "Data",
+   "label": "PDF",
+   "read_only": 1
+  },
+  {
+   "fieldname": "error",
+   "fieldtype": "Small Text",
+   "label": "Erro",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_input",
+   "fieldtype": "Section Break",
+   "label": "Entrada",
+   "collapsible": 1
+  },
+  {
+   "fieldname": "input_json",
+   "fieldtype": "Long Text",
+   "label": "Dados enviados à IA",
+   "read_only": 1
+  }
+ ],
+ "in_create": 1,
+ "links": [],
+ "modified": "2026-11-02 19:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Cred Hub",
+ "name": "Cred Hub Credit Opinion",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 0,
+   "role": "System Manager"
+  },
+  {
+   "read": 1,
+   "role": "Sales Manager"
+  },
+  {
+   "read": 1,
+   "role": "Sales User"
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

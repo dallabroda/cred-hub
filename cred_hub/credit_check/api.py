@@ -2,23 +2,33 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from typing import Any
 
 import frappe
 from frappe import _
 from frappe.utils import now_datetime
+from frappe.utils.background_jobs import is_job_enqueued
 
 from cred_hub.cnpj.mapping import only_digits
 from cred_hub.credit_check.clients.directd import DirectDAuthError, DirectDError, fetch_fgts_regularidade
 from cred_hub.credit_check.clients.escavador import fetch_lawsuits
 from cred_hub.credit_check.clients.infosimples import InfosimplesError, query_pgfn
 from cred_hub.credit_check.clients.serasa import (
+	DEFAULT_REPORT,
+	SerasaClient,
+	SerasaDocumentNotFound,
 	SerasaError,
 	SerasaNotConfigured,
-	trigger_serasa_relato,
 )
 from cred_hub.credit_check.enrich import get_credit_settings, run_background_check
+from cred_hub.credit_check import dossier as credit_dossier
+from cred_hub.credit_check import opinion as credit_opinion
+from cred_hub.credit_check import package as credit_package
+from cred_hub.credit_check import policy as credit_policy
+from cred_hub.credit_check import partners as partners_lib
+from cred_hub.credit_check import template as credit_template
 from cred_hub.credit_check.premium_bureaus import PREMIUM_BUREAUS
 from cred_hub.credit_check.rules import pre_filter_needs_acknowledgement
 
@@ -172,6 +182,50 @@ def _verdict_label(verdict: str) -> str:
 	return _(verdict)
 
 
+_SERASA_TOKEN_KEY = "cred_hub:serasa_token"
+
+
+def _serasa_report(settings_doc, cnpj: str) -> dict[str, Any]:
+	"""Consulta o Relatório Avançado PJ na Serasa com o contrato do cliente. O token (vale cerca de 1 hora) fica
+	em cache por credencial e ambiente, para não entrar de novo a cada consulta."""
+	client_id = settings_doc.get("serasa_client_id") or ""
+	environment = settings_doc.get("serasa_environment") or "Production"
+	secret = settings_doc.get_password("serasa_client_secret", raise_exception=False) or ""
+	key = f"{_SERASA_TOKEN_KEY}:{environment}:{hashlib.sha256(client_id.encode()).hexdigest()[:16]}"
+	cached = frappe.cache.get_value(key) or {}
+	client = SerasaClient(
+		client_id,
+		secret,
+		environment,
+		token=cached.get("token", ""),
+		token_expires=cached.get("expires", 0),
+	)
+	try:
+		return client.fetch_report(cnpj, settings_doc.get("serasa_report_name") or DEFAULT_REPORT)
+	finally:
+		if client.token:
+			frappe.cache.set_value(key, {"token": client.token, "expires": client.token_expires}, expires_in_sec=3300)
+
+
+@frappe.whitelist()
+def test_serasa_connection(client_id: str = "", client_secret: str = "", environment: str = "Production") -> dict[str, Any]:
+	"""Confere o client id e o client secret do contrato Serasa só entrando na API (login). Não faz consulta
+	nenhuma, então não custa nada. Sem valor digitado (ou com o segredo salvo, que volta mascarado), usa o salvo."""
+	frappe.only_for("System Manager")
+	settings_doc = frappe.get_single("Cred Hub Credit Settings")
+	client_id = (client_id or "").strip() or (settings_doc.get("serasa_client_id") or "")
+	client_secret = (client_secret or "").strip()
+	if not client_secret or _is_masked(client_secret):
+		client_secret = settings_doc.get_password("serasa_client_secret", raise_exception=False) or ""
+	try:
+		SerasaClient(client_id, client_secret, environment or "Production").login()
+	except SerasaNotConfigured as e:
+		frappe.throw(str(e))
+	except SerasaError as e:
+		frappe.throw(_("Serasa connection test failed: {0}").format(str(e)))
+	return {"ok": True, "message": _("Connected to Serasa successfully! This test makes no paid query.")}
+
+
 def _truthy(value: Any) -> bool:
 	"""Flags vindas do frontend chegam como bool, int ou string ("1", "true")."""
 	if isinstance(value, str):
@@ -245,15 +299,21 @@ def _log_premium_bureau_query(
 	raw: dict[str, Any],
 	pre_filter_verdict: str,
 	warning_acknowledged: bool,
+	document: str = "",
+	contact_name: str | None = None,
 ) -> None:
 	"""Grava a auditoria da consulta ao bureau final: quem pediu, o pré-filtro mostrado, se o
 	operador confirmou um alerta e o preço de tabela do provedor (cobrado na conta do cliente; a
-	CredTech não cobra nada, por isso `client_price` fica 0)."""
+	CredTech não cobra nada, por isso `client_price` fica 0). `document` é o CPF ou CNPJ de quem foi
+	consultado; com `contact_name` a consulta é de um sócio, e `cnpj` guarda o da empresa."""
 	frappe.get_doc({
 		"doctype": "Cred Hub Premium Bureau Query",
 		"bureau": bureau,
 		"organization": organization_name,
 		"deal": deal_name,
+		"subject_type": "Partner" if contact_name else "Organization",
+		"contact": contact_name,
+		"document": document or cnpj,
 		"cnpj": cnpj,
 		"requested_by": frappe.session.user,
 		"requested_on": now_datetime(),
@@ -306,10 +366,11 @@ def _final_bureaus(settings_doc) -> list[dict[str, Any]]:
 	if settings_doc.get("serasa_enabled"):
 		bureaus.append({
 			"key": "serasa",
-			"label": "Serasa Experian (Relato PJ)",
+			"label": "Serasa Experian (Relatório Avançado PJ)",
 			"provider": "Serasa Experian",
 			"price_reference": None,  # depende do contrato do cliente com a Serasa
-			"configured": bool(settings_doc.get("serasa_endpoint_url") and settings_doc.get("serasa_token")),
+			"configured": bool(settings_doc.get("serasa_client_id") and settings_doc.get("serasa_client_secret")),
+			"partner_ok": False,  # Relato PJ é só de empresa
 		})
 	has_directd_token = bool(settings_doc.get("directd_token"))
 	for registry in PREMIUM_BUREAUS.values():
@@ -320,8 +381,35 @@ def _final_bureaus(settings_doc) -> list[dict[str, Any]]:
 				"provider": "DirectD",
 				"price_reference": registry.price_reference,
 				"configured": has_directd_token,
+				"partner_ok": registry.key in partners_lib.PARTNER_BUREAUS,
 			})
 	return bureaus
+
+
+class FinalQueryError(Exception):
+	"""O provedor não respondeu a consulta; a mensagem é para o operador."""
+
+
+def _execute_final_query(settings_doc, bureau: str, document: str) -> tuple[dict[str, Any], dict[str, Any]]:
+	"""Faz uma consulta a bureau final com a chave do cliente. Devolve (retorno bruto para a auditoria, dados para a
+	tela). Falha do provedor vira FinalQueryError."""
+	if bureau == "serasa":
+		try:
+			result = _serasa_report(settings_doc, document)
+		except SerasaNotConfigured as e:
+			raise FinalQueryError(str(e)) from e
+		except SerasaDocumentNotFound as e:
+			raise FinalQueryError(_("Serasa does not have this document: {0}").format(str(e))) from e
+		except (SerasaError, ValueError) as e:
+			raise FinalQueryError(_("Serasa query failed: {0}").format(str(e))) from e
+		return result, result
+	registry = PREMIUM_BUREAUS[bureau]
+	token = settings_doc.get_password("directd_token", raise_exception=False) or ""
+	try:
+		result = registry.fetch(document, token)
+	except (DirectDAuthError, DirectDError, ValueError) as e:
+		raise FinalQueryError(_("{0} query failed: {1}").format(registry.label, str(e))) from e
+	return (result.get("raw") or result), result
 
 
 @frappe.whitelist()
@@ -348,9 +436,13 @@ def request_bureau_final(
 	bureau: str = "serasa",
 	confirm_cost: bool = False,
 	acknowledged_warning: bool = False,
+	contact_name: str | None = None,
 ) -> dict[str, Any]:
 	"""Consulta um bureau final (Serasa ou Boa Vista / Dossiê QUOD / SCR Bacen pela DirectD) com a
 	chave do próprio cliente — a CredTech não cobra nada (credtech#316).
+
+	Com `contact_name` a consulta é de um sócio (pelo CPF completo do Contato), só nos bureaus que
+	aceitam CPF (Dossiê QUOD e SCR Bacen); sem CPF válido no Contato, não consulta.
 
 	Transparência: nada é consultado sem `confirm_cost` (a tela mostrou o preço de tabela e que
 	quem cobra é o provedor, na conta do cliente). Pré-filtro diferente de 'Pre-Approved' não
@@ -384,36 +476,40 @@ def request_bureau_final(
 	organization_name = ctx["organization"]
 	org_cnpj = ctx["cnpj"]
 
-	if bureau == "serasa":
-		endpoint_url = settings_doc.get("serasa_endpoint_url") or ""
-		serasa_token = settings_doc.get_password("serasa_token", raise_exception=False) or ""
-		try:
-			result = trigger_serasa_relato(org_cnpj, frappe.session.user, endpoint_url, serasa_token)
-		except SerasaNotConfigured as e:
-			frappe.throw(str(e))
-		except SerasaError as e:
-			frappe.throw(_("Serasa query failed: {0}").format(str(e)))
-		status = result.get("status") or ""
-		raw = result
-	else:
-		registry = PREMIUM_BUREAUS[bureau]
-		token = settings_doc.get_password("directd_token", raise_exception=False) or ""
-		try:
-			result = registry.fetch(org_cnpj, token)
-		except (DirectDAuthError, DirectDError, ValueError) as e:
-			frappe.throw(_("{0} query failed: {1}").format(registry.label, str(e)))
-		status = "Concluído"
-		raw = result.get("raw") or result
+	# Quem é consultado: a empresa (CNPJ) ou um sócio (CPF do Contato)
+	document, subject_name = org_cnpj, ""
+	if contact_name:
+		if not option.get("partner_ok"):
+			frappe.throw(_("{0} only accepts companies (CNPJ), not partners (CPF).").format(option["label"]))
+		document, subject_name = partners_lib.cpf_digits(organization_name, contact_name)
+
+	try:
+		raw, result = _execute_final_query(settings_doc, bureau, org_cnpj if bureau == "serasa" else document)
+	except FinalQueryError as e:
+		frappe.throw(str(e))
+	status = credit_package.DONE
 
 	price_reference = option["price_reference"]
 	_log_premium_bureau_query(
-		bureau, organization_name, deal.name if deal else None, org_cnpj, price_reference or 0.0, status, raw, verdict, needs_ack
+		bureau,
+		organization_name,
+		deal.name if deal else None,
+		org_cnpj,
+		price_reference or 0.0,
+		status,
+		raw,
+		verdict,
+		needs_ack,
+		document=document,
+		contact_name=contact_name,
 	)
 
 	price_text = f"R$ {price_reference:.2f}" if price_reference else _("as per your contract")
 	message = _("Final bureau query ({0}) requested by {1}. Billed by {2} on the client's account (list price: {3}).").format(
 		option["label"], frappe.session.user, option["provider"], price_text
 	)
+	if contact_name:
+		message += " " + _("Partner consulted: {0}.").format(subject_name)
 	if needs_ack:
 		message += " " + _("Queried even with the pre-filter alert: {0}.").format(_verdict_label(verdict))
 	comment_target = deal or frappe.get_doc("CRM Organization", organization_name)
@@ -425,4 +521,282 @@ def request_bureau_final(
 		"price_reference": price_reference,
 		"warning_acknowledged": needs_ack,
 		"data": result,
+	}
+
+
+@frappe.whitelist()
+def get_partners(organization_name: str) -> list[dict[str, Any]]:
+	"""Sócios da Organização (Contatos ligados a ela) e se já têm CPF completo. O operador escolhe
+	quais consultar; nenhum vem marcado."""
+	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
+	_check_deal_and_org_permission(None, organization_name)
+	return partners_lib.partners_of(organization_name)
+
+
+@frappe.whitelist()
+def save_partner_cpf(organization_name: str, contact_name: str, cpf: str) -> dict[str, Any]:
+	"""Grava o CPF completo de um sócio (a Receita só mostra o CPF mascarado). Só aceita CPF válido."""
+	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
+	_check_deal_and_org_permission(None, organization_name)
+	return partners_lib.save_cpf(organization_name, contact_name, cpf)
+
+
+def _bureau_label(bureau: str) -> str:
+	if bureau == "serasa":
+		return "Serasa Experian (Relato PJ)"
+	registry = PREMIUM_BUREAUS.get(bureau)
+	return registry.label if registry else bureau
+
+
+@frappe.whitelist()
+def get_bureau_results(organization_name: str) -> list[dict[str, Any]]:
+	"""Todas as consultas a bureau final feitas para a Organização e os sócios dela, da mais recente
+	para a mais antiga, sem o retorno completo (use `get_bureau_result` para abrir um)."""
+	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
+	_check_deal_and_org_permission(None, organization_name)
+	rows = frappe.get_all(
+		"Cred Hub Premium Bureau Query",
+		filters={"organization": organization_name},
+		fields=[
+			"name",
+			"bureau",
+			"subject_type",
+			"contact",
+			"document",
+			"requested_by",
+			"requested_on",
+			"pre_filter_verdict",
+			"warning_acknowledged",
+			"cost",
+			"status",
+		],
+		order_by="requested_on desc",
+		limit_page_length=200,
+	)
+	contact_names = {
+		row.name: row.full_name
+		for row in frappe.get_all(
+			"Contact",
+			filters={"name": ("in", [r.contact for r in rows if r.contact] or [""])},
+			fields=["name", "full_name"],
+		)
+	}
+	return [
+		{
+			"name": row.name,
+			"bureau": row.bureau,
+			"bureau_label": _bureau_label(row.bureau),
+			"subject_type": row.subject_type or "Organization",
+			"subject_name": contact_names.get(row.contact, "") if row.contact else "",
+			"document": row.document or "",
+			"requested_by": row.requested_by,
+			"requested_on": row.requested_on,
+			"pre_filter_verdict": row.pre_filter_verdict or "",
+			"warning_acknowledged": bool(row.warning_acknowledged),
+			"price_reference": row.cost or 0.0,
+			"status": row.status or "",
+		}
+		for row in rows
+	]
+
+
+@frappe.whitelist()
+def get_bureau_result(query_name: str) -> dict[str, Any]:
+	"""O retorno completo de uma consulta a bureau final, exatamente como o provedor devolveu."""
+	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
+	if not frappe.db.exists("Cred Hub Premium Bureau Query", query_name):
+		frappe.throw(_("Query not found."))
+	doc = frappe.get_doc("Cred Hub Premium Bureau Query", query_name)
+	_check_deal_and_org_permission(doc.get("deal"), doc.get("organization"))
+	try:
+		raw = json.loads(doc.raw_response_json or "{}")
+	except ValueError:
+		raw = {"raw_text": doc.raw_response_json}
+	return {
+		"name": doc.name,
+		"bureau_label": _bureau_label(doc.bureau),
+		"document": doc.get("document") or doc.get("cnpj") or "",
+		"requested_on": doc.requested_on,
+		"raw": raw,
+	}
+
+
+@frappe.whitelist()
+def get_credit_template_status() -> dict[str, Any]:
+	"""Se o funil "Crédito PJ" já está instalado e quais etapas ele cria."""
+	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
+	return credit_template.status()
+
+
+@frappe.whitelist()
+def install_credit_template() -> dict[str, Any]:
+	"""Instala o funil "Crédito PJ" (6 etapas de análise, um ganho e uma perda, e 4 campos de crédito no Card).
+	Só administrador; uma vez por site. Nada é obrigatório por etapa e nada custa: o funil só organiza o trabalho."""
+	frappe.only_for("System Manager")
+	pipeline = credit_template.install()
+	return {"pipeline": pipeline, **credit_template.status()}
+
+
+@frappe.whitelist()
+def generate_credit_dossier(organization_name: str, deal_name: str | None = None) -> dict[str, Any]:
+	"""Gera o dossiê (PDF 1): o retorno completo de todas as consultas da empresa e dos sócios, sem recomendação,
+	mais o JSON original de cada uma. Anexa na Organização (e no card, se vier de um). Cada geração é um arquivo novo."""
+	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
+	_check_deal_and_org_permission(deal_name, organization_name)
+	return credit_dossier.generate(organization_name, deal_name)
+
+
+@frappe.whitelist()
+def list_credit_dossiers(organization_name: str) -> list[dict[str, Any]]:
+	"""Os dossiês já gerados da Organização (PDF e JSON), do mais novo para o mais antigo."""
+	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
+	_check_deal_and_org_permission(None, organization_name)
+	return credit_dossier.list_files(organization_name)
+
+
+@frappe.whitelist()
+def get_credit_opinion_status(organization_name: str) -> dict[str, Any]:
+	"""Quantos pareceres da IA o mês já usou, se o próximo é extra (e quanto custa) e se a IA está configurada."""
+	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
+	_check_deal_and_org_permission(None, organization_name)
+	return credit_opinion.status()
+
+
+@frappe.whitelist()
+def request_credit_opinion(
+	organization_name: str, deal_name: str | None = None, confirm_extra_cost: bool = False
+) -> dict[str, Any]:
+	"""Pede o parecer de crédito da IA (PDF 2). Gera em segundo plano; acompanhe por list_credit_opinions."""
+	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
+	_check_deal_and_org_permission(deal_name, organization_name)
+	return credit_opinion.request(organization_name, deal_name, confirm_extra_cost)
+
+
+@frappe.whitelist()
+def list_credit_opinions(organization_name: str) -> list[dict[str, Any]]:
+	"""Os pareceres da Organização, do mais novo para o mais antigo, com a situação de cada um."""
+	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
+	_check_deal_and_org_permission(None, organization_name)
+	return credit_opinion.list_opinions(organization_name)
+
+
+@frappe.whitelist()
+def get_credit_policy() -> dict[str, Any]:
+	"""A política de crédito em vigor (ou a padrão) e o texto padrão, para "voltar ao padrão"."""
+	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
+	current = credit_policy.current()
+	return {**current, "default_methodology": credit_policy.DEFAULT_METHODOLOGY, "default_parameters": credit_policy.DEFAULT_PARAMETERS}
+
+
+@frappe.whitelist()
+def save_credit_policy(methodology: str, parameters: Any = None) -> dict[str, Any]:
+	"""Salva uma versão nova da política de crédito. Só administradores."""
+	frappe.only_for("System Manager")
+	return credit_policy.save(methodology, frappe.parse_json(parameters) if isinstance(parameters, str) else parameters)
+
+@frappe.whitelist()
+def get_dossier_package() -> dict[str, Any]:
+	"""O pacote mínimo do dossiê em vigor e todos os itens que podem entrar nele (credtech#316)."""
+	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
+	return {**credit_package.config(), "options": credit_package.options(), "max_reuse_days": credit_package.MAX_REUSE_DAYS}
+
+
+@frappe.whitelist()
+def save_dossier_package(items: Any, reuse_days: Any) -> dict[str, Any]:
+	"""Salva o pacote mínimo do dossiê. Só administradores."""
+	frappe.only_for("System Manager")
+	return credit_package.save(items, reuse_days)
+
+
+@frappe.whitelist()
+def get_dossier_package_status(organization_name: str, deal_name: str | None = None) -> dict[str, Any]:
+	"""O que o botão "Gerar dossiê" mostra antes: cada item do pacote (já feito no prazo, falta ou não configurado),
+	o custo de tabela do que falta (cobrado pelo provedor na conta do cliente), o pré-filtro e o parecer da IA."""
+	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
+	ctx = _final_bureau_context(deal_name, organization_name)
+	current = credit_package.status(ctx["organization"])
+	return {
+		**current,
+		"verdict": ctx["verdict"],
+		"verdict_summary": ctx["summary"],
+		"needs_acknowledgement": bool(current["missing"]) and pre_filter_needs_acknowledgement(ctx["verdict"]),
+		"can_run_queries": True,  # qualquer usuário gera o dossiê, com as consultas pagas do pacote (dono, 02/11/2026)
+		"running": is_job_enqueued(credit_package.job_id(ctx["organization"])),
+		"opinion": credit_opinion.status(),
+	}
+
+
+@frappe.whitelist()
+def generate_credit_package(
+	organization_name: str,
+	deal_name: str | None = None,
+	confirm_cost: bool = False,
+	acknowledged_warning: bool = False,
+	confirm_extra_cost: bool = False,
+) -> dict[str, Any]:
+	"""O botão "Gerar dossiê" (credtech#316): faz as consultas do pacote mínimo que faltam, com a chave do cliente,
+	gera o PDF 1 (retornos) e o PDF 2 (parecer da IA), tudo em segundo plano.
+
+	Transparência: consulta que falta só com `confirm_cost` (a tela mostrou o preço de tabela e que quem cobra é o
+	provedor) e, com alerta no pré-filtro, com `acknowledged_warning`. Qualquer usuário gera (decisão do dono em 02/11/2026). Sem IA
+	disponível (não configurada, cota do mês usada ou sem saldo), o dossiê sai sem o parecer e a resposta diz por quê."""
+	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
+	ctx = _final_bureau_context(deal_name, organization_name)
+	organization_name = ctx["organization"]
+	deal_name = ctx["deal"].name if ctx["deal"] else None
+	if is_job_enqueued(credit_package.job_id(organization_name)):
+		frappe.throw(_("A credit dossier is already being generated for this organization. Wait for it to finish."))
+
+	current = credit_package.status(organization_name)
+	if current["unavailable"]:
+		labels = ", ".join(sorted({entry["label"] for entry in current["unavailable"]}))
+		frappe.throw(
+			_(
+				"Minimum package: {0} is not enabled or has no credential in the Credit settings. An admin needs to turn it on or take it out of the package."
+			).format(labels)
+		)
+	needs_ack = False
+	if current["missing"]:
+		labels = ", ".join(f"{entry['label']} ({entry['subject_name']})" for entry in current["missing"])
+		if not _truthy(confirm_cost):
+			frappe.throw(
+				_("The minimum package needs paid queries billed by the provider on your account: {0}. Confirm the cost to continue.").format(
+					labels
+				)
+			)
+		needs_ack = pre_filter_needs_acknowledgement(ctx["verdict"])
+		if needs_ack and not _truthy(acknowledged_warning):
+			frappe.throw(
+				_("The pre-filter result for this organization is {0}. Review the alert and confirm to query anyway.").format(
+					_verdict_label(ctx["verdict"])
+				)
+			)
+
+	answer = credit_opinion.check(organization_name, confirm_extra_cost, require_queries=False)
+	if answer["needs_confirmation"]:
+		frappe.throw(answer["reason"])
+	opinion_name, opinion_skipped = None, ""
+	if answer["ok"]:
+		opinion_name = credit_opinion.create(organization_name, deal_name, answer["is_extra"], enqueue=False)["name"]
+	else:
+		opinion_skipped = answer["reason"]
+
+	frappe.enqueue(
+		"cred_hub.credit_check.package.run_job",
+		queue="long",
+		timeout=1800,
+		job_id=credit_package.job_id(organization_name),
+		deduplicate=True,
+		enqueue_after_commit=True,
+		organization_name=organization_name,
+		deal_name=deal_name,
+		verdict=ctx["verdict"],
+		warning_acknowledged=needs_ack,
+		opinion_name=opinion_name,
+	)
+	return {
+		"queued": True,
+		"queries": len(current["missing"]),
+		"opinion": opinion_name,
+		"opinion_skipped": opinion_skipped,
 	}

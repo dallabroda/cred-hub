@@ -1,12 +1,7 @@
 """Testes unitários do motor de regras e parsers de análise de crédito (sem Frappe)."""
 
-import pytest
 
 from cred_hub.credit_check.clients.escavador import parse_escavador_payload
-from cred_hub.credit_check.clients.serasa import (
-	SerasaNotConfigured,
-	trigger_serasa_relato,
-)
 from cred_hub.credit_check.rules import (
 	VERDICT_ERROR,
 	VERDICT_PRE_APPROVED,
@@ -94,7 +89,9 @@ def test_evaluate_credit_risk_rejected_by_bankruptcy():
 		"cndt": {"is_regular": True},
 		"cenprot": {"has_protests": False},
 	}
-	eval_res = evaluate_credit_risk(escavador, infosimples)
+	# Sem configuração só avisa; reprova quando o cliente liga o bloqueio
+	assert evaluate_credit_risk(escavador, infosimples)["verdict"] == VERDICT_WARNING
+	eval_res = evaluate_credit_risk(escavador, infosimples, {"block_on_bankruptcy": True, "max_lawsuits_defendant": 5})
 	assert eval_res["verdict"] == VERDICT_REJECTED
 	assert any("falência ou recuperação" in r for r in eval_res["reasons"])
 
@@ -106,12 +103,15 @@ def test_evaluate_credit_risk_rejected_by_pgfn_debt():
 		"cndt": {"is_regular": True},
 		"cenprot": {"has_protests": False},
 	}
-	# Com tolerância zero (padrão)
-	eval_res = evaluate_credit_risk(escavador, infosimples)
-	assert eval_res["verdict"] == VERDICT_REJECTED
-	assert any("PGFN" in r for r in eval_res["reasons"])
+	# Sem limite (0, padrão): só avisa
+	assert evaluate_credit_risk(escavador, infosimples)["verdict"] == VERDICT_WARNING
 
-	# Com tolerância acima do débito
+	# Com limite abaixo do débito: reprova
+	eval_res = evaluate_credit_risk(escavador, infosimples, {"max_pgfn_debt": 10000.0})
+	assert eval_res["verdict"] == VERDICT_REJECTED
+	assert any("Dívida Ativa" in r for r in eval_res["reasons"])
+
+	# Com limite acima do débito: só avisa
 	eval_res_tolerant = evaluate_credit_risk(escavador, infosimples, {"max_pgfn_debt": 50000.0})
 	assert eval_res_tolerant["verdict"] == VERDICT_WARNING
 
@@ -123,7 +123,8 @@ def test_evaluate_credit_risk_rejected_by_protests():
 		"cndt": {"is_regular": True},
 		"cenprot": {"has_protests": True, "protests_count": 3},
 	}
-	eval_res = evaluate_credit_risk(escavador, infosimples)
+	assert evaluate_credit_risk(escavador, infosimples)["verdict"] == VERDICT_WARNING
+	eval_res = evaluate_credit_risk(escavador, infosimples, {"block_on_protest": True})
 	assert eval_res["verdict"] == VERDICT_REJECTED
 	assert any("protestado" in r for r in eval_res["reasons"])
 
@@ -137,16 +138,13 @@ def test_evaluate_credit_risk_rejected_by_ceis_cnep():
 	}
 	cgu_sanctioned = {"sanctioned": True, "ceis_count": 1, "cnep_count": 0, "sanctions": []}
 
-	eval_res = evaluate_credit_risk(clean_escavador, clean_infosimples, cgu_data=cgu_sanctioned)
+	assert evaluate_credit_risk(clean_escavador, clean_infosimples, cgu_data=cgu_sanctioned)["verdict"] == VERDICT_WARNING
+	eval_res = evaluate_credit_risk(
+		clean_escavador, clean_infosimples, {"block_on_ceis_cnep": True}, cgu_data=cgu_sanctioned
+	)
 	assert eval_res["verdict"] == VERDICT_REJECTED
 	assert any("CEIS/CNEP" in r for r in eval_res["reasons"])
 	assert eval_res["metrics"]["ceis_cnep_verified"] is True
-
-	# Com block_on_ceis_cnep desligado, vira só aviso
-	eval_res_warning = evaluate_credit_risk(
-		clean_escavador, clean_infosimples, {"block_on_ceis_cnep": False}, cgu_data=cgu_sanctioned
-	)
-	assert eval_res_warning["verdict"] == VERDICT_WARNING
 
 	# Sem cgu_data (Etapa 0 desligada): não verificado, mas não bloqueia aprovação
 	eval_res_unverified = evaluate_credit_risk(clean_escavador, clean_infosimples)
@@ -162,13 +160,11 @@ def test_evaluate_credit_risk_rejected_by_fgts_irregular():
 		"cenprot": {"has_protests": False},
 		"fgts": {"is_regular": False, "status": "Irregular"},
 	}
-	eval_res = evaluate_credit_risk(clean_escavador, infosimples_with_fgts)
+	# Sem configuração só avisa; reprova quando o cliente liga o bloqueio
+	assert evaluate_credit_risk(clean_escavador, infosimples_with_fgts)["verdict"] == VERDICT_WARNING
+	eval_res = evaluate_credit_risk(clean_escavador, infosimples_with_fgts, {"block_on_fgts_irregular": True})
 	assert eval_res["verdict"] == VERDICT_REJECTED
 	assert any("FGTS" in r for r in eval_res["reasons"])
-
-	# Com block_on_fgts_irregular desligado, vira só aviso
-	eval_res_warning = evaluate_credit_risk(clean_escavador, infosimples_with_fgts, {"block_on_fgts_irregular": False})
-	assert eval_res_warning["verdict"] == VERDICT_WARNING
 
 
 def test_evaluate_credit_risk_directd_score_rejects_below_floor():
@@ -221,12 +217,6 @@ def test_format_timeline_summary_for_error_verdict():
 	assert "Aprovado" not in text
 
 
-def test_trigger_serasa_relato_requires_real_credentials():
-	"""Sem endpoint/token do contrato do cliente, nunca finge sucesso (credtech#302)."""
-	with pytest.raises(SerasaNotConfigured):
-		trigger_serasa_relato("12345678000199", "user@example.com")
-
-
 def test_pre_filter_alert_needs_acknowledgement_instead_of_blocking():
 	"""credtech#316: pré-filtro diferente de Pre-Approved não bloqueia bureau final; só exige que o
 	operador confirme o alerta."""
@@ -252,3 +242,18 @@ def test_format_timeline_summary():
 	text = format_timeline_summary(evaluation, "12.345.678/0001-99")
 	assert "Aprovado no Pré-Filtro" in text
 	assert "CNPJ 12.345.678/0001-99" in text
+
+
+def test_default_settings_never_reject_a_prospect_that_only_has_findings():
+	"""credtech#316: protesto, processo, dívida ativa e falência juntos não reprovam sozinhos; o operador decide."""
+	escavador = {"total_count": 4, "defendant_count": 4, "highest_value": 90000.0, "has_bankruptcy_recovery": True}
+	infosimples = {
+		"pgfn": {"total_debt": 20000.0, "inscriptions_count": 1},
+		"cndt": {"is_regular": False, "status": "Positiva"},
+		"cenprot": {"has_protests": True, "protests_count": 2},
+		"fgts": {"is_regular": False, "status": "Irregular"},
+	}
+	eval_res = evaluate_credit_risk(escavador, infosimples)
+	assert eval_res["verdict"] == VERDICT_WARNING
+	assert eval_res["reasons"] == []
+	assert len(eval_res["warnings"]) >= 5

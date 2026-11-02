@@ -34,11 +34,18 @@
   "block_on_fgts_irregular",
   "section_bureaus_finais",
   "serasa_enabled",
-  "serasa_endpoint_url",
-  "serasa_token",
+  "serasa_client_id",
+  "serasa_client_secret",
+  "serasa_environment",
+  "serasa_report_name",
   "boavista_risco_enabled",
   "dossie_quod_enabled",
-  "scr_bacen_enabled"
+  "scr_bacen_enabled",
+  "credit_pipeline",
+  "section_opinion",
+  "allow_paid_extra_opinions",
+  "section_package",
+  "dossier_package_json"
  ],
  "fields": [
   {
@@ -60,7 +67,7 @@
    "label": "Ativar Etapa 0 (CEIS/CNEP)"
   },
   {
-   "default": "1",
+   "default": "0",
    "depends_on": "eval:doc.cgu_enabled",
    "fieldname": "block_on_ceis_cnep",
    "fieldtype": "Check",
@@ -171,7 +178,8 @@
    "default": "0",
    "fieldname": "max_lawsuits_defendant",
    "fieldtype": "Int",
-   "label": "Máximo de Processos como Réu Tolerados"
+   "label": "Máximo de Processos como Réu Tolerados",
+   "description": "0 = sem limite: só avisa. Acima de 0, reprova quando o número de processos como réu passa do limite."
   },
   {
    "default": "0",
@@ -180,7 +188,7 @@
    "label": "Valor Máximo de Causa Tolerado (R$)"
   },
   {
-   "default": "1",
+   "default": "0",
    "fieldname": "block_on_bankruptcy",
    "fieldtype": "Check",
    "label": "Reprovar Imediatamente se houver Falência / Recuperação"
@@ -189,22 +197,23 @@
    "default": "0",
    "fieldname": "max_pgfn_debt",
    "fieldtype": "Currency",
-   "label": "Valor Máximo em Dívida Ativa da União (PGFN) Tolerado (R$)"
+   "label": "Valor Máximo em Dívida Ativa da União (PGFN) Tolerado (R$)",
+   "description": "0 = sem limite: só avisa. Acima de 0, reprova quando a dívida passa do valor."
   },
   {
-   "default": "1",
+   "default": "0",
    "fieldname": "block_on_cndt",
    "fieldtype": "Check",
    "label": "Reprovar se constar no BNDT (Trabalhista)"
   },
   {
-   "default": "1",
+   "default": "0",
    "fieldname": "block_on_protest",
    "fieldtype": "Check",
    "label": "Reprovar se houver Protestos em Cartório (CENPROT)"
   },
   {
-   "default": "1",
+   "default": "0",
    "depends_on": "eval:doc.directd_fgts_enabled",
    "fieldname": "block_on_fgts_irregular",
    "fieldtype": "Check",
@@ -223,16 +232,33 @@
   },
   {
    "depends_on": "eval:doc.serasa_enabled",
-   "description": "Endpoint do contrato do próprio cliente com o Serasa Experian. Sem isso, a consulta ao Serasa falha explicitamente (nunca finge sucesso). Não passa pela carteira de créditos — é cobrado direto no seu contrato com o Serasa.",
-   "fieldname": "serasa_endpoint_url",
+   "description": "Do contrato do seu Serasa Experian (IntegrationHub). A cobrança é direto com a Serasa, na sua conta.",
+   "fieldname": "serasa_client_id",
    "fieldtype": "Data",
-   "label": "Endpoint Serasa Relato PJ (contrato do cliente)"
+   "label": "Serasa Client ID"
   },
   {
    "depends_on": "eval:doc.serasa_enabled",
-   "fieldname": "serasa_token",
+   "fieldname": "serasa_client_secret",
    "fieldtype": "Password",
-   "label": "Token de Acesso Serasa (contrato do cliente)"
+   "label": "Serasa Client Secret"
+  },
+  {
+   "default": "Production",
+   "depends_on": "eval:doc.serasa_enabled",
+   "description": "Homologação é só para testar: a Serasa só conhece alguns CNPJs de teste e não devolve dados reais.",
+   "fieldname": "serasa_environment",
+   "fieldtype": "Select",
+   "label": "Serasa environment",
+   "options": "Production\nHomologation"
+  },
+  {
+   "default": "RELATORIO_AVANCADO_PJ_PME",
+   "depends_on": "eval:doc.serasa_enabled",
+   "description": "Nome do relatório contratado. O padrão é o Relatório Avançado PJ PME.",
+   "fieldname": "serasa_report_name",
+   "fieldtype": "Data",
+   "label": "Serasa report name"
   },
   {
    "default": "0",
@@ -254,11 +280,42 @@
    "fieldname": "scr_bacen_enabled",
    "fieldtype": "Check",
    "label": "Habilitar SCR Analítico (Resumo BACEN)"
+  },
+  {
+   "fieldname": "credit_pipeline",
+   "fieldtype": "Link",
+   "label": "Funil Crédito PJ instalado",
+   "options": "CRM Pipeline",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_opinion",
+   "fieldtype": "Section Break",
+   "label": "Parecer de crédito (IA)"
+  },
+  {
+   "default": "0",
+   "description": "Cada empresa tem 30 pareceres por mês incluídos. Ligado, a partir do 31º cada parecer custa R$ 3,00 da carteira de créditos, com confirmação antes. Desligado, o parecer para até o mês seguinte.",
+   "fieldname": "allow_paid_extra_opinions",
+   "fieldtype": "Check",
+   "label": "Permitir pareceres extras pagos"
+  },
+  {
+   "fieldname": "section_package",
+   "fieldtype": "Section Break",
+   "label": "Pacote mínimo do dossiê"
+  },
+  {
+   "description": "Configurado na tela de Bureaus de Crédito. Vazio = padrão (Dossiê QUOD e SCR Bacen da empresa, reaproveitando consultas de até 30 dias).",
+   "fieldname": "dossier_package_json",
+   "fieldtype": "Long Text",
+   "hidden": 1,
+   "label": "Pacote mínimo (JSON)"
   }
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-11-02 12:00:00.000000",
+ "modified": "2026-11-02 22:00:00.000000",
  "modified_by": "Administrator",
  "module": "Cred Hub",
  "name": "Cred Hub Credit Settings",

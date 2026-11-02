@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import re
 from typing import Any
+
 import requests
 
 from cred_hub.cnpj.mapping import only_digits
+from cred_hub.credit_check.raw_capture import record
 
 DEFAULT_BASE_URL = "https://api.escavador.com"
 DEFAULT_TIMEOUT = 15
@@ -75,6 +77,7 @@ def fetch_lawsuits(
 	except ValueError as e:
 		raise EscavadorError(f"Resposta inválida da API do Escavador (não-JSON): {response.text[:200]}") from e
 
+	record("Escavador", "envolvido/processos", payload)
 	return parse_escavador_payload(payload, digits)
 
 

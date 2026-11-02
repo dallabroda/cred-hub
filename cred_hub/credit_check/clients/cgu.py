@@ -19,9 +19,11 @@ estiver mal configurada, o campo fica "não verificado" — nunca trava o resto 
 from __future__ import annotations
 
 from typing import Any
+
 import requests
 
 from cred_hub.cnpj.mapping import only_digits
+from cred_hub.credit_check.raw_capture import record
 
 DEFAULT_BASE_URL = "https://api.portaldatransparencia.gov.br"
 DEFAULT_TIMEOUT = 20
@@ -61,6 +63,7 @@ def _get_cgu(endpoint: str, digits: str, api_key: str, base_url: str, timeout: i
 	except ValueError as e:
 		raise CGUError(f"Resposta não-JSON do Portal da Transparência ({endpoint}): {response.text[:200]}") from e
 
+	record("Portal da Transparência", endpoint, data)
 	return data if isinstance(data, list) else []
 
 
