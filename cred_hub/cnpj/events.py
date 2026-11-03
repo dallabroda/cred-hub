@@ -37,13 +37,16 @@ def on_update(doc, method=None):
 	if not doc.has_value_changed("cnpj") and doc.get("cnpj_checked_on"):
 		return
 	digits = only_digits(doc.cnpj)
-	frappe.enqueue(
-		"cred_hub.cnpj.enrich.enrich_doc",
-		queue="short",
-		job_id=f"cred_hub_cnpj::{doc.doctype}::{doc.name}",
-		deduplicate=True,
-		enqueue_after_commit=True,
-		doctype=doc.doctype,
-		name=doc.name,
-		cnpj=digits,
-	)
+	try:
+		frappe.enqueue(
+			"cred_hub.cnpj.enrich.enrich_doc",
+			queue="short",
+			job_id=f"cred_hub_cnpj::{doc.doctype}::{doc.name}",
+			deduplicate=True,
+			enqueue_after_commit=True,
+			doctype=doc.doctype,
+			name=doc.name,
+			cnpj=digits,
+		)
+	except Exception:
+		frappe.log_error(title="Cred Hub: agendamento da consulta de CNPJ falhou")
