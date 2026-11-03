@@ -1,16 +1,14 @@
 {#- Self-service signup: confirm the e-mail to create the company (cred_hub.signup). Args: name, company, address,
-    link, hours. -#}
+    link, hours. No Figma frame of its own: the base layout. -#}
 {% from "templates/emails/hubtech_macros.html" import card with context %}
 {{ card(
-	eyebrow=_("Confirm your e-mail"),
 	heading=_("Confirm your e-mail to create {0}").format(company | e),
-	greeting=_("Hi, {0}!").format(name | e),
+	greeting=_("Hello, {0}.").format(name | e) if name else _("Hello."),
 	paragraphs=[
-		_("We received a request to create {0} on HubTech CRM, where your team organizes cards and tasks in funnels.").format("<b>" ~ (company | e) ~ "</b>"),
-		_("Confirm your e-mail and we create the company: it takes from 30 seconds to 2 minutes."),
+		_("Confirm your e-mail and we create {0} on HubTech CRM: it takes from 30 seconds to 2 minutes. The free trial has 14 days with unlimited users.").format("<b>" ~ (company | e) ~ "</b>"),
 	],
-	details=[(_("Company"), company | e), (_("Address"), address | e), (_("Free trial"), _("14 days with unlimited users"))],
+	details=[(_("Your company's address"), address | e)],
 	action_text=_("Confirm and create my company"),
 	action_url=link,
-	note=_("The link is valid for {0} hours.").format(hours) ~ " " ~ _("If you did not ask for this, ignore this e-mail: nothing is created."),
+	notice=_("The link is valid for {0} hours.").format(hours) ~ " " ~ _("If you did not ask for this, ignore this e-mail: nothing is created."),
 ) }}

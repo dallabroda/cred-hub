@@ -2835,3 +2835,91 @@ msgstr "Em Cartório"
 msgid "Legal / Lawsuit"
 msgstr "Jurídico"
 
+
+# E-mails in the Figma design (hubtech_layout.html, hubtech_macros.html and templates/emails)
+msgid "{0} invited you to HubTech CRM"
+msgstr "{0} convidou você para o HubTech CRM"
+
+msgid "Hello."
+msgstr "Olá."
+
+msgid "Hello, {0}."
+msgstr "Olá, {0}."
+
+msgid "Join the {0} team and follow the deals in the funnel."
+msgstr "Entre na equipe {0} e acompanhe os negócios no funil."
+
+msgid "Join the team and follow the deals in the funnel."
+msgstr "Entre na equipe e acompanhe os negócios no funil."
+
+msgid "If you were not expecting this invitation, ignore this e-mail."
+msgstr "Se você não esperava este convite, ignore este e-mail."
+
+msgid "You received this e-mail because you have an account in a CredTech product."
+msgstr "Você recebeu este e-mail porque tem uma conta em um produto da CredTech."
+
+msgid "If you do not recognize this action, ignore this e-mail or {0}."
+msgstr "Se você não reconhece esta ação, ignore este e-mail ou {0}."
+
+msgid "talk to us"
+msgstr "fale com a gente"
+
+msgid "Data deletion"
+msgstr "Exclusão de dados"
+
+msgid "Best regards, the CredTech team."
+msgstr "Abraços da equipe CredTech."
+
+msgid "Confirm your e-mail and we create {0} on HubTech CRM: it takes from 30 seconds to 2 minutes. The free trial has 14 days with unlimited users."
+msgstr "Confirme seu e-mail e nós criamos {0} no HubTech CRM: leva de 30 segundos a 2 minutos. O teste grátis tem 14 dias com usuários ilimitados."
+
+msgid "Your company's address"
+msgstr "Endereço da sua empresa"
+
+msgid "Creating a company failed"
+msgstr "Falha ao criar uma empresa"
+
+msgid "The signup of {0} failed. See the error in the signup record and try again."
+msgstr "O cadastro de {0} falhou. Veja o erro no registro do cadastro e tente de novo."
+
+msgid "Today is the last day of your free trial"
+msgstr "Hoje é o último dia do seu teste grátis"
+
+msgid "From tomorrow, the free plan has {0} user. Choose who stays or subscribe to keep the team."
+msgstr "A partir de amanhã, o plano grátis tem {0} usuário. Escolha quem continua ou assine para manter a equipe."
+
+msgid "Your free trial ends in 3 days"
+msgstr "Seu teste grátis termina em 3 dias"
+
+msgid "After {0}, the free plan has {1} user. Extra users need a subscription."
+msgstr "Depois de {0}, o plano grátis tem {1} usuário. Usuários extras precisam de assinatura."
+
+msgid "End of the trial"
+msgstr "Fim do teste"
+
+msgid "Your account is active. Sign in with Google, Microsoft or GitHub using this e-mail, or with your password."
+msgstr "Sua conta está ativa. Entre com Google, Microsoft ou GitHub usando este e-mail, ou com sua senha."
+
+msgid "Your company was created on HubTech CRM"
+msgstr "Sua empresa foi criada no HubTech CRM"
+
+msgid "Create your password to sign in. The free trial has 14 days with unlimited users."
+msgstr "Crie sua senha para entrar. O teste grátis tem 14 dias com usuários ilimitados."
+
+msgid "Create password"
+msgstr "Criar senha"
+
+msgid "{0} created an account for you on HubTech CRM. Create your password to sign in."
+msgstr "{0} criou uma conta para você no HubTech CRM. Crie sua senha para entrar."
+
+msgid "If you were not expecting this account, ignore this e-mail."
+msgstr "Se você não esperava esta conta, ignore este e-mail."
+
+msgid "The link is valid for 1 hour."
+msgstr "O link vale por 1 hora."
+
+msgid "We received a request to reset the password of your account."
+msgstr "Recebemos um pedido para redefinir a senha da sua conta."
+
+msgid "If you did not ask for it, ignore this e-mail: your password stays the same."
+msgstr "Se você não pediu, ignore este e-mail: sua senha continua a mesma."

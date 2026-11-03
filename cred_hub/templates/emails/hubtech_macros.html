@@ -1,74 +1,69 @@
-{#- Body of a HubTech CRM e-mail, the same blocks as the SmartChat ones: tag, title, greeting, paragraphs,
-    a box with details, the button, the link in text and a closing note. Every argument but heading is optional.
-    paragraphs: list of strings (HTML allowed, escape what comes from users); details: list of (label, value). -#}
-{% macro card(heading, eyebrow=None, greeting=None, paragraphs=[], details=[], action_text=None, action_url=None, note=None) -%}
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width: 100%; margin: 0;">
-	{%- if eyebrow %}
+{#- Body of a HubTech CRM e-mail, from the Figma "E-mail · Base" (1143:24255), the same blocks as the SmartChat
+    e-mails: title, text, the sign-off "Abraços da equipe CredTech.", a gray box with label and value, and the blue
+    button. Every argument but heading is optional.
+    greeting: starts the first paragraph ("Olá, Ana. <text>"); paragraphs: list of strings (HTML allowed, escape what
+    comes from users); details: list of (label, value) shown in the gray box; notice: replaces the default notice of
+    the footer (hubtech_layout.html takes it from between the <!--ht-notice--> markers); sign_off: False hides the
+    sign-off. -#}
+{% macro card(heading, greeting=None, paragraphs=[], details=[], action_text=None, action_url=None, notice=None, sign_off=True) -%}
+{%- set ht_font = "Inter, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" -%}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width: 100%; margin: 0;">
 	<tr>
 		<td style="padding: 0 0 16px;">
-			<span style="display: inline-block; padding: 6px 10px; border-radius: 999px; background-color: #F1ECFE; color: #5925DC; font-size: 12px; line-height: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;">{{ eyebrow }}</span>
+			<h1 class="ht-title" style="margin: 0; font-family: {{ ht_font }}; font-size: 26px; line-height: 32px; font-weight: 500; letter-spacing: -0.78px; color: #000000;">{{ heading }}</h1>
 		</td>
 	</tr>
-	{%- endif %}
-	<tr>
-		<td style="padding: 0 0 12px;">
-			<h1 class="ht-heading" style="margin: 0; font-size: 30px; line-height: 36px; font-weight: 700; color: #0F172A;">{{ heading }}</h1>
-		</td>
-	</tr>
-	{%- if greeting %}
-	<tr>
-		<td style="padding: 0 0 8px;">
-			<p style="margin: 0; font-size: 14px; line-height: 21px; color: #334155;">{{ greeting }}</p>
-		</td>
-	</tr>
-	{%- endif %}
 	{%- for paragraph in paragraphs %}
 	<tr>
-		<td style="padding: 0 0 {{ '10px' if not loop.last else ('16px' if details else '24px') }};">
-			<p style="margin: 0; font-size: 14px; line-height: 21px; color: #475569;">{{ paragraph }}</p>
+		<td style="padding: 0 0 16px;">
+			<p style="margin: 0; font-family: {{ ht_font }}; font-size: 16px; line-height: 24px; color: #000000;">{{ greeting ~ " " if greeting and loop.first else "" }}{{ paragraph }}</p>
 		</td>
 	</tr>
+	{%- else %}
+	{%- if greeting %}
+	<tr>
+		<td style="padding: 0 0 16px;">
+			<p style="margin: 0; font-family: {{ ht_font }}; font-size: 16px; line-height: 24px; color: #000000;">{{ greeting }}</p>
+		</td>
+	</tr>
+	{%- endif %}
 	{%- endfor %}
+	{%- if sign_off %}
+	<tr>
+		<td style="padding: 0 0 16px;">
+			<p style="margin: 0; font-family: {{ ht_font }}; font-size: 16px; line-height: 24px; font-weight: 600; color: #000000;">{{ _("Best regards, the CredTech team.") }}</p>
+		</td>
+	</tr>
+	{%- endif %}
 	{%- if details %}
 	<tr>
-		<td style="padding: 0 0 24px;">
-			<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width: 100%; border: 1px solid #E4DCFD; border-radius: 16px; background-color: #FAF8FF;" bgcolor="#FAF8FF">
-				{%- for label, value in details %}
+		<td style="padding: 0 0 16px;">
+			<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width: 100%; border-collapse: separate; border-radius: 8px; background-color: #F5F5F7;" bgcolor="#F5F5F7">
 				<tr>
-					<td style="padding: 14px 18px;{{ ' border-top: 1px solid #E2E8F0;' if not loop.first else '' }}">
-						<p style="margin: 0 0 4px; font-size: 12px; line-height: 16px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #64748B;">{{ label }}</p>
-						<p style="margin: 0; font-size: 14px; line-height: 21px; font-weight: 600; color: #0F172A;">{{ value }}</p>
+					<td style="padding: 16px; border-radius: 8px;">
+						{%- for label, value in details %}
+						<p style="margin: {{ '0' if loop.first else '12px' }} 0 4px; font-family: {{ ht_font }}; font-size: 12px; line-height: 18px; font-weight: 500; letter-spacing: 1.2px; text-transform: uppercase; color: #8A8C94;">{{ label }}</p>
+						<p style="margin: 0; font-family: {{ ht_font }}; font-size: 16px; line-height: 24px; color: #000000; word-break: break-word;">{{ value }}</p>
+						{%- endfor %}
 					</td>
 				</tr>
-				{%- endfor %}
 			</table>
 		</td>
 	</tr>
 	{%- endif %}
 	{%- if action_url %}
 	<tr>
-		<td style="padding: 0 0 20px;">
-			<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width: 100%; margin: 0;">
+		<td style="padding: 0 0 16px;">
+			<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width: 100%; border-collapse: separate;">
 				<tr>
-					<td bgcolor="#6938EF" style="border-radius: 14px; background-color: #6938EF;">
-						<a href="{{ action_url }}" style="display: block; width: 100%; box-sizing: border-box; padding: 12px 24px; font-size: 14px; line-height: 20px; font-weight: 700; color: #FFFFFF; text-align: center; text-decoration: none;">{{ action_text }}</a>
+					<td align="center" bgcolor="#0088FF" style="border-radius: 6px; background-color: #0088FF;">
+						<a href="{{ action_url }}" target="_blank" style="display: block; padding: 12px 28px; font-family: {{ ht_font }}; font-size: 16px; line-height: 24px; font-weight: 600; color: #FFFFFF; text-align: center; text-decoration: none; border-radius: 6px;">{{ action_text }}</a>
 					</td>
 				</tr>
 			</table>
 		</td>
 	</tr>
-	<tr>
-		<td style="padding: 0 0 20px;">
-			<p style="margin: 0; font-size: 13px; line-height: 20px; color: #64748B;">{{ _("If the button does not work, copy and paste this link in your browser:") }}<br /><a href="{{ action_url }}" style="color: #6938EF; text-decoration: none; word-break: break-all;">{{ action_url }}</a></p>
-		</td>
-	</tr>
-	{%- endif %}
-	{%- if note %}
-	<tr>
-		<td style="padding: 0 0 20px;">
-			<p style="margin: 0; font-size: 13px; line-height: 20px; color: #64748B;">{{ note }}</p>
-		</td>
-	</tr>
 	{%- endif %}
 </table>
+{%- if notice %}<!--ht-notice-->{{ notice }}<!--ht-notice-->{% endif %}
 {%- endmacro %}

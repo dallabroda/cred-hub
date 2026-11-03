@@ -1,16 +1,28 @@
-{#- Overrides Frappe's welcome e-mail with the link to create the password (user created with "Send Welcome
-    Email", or invitation accepted by the admin). Args: first_name, user, link, site_url. -#}
+{#- Overrides Frappe's welcome e-mail with the link to create the password. Args (Frappe User.send_login_mail):
+    first_name, user, link, site_url, created_by.
+    - The owner of a new company (cred_hub.signup.create_owner runs as Administrator): Figma "E-mail · Empresa
+      criada · criar senha" (1143:26023).
+    - Someone an admin created with "Send Welcome Email": the same layout, saying the account is ready. -#}
 {% from "templates/emails/hubtech_macros.html" import card with context %}
+{%- set address = (site_url or "").replace("https://", "").replace("http://", "").rstrip("/") -%}
+{%- set greeting = _("Hello, {0}.").format(first_name | e) if first_name else _("Hello.") -%}
+{%- if not created_by or created_by == "Administrator" -%}
 {{ card(
-	eyebrow=_("Welcome"),
-	heading=_("Your HubTech CRM account is ready"),
-	greeting=_("Hi, {0}!").format(first_name | e),
-	paragraphs=[
-		_("An account was created for you on HubTech CRM, where your team organizes cards and tasks in funnels."),
-		_("To sign in, first create your password."),
-	],
-	details=[(_("Address"), site_url), (_("Your login"), user | e)],
-	action_text=_("Create my password"),
+	heading=_("Your company was created on HubTech CRM"),
+	greeting=greeting,
+	paragraphs=[_("Create your password to sign in. The free trial has 14 days with unlimited users.")],
+	details=[(_("Your company's address"), address | e)],
+	action_text=_("Create password"),
 	action_url=link,
-	note=_("If you were not expecting this account, you can ignore this e-mail."),
 ) }}
+{%- else -%}
+{{ card(
+	heading=_("Your HubTech CRM account is ready"),
+	greeting=greeting,
+	paragraphs=[_("{0} created an account for you on HubTech CRM. Create your password to sign in.").format(created_by | e)],
+	details=[(_("Your company's address"), address | e), (_("Your login"), user | e)],
+	action_text=_("Create password"),
+	action_url=link,
+	notice=_("If you were not expecting this account, ignore this e-mail."),
+) }}
+{%- endif %}
