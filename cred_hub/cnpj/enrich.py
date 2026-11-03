@@ -120,9 +120,10 @@ def upsert_address(org, parts: dict) -> str | None:
 	if not parts.get("address_line1") or not parts.get("city"):
 		return None
 	title = f"{org.organization_name}{ADDRESS_SUFFIX}"
-	if org.get("address") and frappe.db.get_value("Address", org.address, "address_title") != title:
+	existing_title = frappe.db.get_value("Address", org.address, "address_title") if org.get("address") else None
+	if existing_title and existing_title != title:
 		return org.address
-	name = org.get("address") or frappe.db.get_value("Address", {"address_title": title})
+	name = (org.get("address") if existing_title else None) or frappe.db.get_value("Address", {"address_title": title})
 	address = frappe.get_doc("Address", name) if name else frappe.new_doc("Address")
 	address.update(
 		{

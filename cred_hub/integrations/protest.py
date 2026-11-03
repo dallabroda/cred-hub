@@ -207,9 +207,18 @@ def _primary_contact(deal) -> str | None:
 def debtor_of(deal) -> dict:
 	"""Devedor: a Organização do card com CNPJ ou, sem ela, o contato principal com CPF."""
 	if deal.get("organization"):
-		org = frappe.get_doc("CRM Organization", deal.organization)
-		if is_valid_cnpj(org.get("cnpj")):
-			address = frappe.get_doc("Address", org.address) if org.get("address") else None
+		org = None
+		try:
+			org = frappe.get_doc("CRM Organization", deal.organization)
+		except frappe.DoesNotExistError:
+			org = None
+		if org and is_valid_cnpj(org.get("cnpj")):
+			address = None
+			if org.get("address"):
+				try:
+					address = frappe.get_doc("Address", org.address)
+				except frappe.DoesNotExistError:
+					address = None
 			party = _address_party(address, org.get("neighborhood"), org.get("city"), org.get("state"))
 			party.update(
 				documento=only_digits(org.cnpj),
@@ -220,9 +229,18 @@ def debtor_of(deal) -> dict:
 			return party
 	contact_name = _primary_contact(deal)
 	if contact_name:
-		contact = frappe.get_doc("Contact", contact_name)
-		if len(only_digits(contact.get("cpf"))) == 11:
-			party = _address_party(_contact_address(contact.name))
+		contact = None
+		try:
+			contact = frappe.get_doc("Contact", contact_name)
+		except frappe.DoesNotExistError:
+			contact = None
+		if contact and len(only_digits(contact.get("cpf"))) == 11:
+			address = None
+			try:
+				address = _contact_address(contact.name)
+			except Exception:
+				address = None
+			party = _address_party(address)
 			party.update(
 				documento=only_digits(contact.cpf),
 				nome=contact.full_name,
@@ -278,8 +296,16 @@ def drawer_of(deal, row=None) -> dict | None:
 	name = (row.get("cedente") if row is not None else None) or deal.get("second_organization")
 	if not name or name == deal.get("organization"):
 		return None
-	org = frappe.get_doc("CRM Organization", name)
-	address = frappe.get_doc("Address", org.address) if org.get("address") else None
+	try:
+		org = frappe.get_doc("CRM Organization", name)
+	except frappe.DoesNotExistError:
+		return None
+	address = None
+	if org.get("address"):
+		try:
+			address = frappe.get_doc("Address", org.address)
+		except frappe.DoesNotExistError:
+			address = None
 	party = _address_party(address, org.get("neighborhood"), org.get("city"), org.get("state"))
 	party.update(documento=only_digits(org.get("cnpj")), nome=org.organization_name)
 	return party
