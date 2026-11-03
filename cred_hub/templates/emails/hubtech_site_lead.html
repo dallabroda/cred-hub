@@ -13,7 +13,6 @@
 	{%- set intro = _("Someone who already has an open card sent the form {0} again: the answers went to the card.").format(form) if source else _("Someone who already has an open card sent a site form again: the answers went to the card.") -%}
 {%- endif -%}
 {{ card(
-	eyebrow=_("New contact") if doc.status == "Created" else _("Returning contact"),
 	heading=((lead.first_name or "") ~ " " ~ (lead.last_name or "")) | trim | e,
 	paragraphs=[intro],
 	details=[
@@ -27,5 +26,5 @@
 	action_url=frappe.utils.get_url("/crm/deals/" ~ doc.card_name),
 ) }}
 {%- if note %}
-<div style="margin: 0 0 20px; padding: 16px 18px; border: 1px solid #E4DCFD; border-radius: 16px; background-color: #FAF8FF; font-size: 14px; line-height: 21px; color: #334155;">{{ note[0].content }}</div>
+<div style="margin: 0 0 16px; padding: 16px; border-radius: 8px; background-color: #F5F5F7; font-size: 16px; line-height: 24px; color: #000000;">{{ note[0].content }}</div>
 {%- endif %}

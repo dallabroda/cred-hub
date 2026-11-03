@@ -1,10 +1,10 @@
-{#- To the CredTech team (System Managers of the central site): a self-service signup failed. Args: company, site,
-    email, link. -#}
+{#- To the CredTech team (System Managers of the central site): a self-service signup failed. Figma "E-mail · Falha
+    ao criar empresa" (1143:26429). Args: company, site, email, link. The Figma box shows the error message, which the e-mail does not receive (it
+    is in the signup record): the box shows the company, its address and e-mail. -#}
 {% from "templates/emails/hubtech_macros.html" import card with context %}
 {{ card(
-	eyebrow=_("Signup failed"),
-	heading=_("Creating {0} failed").format(company | e),
-	paragraphs=[_("The company was not created. See the error in the signup record and try again with retry_provision.")],
+	heading=_("Creating a company failed"),
+	paragraphs=[_("The signup of {0} failed. See the error in the signup record and try again.").format("<b>" ~ (company | e) ~ "</b>")],
 	details=[(_("Company"), company | e), (_("Address"), site | e), (_("E-mail"), email | e)],
 	action_text=_("Open the signup record"),
 	action_url=link,

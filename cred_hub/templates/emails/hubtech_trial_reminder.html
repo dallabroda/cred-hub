@@ -1,16 +1,25 @@
-{#- End of the free trial, to every admin, 3 days before and on the last day (cred_hub.billing._trial_reminder).
-    Args: name, last_day (bool), end, pause_on, free, price, excess, plan_url. -#}
+{#- End of the free trial, to every admin, 3 days before and on the last day (cred_hub.billing._trial_reminder,
+    TRIAL_REMINDER_DAYS = (3, 0)). Figma "E-mail · Teste termina em 3 dias" (1143:26197) and "E-mail · Último dia
+    do teste" (1143:26255). Args: name, last_day (bool), end, pause_on, free, price, excess, plan_url. The Figma box of the last day shows
+    the active users, which the e-mail does not receive: it shows the users over the limit today (excess). -#}
 {% from "templates/emails/hubtech_macros.html" import card with context %}
+{%- set greeting = _("Hello, {0}.").format(name | e) if name else _("Hello.") -%}
+{%- if last_day -%}
 {{ card(
-	eyebrow=_("Free trial"),
-	heading=_("Your free trial ends today") if last_day else _("Your free trial ends on {0}").format(end),
-	greeting=_("Hi, {0}!").format(name | e) if name else _("Hi!"),
-	paragraphs=[
-		_("Your HubTech CRM free trial with unlimited users ends on {0}. After that, the plan includes {1} free user plus the extra users you contract, at {2} per user per month.").format(end, free, price),
-		_("Today {0} active users or pending invitations are over that limit. From {1}, the newest users are paused (nothing is deleted) and pending invitations over the limit are no longer valid.").format("<b>" ~ excess ~ "</b>", pause_on),
-		_("To avoid it, contract extra users in Settings > Users and plan, or choose who stays by deactivating the users you no longer need."),
-	],
-	details=[(_("Last day of the trial"), end), (_("Free users after the trial"), free), (_("Over the limit today"), excess)],
+	heading=_("Today is the last day of your free trial"),
+	greeting=greeting,
+	paragraphs=[_("From tomorrow, the free plan has {0} user. Choose who stays or subscribe to keep the team.").format(free)],
+	details=[(_("Over the limit today"), excess)],
 	action_text=_("See users and plan"),
 	action_url=plan_url,
 ) }}
+{%- else -%}
+{{ card(
+	heading=_("Your free trial ends in 3 days"),
+	greeting=greeting,
+	paragraphs=[_("After {0}, the free plan has {1} user. Extra users need a subscription.").format(end, free)],
+	details=[(_("End of the trial"), end)],
+	action_text=_("See users and plan"),
+	action_url=plan_url,
+) }}
+{%- endif %}

@@ -9,7 +9,7 @@ from frappe.utils.jinja import get_email_from_template
 
 from cred_hub import billing, site_setup
 
-LOGO = "https://chat.credtechdigital.com.br/brand-assets/credchat-email-logo.png"
+HEADER = "https://hub.credtechdigital.com.br/assets/cred_hub/email/email-header-hubtech.png"
 
 
 def render(template, args, wrapper="templates/emails/standard.html"):
@@ -22,16 +22,18 @@ class TestEmails(IntegrationTestCase):
 		frappe.db.rollback()
 
 	def assert_branded(self, html, link=None):
-		self.assertIn(LOGO, html)
+		# layout do Figma "E-mail · Base" (1143:24255): cabeçalho HubTech | CredTech e rodapé da CredTech
+		self.assertIn(HEADER, html)
 		self.assertIn("HubTech CRM", html)
-		self.assertIn("contato@credtechdigital.com.br", html)
 		self.assertIn("https://credtechdigital.com.br/termos/", html)
 		self.assertIn("https://credtechdigital.com.br/privacidade/", html)
-		for old in ("Cred Hub", "Frappe", "frappe.io", "frappeframework"):
+		self.assertIn("https://credtechdigital.com.br/exclusao-de-dados/", html)
+		self.assertIn("60.098.673/0001-58", html)
+		for old in ("Cred Hub", "Frappe", "frappe.io", "frappeframework", "<!--ht-notice-->"):
 			self.assertNotIn(old, html)
 		if link:
-			# botão e o mesmo link em texto
-			self.assertGreaterEqual(html.count(link), 2)
+			# o botão
+			self.assertIn(link, html)
 
 	def test_invitation_says_who_invited_to_which_company(self):
 		link = "https://acme.credtechdigital.com.br/api/method/crm.api.accept_invitation?key=abc"
@@ -80,7 +82,7 @@ class TestEmails(IntegrationTestCase):
 			},
 		)
 		self.assert_branded(html, "https://acme.test/crm")
-		self.assertIn("R$ 60,00", html)
+		self.assertIn("09/11/2026", html)
 
 	def test_users_paused_for_each_reason(self):
 		args = {
@@ -109,8 +111,17 @@ class TestEmails(IntegrationTestCase):
 		self.assert_branded(render("hubtech_signup_failed", failed), failed["link"])
 
 	def test_any_plain_message_gets_the_layout(self):
-		# alertas do Frappe (ex.: senha alterada) e notificações configuradas na tela
-		self.assert_branded(get_formatted_html("Assunto", "<p>Sua senha foi alterada.</p>"))
+		# alertas do Frappe (ex.: senha alterada) e notificações configuradas na tela: aviso padrão do rodapé
+		html = get_formatted_html("Assunto", "<p>Sua senha foi alterada.</p>")
+		self.assert_branded(html)
+		self.assertIn("https://credtechdigital.com.br/contato/", html)
+
+	def test_email_notice_replaces_the_default_one(self):
+		link = "https://acme.credtechdigital.com.br/update-password?key=xyz"
+		args = {"first_name": "Bruno", "user": "bruno@example.com", "link": link, "expiry_minutes": 60}
+		html = render("password_reset", args, "templates/emails/auth_email.html")
+		self.assertNotIn("https://credtechdigital.com.br/contato/", html)
+		self.assertIn("<!--email_open_check-->", html)
 
 	def test_old_names_are_renamed_once(self):
 		account = frappe.get_doc(
