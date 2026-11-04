@@ -20,17 +20,19 @@ CNPJ_SECTION_LABEL = "Company Registry (CNPJ)"
 # Território (região de vendas do Frappe CRM) sai das telas: a CredTech não usa (pedido do dono, 24/10/2026)
 HIDDEN_FIELDS = ("territory",)
 TERRITORY_DOCTYPES = ("CRM Lead", "CRM Deal", "CRM Organization")
-# Contato: saudação, sobrenome, gênero e endereço saem do painel por padrão (pedido do dono, 26/10/2026). Só uma
+# Contato: saudação, sobrenome e gênero saem do painel por padrão (pedido do dono, 26/10/2026). Só uma
 # vez por site, para o admin poder recolocar algum pelo editor de layout sem o próximo migrate tirar de novo.
-CONTACT_HIDDEN_FIELDS = ("salutation", "last_name", "gender", "address")
+# Endereço voltou em 04/11/2026 (credtech#315): a CENPROT exige endereço completo do codevedor para o protesto,
+# e sem o campo no painel o operador não tinha onde preencher.
+CONTACT_HIDDEN_FIELDS = ("salutation", "last_name", "gender")
 # Campos repetidos ou sem uso que o dono tirou das telas em 28/10/2026 (os valores ficam salvos): na Organização,
 # território, razão social e nome fantasia (o nome da organização vira a razão social quando há CNPJ) e o número e
 # a faixa de funcionários da busca (fica o campo de funcionários do CRM); no Contato, um nome só (nome completo) e
-# sem saudação, gênero e endereço. O "Nome da Empresa" do contato fica: é a organização dele (as telas mostram
+# sem saudação e gênero. O "Nome da Empresa" do contato fica: é a organização dele (as telas mostram
 # "Organização"), e passa a se chamar assim em toda parte
 REMOVED_FIELDS = {
 	"CRM Organization": ("territory", "legal_name", "trade_name", "employee_count", "employee_range"),
-	"Contact": ("salutation", "gender", "address", "middle_name", "last_name"),
+	"Contact": ("salutation", "gender", "middle_name", "last_name"),
 }
 
 
