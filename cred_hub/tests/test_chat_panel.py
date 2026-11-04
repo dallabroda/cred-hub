@@ -136,6 +136,58 @@ class TestChatPanel(IntegrationTestCase):
 		self.assertTrue(card["value_from_products"])
 		self.assertEqual(card["deal_value"], 600)
 
+	def test_outcome_won_lost_and_reopen(self):
+		name = self.card(PHONE)
+		card = chat_panel.update_card(name, outcome="Won")
+		self.assertEqual(card["outcome"], "Won")
+		# Perdido sem motivo: a mesma validação do card no CRM barra
+		with self.assertRaises(frappe.ValidationError):
+			chat_panel.update_card(name, outcome="Lost")
+		if not frappe.db.exists("CRM Lost Reason", "Preço"):
+			frappe.get_doc({"doctype": "CRM Lost Reason", "lost_reason": "Preço"}).insert(ignore_permissions=True)
+		self.assertIn("Preço", [r["value"] for r in chat_panel.lost_reasons()])
+		card = chat_panel.update_card(name, outcome="Lost", lost_reason="Preço")
+		self.assertEqual((card["outcome"], card["lost_reason"]), ("Lost", "Preço"))
+		card = chat_panel.update_card(name, outcome="In progress")
+		self.assertEqual((card["outcome"], card["lost_reason"]), ("In progress", None))
+		with self.assertRaises(frappe.ValidationError):
+			chat_panel.update_card(name, outcome="Excluir")
+
+	def test_card_brings_registry_fields_and_contacts_read_only(self):
+		org = frappe.get_doc(
+			{
+				"doctype": "CRM Organization",
+				"organization_name": "Metalúrgica Painel",
+				"registration_status": "ATIVA",
+				"registry_phone": "(19) 3524-0100",
+			}
+		).insert(ignore_permissions=True)
+		contact = frappe.get_doc(
+			{
+				"doctype": "Contact",
+				"first_name": "Ricardo",
+				"email_ids": [{"email_id": "ricardo@acme.com", "is_primary": 1}],
+				"phone_nos": [{"phone": "48 99999-1234", "is_primary_mobile_no": 1}],
+			}
+		).insert(ignore_permissions=True)
+		name = self.card(
+			organization=org.name,
+			next_step="Enviar proposta",
+			expected_closure_date="2026-11-15",
+			contacts=[{"contact": contact.name, "is_primary": 1}],
+		)
+		card = next(c for c in chat_panel.find_cards(phone=PHONE) if c["name"] == name)
+		self.assertEqual(card["organization"], org.name)
+		self.assertEqual(card["registry"]["registration_status"], "ATIVA")
+		self.assertEqual(card["registry"]["registry_phone"], "(19) 3524-0100")
+		self.assertEqual((card["next_step"], card["expected_closure_date"]), ("Enviar proposta", "2026-11-15"))
+		self.assertEqual(card["outcome"], "In progress")
+		self.assertEqual(len(card["contacts"]), 1)
+		self.assertTrue(card["contacts"][0]["is_primary"])
+		self.assertEqual(card["contacts"][0]["name"], contact.name)
+		# Sem organização, sem dados da Receita
+		self.assertIsNone(chat_panel._registry(None))
+
 	def test_reconnecting_to_another_account_removes_the_old_panel(self):
 		chat = FakeChat()
 		with patch.object(welcome, "_call", chat):

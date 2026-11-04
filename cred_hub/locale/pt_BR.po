@@ -1023,6 +1023,84 @@ msgstr "Abrir o HubTech CRM"
 msgid "Open card"
 msgstr "Abrir card"
 
+msgid "Sign in to HubTech CRM"
+msgstr "Entre no HubTech CRM"
+
+msgid "Sign in with your HubTech CRM login to see and move this contact's cards. After signing in, come back to this conversation."
+msgstr "Entre com o seu login do HubTech CRM para ver e mover os cards deste contato. Depois de entrar, volte para esta conversa."
+
+msgid "No card for this contact"
+msgstr "Nenhum card para este contato"
+
+msgid "We found no cards in HubTech CRM with this contact's phone number or e-mail."
+msgstr "Não encontramos cards no HubTech CRM com o telefone ou o e-mail deste contato."
+
+msgid "Go to HubTech CRM"
+msgstr "Abrir HubTech CRM"
+
+msgid "Card {0} of {1}"
+msgstr "Card {0} de {1}"
+
+msgid "Choose card"
+msgstr "Escolher card"
+
+msgid "Send e-mail"
+msgstr "Enviar e-mail"
+
+msgid "This card has no e-mail."
+msgstr "Este card não tem e-mail."
+
+msgid "Copy card link"
+msgstr "Copiar link do card"
+
+msgid "Card link copied"
+msgstr "Link do card copiado"
+
+msgid "Could not copy the link."
+msgstr "Não foi possível copiar o link."
+
+msgid "Open attachments in HubTech CRM"
+msgstr "Abrir anexos no HubTech CRM"
+
+msgid "Card progress"
+msgstr "Andamento do card"
+
+msgid "Open in HubTech CRM"
+msgstr "Abrir no HubTech CRM"
+
+msgid "Card outcome"
+msgstr "Status"
+
+msgid "You can't edit this card."
+msgstr "Você não pode editar este card."
+
+msgid "Stage updated to {0}"
+msgstr "Etapa atualizada para {0}"
+
+msgid "Edit in organization"
+msgstr "Editar na organização"
+
+msgid "No contact linked to this card."
+msgstr "Nenhum contato ligado a este card."
+
+msgid "Open contact in HubTech CRM"
+msgstr "Abrir contato no HubTech CRM"
+
+msgid "Why was this card lost?"
+msgstr "Por que este card foi perdido?"
+
+msgid "Choose a reason"
+msgstr "Escolha um motivo"
+
+msgid "Describe the reason when it is \"Other\"."
+msgstr "Descreva o motivo quando for \"Outro\"."
+
+msgid "Mark as lost"
+msgstr "Marcar como perdido"
+
+msgid "Invalid card status."
+msgstr "Status do card inválido."
+
 msgid "Your plan allows {0} users. Contract extra users in Users and Plan."
 msgstr "Seu plano permite {0} usuários. Contrate usuários extras em Usuários e plano."
 

@@ -4,41 +4,183 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>HubTech CRM</title>
+<link rel="stylesheet" href="/assets/frappe/css/fonts/inter/inter.css">
 <style>
+	/* Layout do Figma "CredTech Digital", página SmartChat, painel "Painel do HubTech CRM" (1741:24442) e estados
+	   (1799:24242). Cores = tokens --ct-* do HubTech CRM (crm frontend/src/theme/credtech.css). */
 	:root {
-		--bg: #ffffff; --fg: #1f2328; --muted: #6b7280; --line: #e5e7eb; --card: #f9fafb;
-		--accent: #6d28d9; --accent-fg: #ffffff; --ok: #15803d; --err: #b91c1c;
+		--text: #000000; --text-2: #5e6068; --text-3: #8a8c94; --accent: #0088ff;
+		--bg: #ffffff; --bg-soft: #f5f5f7; --bg-selected: #e5f1ff;
+		--border: #dcdde2; --border-soft: #e6e7eb; --divider: #ededf0;
+		--success: #1f7a3d; --success-soft: #e7f6ec; --danger: #b42318; --danger-soft: #fef3f2;
+		--avatar-bg: #e0efff; --avatar-fg: #0059b8; --avatar2-bg: #dcf4f8; --avatar2-fg: #0a6878;
+		--skeleton: #f5f5f7; --skeleton-2: #e6e7eb; --overlay: rgba(16, 24, 40, .4);
+		--shadow: 0 4px 6px rgba(16, 24, 40, .03), 0 12px 16px rgba(16, 24, 40, .08);
 	}
 	body.dark {
-		--bg: #1b1b1f; --fg: #e5e7eb; --muted: #9ca3af; --line: #2f2f36; --card: #232329;
-		--accent: #a78bfa; --accent-fg: #111111; --ok: #4ade80; --err: #f87171;
+		--text: #f5f5f7; --text-2: #b4b6bd; --text-3: #8a8c94; --accent: #4da8ff;
+		--bg: #1b1b1f; --bg-soft: #2a2b30; --bg-selected: #0f2a44;
+		--border: #3a3b42; --border-soft: #2f3036; --divider: #2f3036;
+		--success: #47cd89; --success-soft: #133322; --danger: #f97066; --danger-soft: #3d1714;
+		--avatar-bg: #0f2a44; --avatar-fg: #9ccfff; --avatar2-bg: #0d3338; --avatar2-fg: #8fe0ec;
+		--skeleton: #2a2b30; --skeleton-2: #34353b; --overlay: rgba(0, 0, 0, .6);
+		--shadow: 0 4px 6px rgba(0, 0, 0, .3), 0 12px 16px rgba(0, 0, 0, .4);
 	}
 	* { box-sizing: border-box; }
-	body { margin: 0; padding: 12px; background: var(--bg); color: var(--fg);
-		font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif; }
-	.muted { color: var(--muted); }
-	.center { text-align: center; padding: 24px 8px; }
-	.btn { display: inline-block; border: 0; border-radius: 6px; padding: 7px 12px; cursor: pointer; font: inherit;
-		background: var(--accent); color: var(--accent-fg); text-decoration: none; }
-	.btn:disabled { opacity: .6; cursor: default; }
-	.link { color: var(--accent); text-decoration: none; }
-	.card { border: 1px solid var(--line); background: var(--card); border-radius: 8px; padding: 12px; margin-bottom: 10px; }
-	.card h3 { margin: 0 0 2px; font-size: 15px; }
-	.row { margin-top: 10px; }
-	.row label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 3px; }
-	select, input { width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px;
-		background: var(--bg); color: var(--fg); font: inherit; }
-	.value { display: flex; gap: 6px; }
-	.value input { flex: 1; }
-	.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--muted); }
-	.status { font-size: 12px; min-height: 16px; margin-top: 6px; }
-	.status.ok { color: var(--ok); }
-	.status.err { color: var(--err); }
-	.foot { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; font-size: 13px; }
+	html, body { height: 100%; }
+	body { margin: 0; background: var(--bg); color: var(--text);
+		font: 400 14px/20px Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+		-webkit-font-smoothing: antialiased; }
+	button { font: inherit; color: inherit; }
+	a { color: inherit; }
+	svg.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 2;
+		stroke-linecap: round; stroke-linejoin: round; }
+	.ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+
+	/* Estado vazio (Sem login, Telefone sem card, avisos) */
+	.empty { display: flex; flex-direction: column; align-items: center; gap: 12px; text-align: center;
+		margin: 120px auto 0; padding: 32px 24px; max-width: 363px; }
+	.empty > svg.i { width: 30px; height: 30px; stroke-width: 1.6; }
+	.empty h2 { margin: 0; font-size: 16px; line-height: 24px; font-weight: 500; }
+	.empty p { margin: 4px 0 0; color: var(--text-2); }
+
+	/* Botões */
+	.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px; padding: 0 16px;
+		border-radius: 6px; border: 1px solid transparent; font-weight: 600; text-decoration: none; cursor: pointer;
+		white-space: nowrap; }
+	.btn:disabled, .icon-btn:disabled, .stage-select:disabled { cursor: not-allowed; opacity: .5; }
+	.btn-primary { background: #0088ff; color: #ffffff; }
+	.btn-primary:hover { background: #0070e0; }
+	.btn-subtle { background: var(--bg-soft); color: var(--text); }
+	.btn-subtle:hover { background: var(--border-soft); }
+	.btn-outline { background: var(--bg); border-color: var(--border); font-weight: 500; }
+	.btn-outline:hover:not(:disabled) { background: var(--bg-soft); }
+	.btn-won { color: var(--success); }
+	.btn-lost { background: var(--danger-soft); color: var(--danger); }
+	.btn-lost:hover:not(:disabled) { filter: brightness(.97); }
+	.btn-danger { background: var(--danger); color: #ffffff; }
+	.icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0;
+		border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); cursor: pointer;
+		text-decoration: none; }
+	.icon-btn:hover:not(:disabled) { background: var(--bg-soft); }
+	.ghost-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0;
+		border: 0; border-radius: 8px; background: transparent; color: var(--text-2); cursor: pointer; }
+	.ghost-btn:hover { background: var(--bg-soft); }
+	.link { color: var(--accent); font-weight: 500; text-decoration: underline; text-underline-offset: 2px; white-space: nowrap; }
+	:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+	/* Seções */
+	.section { border-bottom: 1px solid var(--divider); }
+	.switcher { position: relative; padding: 12px 20px; border-bottom: 1px solid var(--border-soft); }
+	.filter { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px 0 12px; border-radius: 6px;
+		border: 1px solid var(--border); background: var(--bg); font-weight: 500; cursor: pointer; }
+	.filter[aria-expanded="true"] { border-color: var(--text); }
+	.head { display: flex; align-items: center; gap: 20px; padding: 20px; }
+	.avatar { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 40px; height: 40px;
+		border-radius: 999px; background: var(--avatar-bg); color: var(--avatar-fg); font-weight: 500; }
+	.avatar.sm { width: 24px; height: 24px; font-size: 10px; line-height: 19px; background: var(--avatar2-bg); color: var(--avatar2-fg); }
+	.head-main { display: flex; flex-direction: column; gap: 10px; min-width: 0; flex: 1; }
+	.head-title { margin: 0; font-size: 16px; line-height: 24px; font-weight: 500; }
+	.actions { display: flex; gap: 8px; }
+	.block { padding: 16px; display: flex; flex-direction: column; gap: 6px; }
+	.block-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+	.block-title { font-weight: 500; }
+	.rows { display: flex; flex-direction: column; gap: 6px; padding-top: 8px; }
+	.row { display: flex; align-items: flex-start; gap: 8px; min-height: 20px; }
+	.contact-info .row, .dot-label { align-items: center; }
+	.row > .label { flex: none; width: 128px; color: var(--text-2); }
+	.row > .value { flex: 1; }
+
+	/* Etapa */
+	.stage-wrap { position: relative; width: 215px; }
+	.stage-select { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; height: 32px;
+		padding: 0 10px 0 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg);
+		font-weight: 500; cursor: pointer; text-align: left; }
+	.stage-select:hover:not(:disabled) { background: var(--bg-soft); }
+	.stage-select .i, .filter .i { color: var(--text-2); }
+	.dot { display: inline-block; flex: none; width: 8px; height: 8px; border-radius: 50%; background: #8e8e93; }
+	.dot-label { display: flex; align-items: center; gap: 8px; min-width: 0; }
+	.menu { position: absolute; z-index: 10; display: flex; flex-direction: column; gap: 2px; padding: 6px;
+		background: var(--bg); border: 1px solid var(--border-soft); border-radius: 8px; box-shadow: var(--shadow);
+		max-height: 320px; overflow-y: auto; }
+	.menu.stages { top: calc(100% + 4px); left: -7px; width: 229px; }
+	.menu.cards { top: 48px; left: 20px; width: 374px; }
+	.menu-item { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 36px; padding: 0 10px; border: 0;
+		border-radius: 6px; background: transparent; text-align: left; cursor: pointer; }
+	.menu-item:hover, .menu-item:focus-visible { background: var(--bg-soft); outline: none; }
+	.menu-item[aria-current="true"] { font-weight: 500; }
+	.menu-item .grow { flex: 1; }
+	.card-item { display: flex; flex-direction: column; gap: 2px; width: 100%; padding: 8px 10px; border: 0; border-radius: 6px;
+		background: transparent; text-align: left; cursor: pointer; }
+	.card-item:hover, .card-item:focus-visible { background: var(--bg-soft); outline: none; }
+	.card-item[aria-current="true"] { background: var(--bg-selected); }
+	.card-item .l1 { display: flex; gap: 8px; font-weight: 500; }
+	.card-item .l1 .ellipsis { flex: 1; }
+	.card-item .l2 { display: flex; align-items: center; gap: 6px; color: var(--text-2); font-size: 12px; line-height: 16px; }
+
+	/* Status do card */
+	.outcome { display: flex; align-items: center; gap: 8px; }
+	.pill { display: inline-flex; align-items: center; height: 20px; padding: 2px 10px; border-radius: 999px;
+		font-size: 12px; line-height: 16px; font-weight: 500; white-space: nowrap; }
+	.pill.won { background: var(--success-soft); color: var(--success); }
+	.pill.lost { background: var(--danger-soft); color: var(--danger); }
+	.pill.primary { background: var(--bg-selected); color: var(--accent); }
+
+	/* Seções recolhíveis */
+	.fold { padding: 12px; }
+	.fold + .fold { border-top: 1px solid var(--divider); }
+	.fold-head { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; border: 0; background: transparent;
+		font-weight: 500; cursor: pointer; }
+	.fold-head .i { width: 14px; height: 14px; color: var(--text-3); transition: transform .15s; }
+	.fold-head[aria-expanded="true"] .i { transform: rotate(90deg); }
+	.fields .row { align-items: flex-start; padding: 6px 4px; line-height: normal; }
+	.fields .row .value { word-break: break-word; }
+	.contacts { padding: 20px 8px 10px; display: flex; flex-direction: column; gap: 12px; }
+	.contact-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 28px; padding-right: 4px; }
+	.contact-name { display: flex; align-items: center; gap: 8px; min-width: 0; }
+	.contact-tools { display: flex; align-items: center; flex: none; }
+	.contact-tools .ghost-btn[aria-expanded="true"] .i { transform: rotate(90deg); }
+	.contact-info { display: flex; flex-direction: column; gap: 6px; padding-top: 10px; }
+	.contact-info .row { gap: 12px; padding: 6px 4px; }
+	.contact-info .i { color: var(--text-2); }
+	.muted { color: var(--text-2); }
+
+	/* Carregando */
+	.sk { display: block; flex: none; border-radius: 6px; background: var(--skeleton); }
+	.sk.strong { background: var(--skeleton-2); }
+	.sk-block { padding: 16px; display: flex; flex-direction: column; gap: 12px; border-bottom: 1px solid var(--border-soft); }
+	.sk-row { display: flex; align-items: center; gap: 8px; }
+
+	/* Aviso (toast) */
+	.toast { position: fixed; left: 20px; right: 20px; bottom: 20px; z-index: 30; display: flex; align-items: center; gap: 10px;
+		padding: 10px 10px 10px 14px; border-radius: 8px; background: var(--success-soft); color: var(--success);
+		font-weight: 500; }
+	.toast.err { background: var(--danger-soft); color: var(--danger); }
+	.toast[hidden] { display: none; }
+	.toast > .i { width: 20px; height: 20px; }
+	.toast .text { flex: 1; }
+	.toast button { display: inline-flex; padding: 0; border: 0; background: transparent; color: inherit; cursor: pointer; }
+	.toast button .i { width: 20px; height: 20px; }
+
+	/* Janela do motivo da perda */
+	.overlay { position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center;
+		padding: 16px; background: var(--overlay); }
+	.dialog { width: 100%; max-width: 372px; padding: 20px; border-radius: 12px; background: var(--bg); box-shadow: var(--shadow);
+		display: flex; flex-direction: column; gap: 12px; }
+	.dialog h2 { margin: 0; font-size: 16px; line-height: 24px; font-weight: 500; }
+	.dialog p { margin: 0; color: var(--text-2); }
+	.dialog label { display: flex; flex-direction: column; gap: 6px; color: var(--text-2); }
+	.dialog select, .dialog textarea { width: 100%; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px;
+		background: var(--bg); color: var(--text); font: inherit; }
+	.dialog select { height: 32px; }
+	.dialog textarea { min-height: 72px; resize: vertical; }
+	.dialog .error { color: var(--danger); min-height: 0; }
+	.dialog .buttons { display: flex; justify-content: flex-end; gap: 8px; }
 </style>
 </head>
 <body>
-<div id="app" class="center muted">{{ messages.loading }}</div>
+<div id="app" aria-live="polite"></div>
+<div id="toast" class="toast" role="status" hidden></div>
 <script>
 (function () {
 	var M = {{ messages | tojson }};
@@ -48,32 +190,139 @@
 	var LOGIN_URL = {{ login_url | tojson }};
 	var LANG = {{ lang | tojson }};
 	var app = document.getElementById("app");
+	var toastNode = document.getElementById("toast");
 	var lastKey = null;
+	var lostReasons = null;
+	var toastTimer = null;
+	// Estado da tela: cards do contato, card aberto, menu aberto, seções recolhidas, contatos abertos
+	var state = { cards: [], index: 0, menu: null, busy: false, folded: {}, openContacts: {} };
+
+	// Ícones Lucide (os mesmos do Style Guide)
+	var ICONS = {
+		mail: '<rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>',
+		link: '<path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 1 1 0 10h-2"/><line x1="8" x2="16" y1="12" y2="12"/>',
+		paperclip: '<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>',
+		chevronDown: '<path d="m6 9 6 6 6-6"/>',
+		chevronRight: '<path d="m9 18 6-6-6-6"/>',
+		check: '<path d="M20 6 9 17l-5-5"/>',
+		circleCheck: '<circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/>',
+		circleX: '<circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/>',
+		circleAlert: '<circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/>',
+		x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+		lock: '<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+		inbox: '<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
+		externalLink: '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
+		arrowUpRight: '<path d="M7 7h10v10"/><path d="M7 17 17 7"/>',
+		phone: '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>',
+		rotate: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>',
+		message: '<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>',
+	};
+
+	// Cores dos pontos de etapa = colunas do Kanban (crm: utils parseColor + tokens --ct-status-*)
+	var STAGE_COLORS = {
+		gray: "#8e8e93", blue: "#0088ff", purple: "#af52de", violet: "#af52de", orange: "#ff8d28",
+		yellow: "#ffcc00", amber: "#ffcc00", green: "#34c759", red: "#ff3b30",
+		pink: "#db2777", cyan: "#0891b2", teal: "#0d9488", black: "#000000",
+	};
+
+	function icon(name, color) {
+		var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+		svg.setAttribute("viewBox", "0 0 24 24");
+		svg.setAttribute("class", "i");
+		svg.setAttribute("aria-hidden", "true");
+		svg.innerHTML = ICONS[name];
+		if (color) svg.style.color = color;
+		return svg;
+	}
 
 	function el(tag, attrs, children) {
 		var node = document.createElement(tag);
 		Object.keys(attrs || {}).forEach(function (k) {
-			if (k === "text") node.textContent = attrs[k];
-			else if (k === "className") node.className = attrs[k];
-			else node.setAttribute(k, attrs[k]);
+			var v = attrs[k];
+			if (v === null || v === undefined || v === false) return;
+			if (k === "text") node.textContent = v;
+			else if (k === "className") node.className = v;
+			else if (k === "onclick") node.addEventListener("click", v);
+			else node.setAttribute(k, v === true ? "" : v);
 		});
-		(children || []).forEach(function (c) { if (c) node.appendChild(c); });
+		(children || []).forEach(function (c) {
+			if (c === null || c === undefined || c === false) return;
+			node.appendChild(typeof c === "string" ? document.createTextNode(c) : c);
+		});
 		return node;
 	}
 
-	function show(nodes, centered) {
-		app.className = centered ? "center muted" : "";
-		app.replaceChildren.apply(app, nodes);
+	function format(text) {
+		var args = Array.prototype.slice.call(arguments, 1);
+		return String(text).replace(/\{(\d+)\}/g, function (m, i) { return args[i] !== undefined ? args[i] : m; });
 	}
 
-	function message(text) { show([el("p", { text: text })], true); }
+	function stageDot(color) {
+		var dot = el("span", { className: "dot", "aria-hidden": "true" });
+		dot.style.background = (color && (color.charAt(0) === "#" ? color : STAGE_COLORS[color])) || STAGE_COLORS.gray;
+		return dot;
+	}
+
+	function show(nodes) { app.replaceChildren.apply(app, nodes.filter(Boolean)); }
+
+	function emptyState(iconName, title, text, action) {
+		return show([el("div", { className: "empty" }, [
+			icon(iconName),
+			el("div", {}, [el("h2", { text: title }), text ? el("p", { text: text }) : null]),
+			action || null,
+		])]);
+	}
+
+	function message(text) { emptyState("message", text); }
 
 	function showLogin() {
-		var button = el("a", { className: "btn", href: LOGIN_URL, target: "_blank", rel: "noopener", text: M.login });
-		show([el("p", { text: M.login_title }), button, el("p", { className: "muted", text: M.login_hint })], true);
+		emptyState("lock", M.login_title, M.login_text,
+			el("a", { className: "btn btn-primary", href: LOGIN_URL, target: "_blank", rel: "noopener", text: M.login }));
 		// Volta da aba de login: recarrega para pegar a sessão nova
 		window.addEventListener("focus", function () { location.reload(); }, { once: true });
 	}
+
+	function showLoading() {
+		function sk(w, h, strong, round) {
+			var node = el("span", { className: "sk" + (strong ? " strong" : "") });
+			node.style.width = w + "px";
+			node.style.height = h + "px";
+			if (round) node.style.borderRadius = "50%";
+			return node;
+		}
+		function line(a, b, c) { return el("div", { className: "sk-row" }, [sk(128, 14), sk(a, b), c ? sk(c, b) : null]); }
+		function fields(title, n) {
+			var rows = [sk(150, 16, true)];
+			for (var i = 0; i < n; i++) rows.push(line(i % 2 ? 190 : 150, 14));
+			return el("div", { className: "sk-block" }, rows);
+		}
+		show([el("div", { "aria-busy": "true", "aria-label": M.loading }, [
+			el("div", { className: "sk-block", style: "flex-direction:row;align-items:center;gap:20px;padding:20px" }, [
+				sk(40, 40, false, true),
+				el("div", { className: "sk-block", style: "padding:0;border:0;gap:10px" }, [
+					sk(200, 20, true),
+					el("div", { className: "sk-row" }, [sk(32, 32), sk(32, 32), sk(32, 32), sk(32, 32), sk(32, 32)]),
+				]),
+			]),
+			el("div", { className: "sk-block" }, [
+				el("div", { className: "sk-row", style: "justify-content:space-between" }, [sk(130, 16, true), sk(140, 16, true)]),
+				line(215, 32), line(100, 32, 107),
+			]),
+			fields("", 4), fields("", 5), fields("", 3),
+		])]);
+	}
+
+	function toast(text, isError) {
+		clearTimeout(toastTimer);
+		var close = el("button", { type: "button", "aria-label": M.close, onclick: hideToast }, [icon("x")]);
+		toastNode.className = "toast" + (isError ? " err" : "");
+		toastNode.setAttribute("role", isError ? "alert" : "status");
+		toastNode.replaceChildren(icon(isError ? "circleAlert" : "circleCheck"), el("span", { className: "text", text: text }), close);
+		toastNode.hidden = false;
+		toastTimer = setTimeout(hideToast, isError ? 8000 : 4000);
+	}
+
+	function hideToast() { toastNode.hidden = true; }
 
 	function serverError(body) {
 		try {
@@ -93,7 +342,7 @@
 		var url = "/api/method/" + path;
 		var options = { method: method, credentials: "same-origin", headers: { Accept: "application/json" } };
 		if (method === "GET") {
-			url += "?" + new URLSearchParams(params).toString();
+			url += "?" + new URLSearchParams(params || {}).toString();
 		} else {
 			options.headers["Content-Type"] = "application/json";
 			options.headers["X-Frappe-CSRF-Token"] = CSRF;
@@ -127,69 +376,333 @@
 		} catch (e) { return String(value || 0); }
 	}
 
-	function renderCard(card) {
-		var status = el("div", { className: "status" });
-		function setStatus(text, kind) { status.textContent = text || ""; status.className = "status" + (kind ? " " + kind : ""); }
+	function date(value) {
+		var parts = /^(\d{4})-(\d{2})-(\d{2})/.exec(value || "");
+		return parts ? parts[3] + "/" + parts[2] + "/" + parts[1] : value;
+	}
 
-		function save(changes, control) {
-			control.disabled = true;
-			setStatus(M.saving);
-			api("POST", "cred_hub.chat_panel.update_card", Object.assign({ name: card.name }, changes))
-				.then(function (fresh) {
-					if (fresh) card = fresh;
-					var replacement = renderCard(card);
-					node.replaceWith(replacement);
-					replacement.querySelector(".status").textContent = M.saved;
-					replacement.querySelector(".status").className = "status ok";
-				})
-				.catch(function (e) {
-					control.disabled = false;
-					if (e) setStatus(e.message, "err");
-					stage && (stage.value = card.status);
-				});
+	function copy(text) {
+		if (navigator.clipboard && window.isSecureContext) {
+			return navigator.clipboard.writeText(text).catch(function () { return legacyCopy(text); });
 		}
+		return legacyCopy(text);
+	}
 
-		var stage = null;
-		var stageRow;
-		if (card.can_write) {
-			stage = el("select", { "aria-label": M.stage }, card.stages.map(function (s) {
-				var option = el("option", { value: s.value, text: s.label });
-				if (s.value === card.status) option.selected = true;
-				return option;
-			}));
-			stage.addEventListener("change", function () { save({ status: stage.value }, stage); });
-			stageRow = el("div", { className: "row" }, [el("label", { text: M.stage }), stage]);
-		} else {
-			stageRow = el("div", { className: "row" }, [el("label", { text: M.stage }), el("div", { text: card.status_label })]);
-		}
+	function legacyCopy(text) {
+		// O iframe do SmartChat não libera a API de área de transferência: cópia pelo jeito antigo
+		var area = el("textarea", { readonly: true, style: "position:fixed;top:-100px;opacity:0" });
+		area.value = text;
+		document.body.appendChild(area);
+		area.select();
+		var ok = false;
+		try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+		area.remove();
+		return ok ? Promise.resolve() : Promise.reject(new Error(M.error));
+	}
 
-		var valueRow;
-		// Card com produtos: o valor é o total deles, o Cred Hub regrava ao salvar
-		if (card.can_write && !card.value_from_products) {
-			var input = el("input", { type: "number", step: "0.01", min: "0", inputmode: "decimal", "aria-label": M.value });
-			input.value = card.deal_value || "";
-			var button = el("button", { className: "btn", type: "button", text: M.save });
-			button.addEventListener("click", function () { save({ deal_value: input.value || 0 }, button); });
-			valueRow = el("div", { className: "row" }, [el("label", { text: M.value }), el("div", { className: "value" }, [input, button])]);
-		} else {
-			valueRow = el("div", { className: "row" }, [el("label", { text: M.value }), el("div", { text: money(card.deal_value, card.currency) })]);
-		}
+	function current() { return state.cards[state.index]; }
 
-		var dot = el("span", { className: "dot" });
-		if (card.status_color) dot.style.background = card.status_color;
-		var node = el("div", { className: "card" }, [
-			el("h3", { text: card.title }),
-			el("div", { className: "muted" }, [dot, document.createTextNode(card.pipeline_name + " · " + card.status_label)]),
-			stageRow,
-			valueRow,
-			status,
-			el("div", { className: "foot" }, [
-				el("span", { className: "muted", text: card.owner ? M.owner + ": " + card.owner : "" }),
-				el("a", { className: "link", href: card.url, target: "_blank", rel: "noopener", text: M.open_card }),
+	function displayName(card) { return card.organization || card.title || card.name; }
+
+	function primaryEmail(card) {
+		var contact = (card.contacts || []).filter(function (c) { return c.email; })[0];
+		return (contact && contact.email) || card.email || "";
+	}
+
+	// Salvar no servidor (etapa, Ganho/Perdido/Reabrir): mesmas validações do card no CRM
+	function save(changes, success) {
+		var card = current();
+		state.busy = true;
+		state.menu = null;
+		render();
+		return api("POST", "cred_hub.chat_panel.update_card", Object.assign({ name: card.name }, changes))
+			.then(function (fresh) {
+				if (fresh) state.cards[state.index] = fresh;
+				state.busy = false;
+				render();
+				toast(success(fresh || card));
+			})
+			.catch(function (e) {
+				state.busy = false;
+				render();
+				if (e) toast(e.message, true);
+				throw e;
+			});
+	}
+
+	function setStage(stage) {
+		var card = current();
+		if (stage.value === card.status) { state.menu = null; return render(); }
+		save({ status: stage.value }, function (fresh) { return format(M.stage_updated, fresh.status_label || stage.label); })
+			.catch(function () {});
+	}
+
+	function setOutcome(outcome) {
+		if (outcome === "Lost") return askLostReason();
+		save({ outcome: outcome }, function () { return outcome === "Won" ? M.marked_won : M.reopened; }).catch(function () {});
+	}
+
+	function askLostReason() {
+		var reasons = lostReasons ? Promise.resolve(lostReasons) : api("GET", "cred_hub.chat_panel.lost_reasons");
+		reasons.then(function (list) {
+			lostReasons = list || [];
+			openLostDialog();
+		}).catch(function (e) { if (e) toast(e.message, true); });
+	}
+
+	function openLostDialog() {
+		var select = el("select", { required: true }, [el("option", { value: "", text: M.lost_choose })].concat(
+			lostReasons.map(function (r) { return el("option", { value: r.value, text: r.label }); })));
+		var notes = el("textarea", { rows: "3" });
+		var error = el("div", { className: "error", role: "alert" });
+		var confirm = el("button", { type: "submit", className: "btn btn-danger", text: M.mark_lost });
+		var overlay;
+		function close() { overlay.remove(); document.removeEventListener("keydown", onKey); }
+		function onKey(event) { if (event.key === "Escape") close(); }
+		var form = el("form", { className: "dialog", role: "dialog", "aria-modal": "true", "aria-labelledby": "lost-title" }, [
+			el("h2", { id: "lost-title", text: M.lost_text }),
+			el("label", {}, [M.lost_title, select]),
+			el("label", {}, [M.lost_notes, notes]),
+			error,
+			el("div", { className: "buttons" }, [
+				el("button", { type: "button", className: "btn btn-subtle", text: M.cancel, onclick: close }),
+				confirm,
 			]),
 		]);
-		return node;
+		form.addEventListener("submit", function (event) {
+			event.preventDefault();
+			if (!select.value) { error.textContent = M.lost_required; return select.focus(); }
+			if (select.value === "Other" && !notes.value.trim()) { error.textContent = M.lost_notes_required; return notes.focus(); }
+			confirm.disabled = true;
+			save({ outcome: "Lost", lost_reason: select.value, lost_notes: notes.value.trim() }, function () { return M.marked_lost; })
+				.then(close)
+				.catch(function (e) { confirm.disabled = false; if (e) error.textContent = e.message; });
+		});
+		overlay = el("div", { className: "overlay" }, [form]);
+		overlay.addEventListener("click", function (event) { if (event.target === overlay) close(); });
+		document.addEventListener("keydown", onKey);
+		document.body.appendChild(overlay);
+		select.focus();
 	}
+
+	function toggleMenu(name, event) {
+		event.stopPropagation();
+		state.menu = state.menu === name ? null : name;
+		render();
+		var focus = app.querySelector(".menu [aria-current='true']") || app.querySelector(".menu button");
+		if (focus) focus.focus();
+	}
+
+	function renderSwitcher() {
+		if (state.cards.length < 2) return null;
+		var open = state.menu === "cards";
+		var items = state.cards.map(function (card, i) {
+			return el("button", {
+				type: "button", className: "card-item", role: "menuitemradio", "aria-checked": String(i === state.index),
+				"aria-current": i === state.index ? "true" : null,
+				onclick: function () { state.index = i; state.menu = null; render(); },
+			}, [
+				el("div", { className: "l1" }, [
+					el("span", { className: "ellipsis", text: displayName(card) }),
+					el("span", { text: money(card.deal_value, card.currency) }),
+				]),
+				el("div", { className: "l2" }, [
+					el("span", { className: "ellipsis", text: card.pipeline_name }),
+					el("span", { text: "·", "aria-hidden": "true" }),
+					stageDot(card.status_color),
+					el("span", { className: "ellipsis", text: card.status_label }),
+				]),
+			]);
+		});
+		return el("div", { className: "switcher" }, [
+			el("button", {
+				type: "button", className: "filter", "aria-haspopup": "menu", "aria-expanded": String(open), title: M.choose_card,
+				onclick: function (event) { toggleMenu("cards", event); },
+			}, [format(M.card_of, state.index + 1, state.cards.length), icon("chevronDown")]),
+			open ? el("div", { className: "menu cards", role: "menu", "aria-label": M.choose_card }, items) : null,
+		]);
+	}
+
+	function renderHeader(card) {
+		var email = primaryEmail(card);
+		// Ações do cabeçalho: só as que existem de verdade. WhatsApp fica de fora (o painel já está na conversa)
+		// e excluir também (não se apaga card por aqui; a lixeira do Figma não foi implementada).
+		var mail = email
+			? el("a", { className: "icon-btn", href: "mailto:" + email, target: "_blank", rel: "noopener", title: M.send_email, "aria-label": M.send_email }, [icon("mail")])
+			: el("button", { type: "button", className: "icon-btn", disabled: true, title: M.no_email, "aria-label": M.send_email }, [icon("mail")]);
+		return el("div", { className: "section head" }, [
+			el("span", { className: "avatar", "aria-hidden": "true", text: (displayName(card).trim().charAt(0) || "?").toUpperCase() }),
+			el("div", { className: "head-main" }, [
+				el("h1", { className: "head-title ellipsis", text: displayName(card), title: displayName(card) }),
+				el("div", { className: "actions" }, [
+					mail,
+					el("button", {
+						type: "button", className: "icon-btn", title: M.copy_link, "aria-label": M.copy_link,
+						onclick: function () {
+							copy(card.url).then(function () { toast(M.link_copied); }, function () { toast(M.copy_failed, true); });
+						},
+					}, [icon("link")]),
+					el("a", {
+						className: "icon-btn", href: card.url + "#attachments", target: "_blank", rel: "noopener",
+						title: M.open_attachments, "aria-label": M.open_attachments,
+					}, [icon("paperclip")]),
+				]),
+			]),
+		]);
+	}
+
+	function renderProgress(card) {
+		var locked = !card.can_write || state.busy;
+		var lockTitle = !card.can_write ? M.read_only : null;
+		var stages = (card.stages || []).filter(function (s) { return s.type !== "Won" && s.type !== "Lost"; });
+		var open = state.menu === "stages" && !locked;
+		var stageMenu = open ? el("div", { className: "menu stages", role: "menu", "aria-label": M.stage }, stages.map(function (s) {
+			var isCurrent = s.value === card.status;
+			return el("button", {
+				type: "button", className: "menu-item", role: "menuitemradio", "aria-checked": String(isCurrent),
+				"aria-current": isCurrent ? "true" : null, onclick: function () { setStage(s); },
+			}, [stageDot(s.color), el("span", { className: "grow ellipsis", text: s.label }), isCurrent ? icon("check") : null]);
+		})) : null;
+		var stage = el("div", { className: "stage-wrap", title: lockTitle }, [
+			el("button", {
+				type: "button", className: "stage-select", "aria-haspopup": "menu", "aria-expanded": String(open),
+				"aria-label": M.stage + ": " + card.status_label, disabled: locked,
+				onclick: function (event) { toggleMenu("stages", event); },
+			}, [
+				el("span", { className: "dot-label" }, [stageDot(card.status_color), el("span", { className: "ellipsis", text: card.status_label })]),
+				icon("chevronDown"),
+			]),
+			stageMenu,
+		]);
+
+		var outcome;
+		if (card.outcome === "Won" || card.outcome === "Lost") {
+			var won = card.outcome === "Won";
+			outcome = [
+				el("span", { className: "pill " + (won ? "won" : "lost"), text: won ? M.won : M.lost, title: !won && card.lost_reason ? card.lost_reason : null }),
+				el("button", { type: "button", className: "btn btn-outline", disabled: locked, title: lockTitle, onclick: function () { setOutcome("In progress"); } },
+					[icon("rotate"), M.reopen]),
+			];
+		} else {
+			outcome = [
+				el("button", { type: "button", className: "btn btn-outline btn-won", disabled: locked, title: lockTitle, onclick: function () { setOutcome("Won"); } },
+					[icon("circleCheck"), M.won]),
+				el("button", { type: "button", className: "btn btn-lost", disabled: locked, title: lockTitle, onclick: function () { setOutcome("Lost"); } },
+					[icon("circleX"), M.lost]),
+			];
+		}
+
+		return el("div", { className: "section block" }, [
+			el("div", { className: "block-head" }, [
+				el("span", { className: "block-title", text: M.progress }),
+				el("a", { className: "link", href: card.url, target: "_blank", rel: "noopener", text: M.open_in_hub }),
+			]),
+			el("div", { className: "rows" }, [
+				el("div", { className: "row" }, [el("span", { className: "label", text: M.stage }), stage]),
+				el("div", { className: "row" }, [el("span", { className: "label", text: M.outcome }), el("div", { className: "outcome", title: lockTitle }, outcome)]),
+			]),
+		]);
+	}
+
+	function infoRow(label, value) {
+		var text = value === null || value === undefined || value === "" ? "—" : String(value);
+		return el("div", { className: "row" }, [el("span", { className: "label", text: label }), el("span", { className: "value ellipsis", text: text, title: text })]);
+	}
+
+	function renderRegistry(card) {
+		// Só com organização que o usuário pode ler (o servidor manda os dados só nesse caso)
+		if (!card.registry) return null;
+		var r = card.registry;
+		return el("div", { className: "section block" }, [
+			el("div", { className: "block-head" }, [
+				el("span", { className: "block-title", text: M.registry }),
+				card.organization_url ? el("a", { className: "link", href: card.organization_url, target: "_blank", rel: "noopener", text: M.edit_in_org }) : null,
+			]),
+			el("div", { className: "rows" }, [
+				infoRow(M.cnpj, r.cnpj),
+				infoRow(M.registration_status, r.registration_status),
+				infoRow(M.registry_phone, r.registry_phone),
+				infoRow(M.registry_email, r.registry_email),
+			]),
+		]);
+	}
+
+	function fold(key, title, body, tools) {
+		var open = !state.folded[key];
+		return el("div", { className: "fold" }, [
+			el("div", { className: "block-head" }, [
+				el("button", {
+					type: "button", className: "fold-head", "aria-expanded": String(open),
+					onclick: function () { state.folded[key] = open; render(); },
+				}, [icon("chevronRight"), title]),
+				tools || null,
+			]),
+			open ? body : null,
+		]);
+	}
+
+	function renderFields(card) {
+		function row(label, value) {
+			return el("div", { className: "row" }, [el("span", { className: "label", text: label }), el("span", { className: "value", text: value || "—" })]);
+		}
+		return fold("fields", M.card_fields, el("div", { className: "fields" }, [
+			row(M.organization, card.organization),
+			row(M.deal_value, money(card.deal_value, card.currency)),
+			row(M.expected_closure_date, date(card.expected_closure_date)),
+			row(M.next_step, card.next_step),
+			row(M.source, card.source),
+		]));
+	}
+
+	function renderContacts(card) {
+		var contacts = card.contacts || [];
+		var body = el("div", { className: "contacts" }, contacts.length ? contacts.map(function (c, i) {
+			var key = card.name + "|" + c.name;
+			// O contato principal (o primeiro) já abre com e-mail e telefone, como no Figma
+			var open = state.openContacts[key] === undefined ? i === 0 : state.openContacts[key];
+			return el("div", {}, [
+				el("div", { className: "contact-row" }, [
+					el("div", { className: "contact-name" }, [
+						el("span", { className: "avatar sm", "aria-hidden": "true", text: (c.full_name || "?").trim().charAt(0).toUpperCase() }),
+						el("span", { className: "ellipsis", text: c.full_name }),
+						c.is_primary ? el("span", { className: "pill primary", text: M.primary }) : null,
+					]),
+					el("div", { className: "contact-tools" }, [
+						el("a", { className: "ghost-btn", href: c.url, target: "_blank", rel: "noopener", title: M.open_contact, "aria-label": M.open_contact }, [icon("arrowUpRight")]),
+						el("button", {
+							type: "button", className: "ghost-btn", "aria-expanded": String(open), title: M.show_details, "aria-label": M.show_details,
+							onclick: function () { state.openContacts[key] = !open; render(); },
+						}, [icon("chevronRight")]),
+					]),
+				]),
+				open ? el("div", { className: "contact-info" }, [
+					el("div", { className: "row" }, [icon("mail"), el("span", { className: "ellipsis", text: c.email || "—" })]),
+					el("div", { className: "row" }, [icon("phone"), el("span", { className: "ellipsis", text: c.phone || "—" })]),
+				]) : null,
+			]);
+		}) : [el("p", { className: "muted", style: "margin:0;padding:0 4px", text: M.no_contacts })]);
+		return fold("contacts", M.contacts, body);
+	}
+
+	function render() {
+		var card = current();
+		if (!card) return;
+		show([
+			renderSwitcher(),
+			renderHeader(card),
+			renderProgress(card),
+			renderRegistry(card),
+			el("div", {}, [renderFields(card), renderContacts(card)]),
+		]);
+	}
+
+	// Fecha menus ao clicar fora ou com Esc
+	document.addEventListener("click", function (event) {
+		if (state.menu && !event.target.closest(".menu")) { state.menu = null; render(); }
+	});
+	document.addEventListener("keydown", function (event) {
+		if (event.key === "Escape" && state.menu) { state.menu = null; render(); }
+	});
 
 	function load(contact) {
 		var phone = (contact && contact.phone_number) || "";
@@ -197,18 +710,18 @@
 		var key = phone + "|" + email;
 		if (key === lastKey) return;
 		lastKey = key;
-		if (!phone && !email) return message(M.no_contact);
-		message(M.loading);
+		hideToast();
+		if (!phone && !email) return emptyState("inbox", M.no_contact);
+		showLoading();
 		api("GET", "cred_hub.chat_panel.find_cards", { phone: phone, email: email })
 			.then(function (cards) {
 				if (key !== lastKey) return;
 				if (!cards || !cards.length) {
-					return show([
-						el("p", { text: M.no_cards }),
-						el("a", { className: "link", href: "/crm/deals", target: "_blank", rel: "noopener", text: M.open_hub }),
-					], true);
+					return emptyState("inbox", M.no_cards, M.no_cards_text,
+						el("a", { className: "btn btn-subtle", href: "/crm/deals", target: "_blank", rel: "noopener" }, [M.open_hub, icon("externalLink")]));
 				}
-				show(cards.map(renderCard));
+				state = { cards: cards, index: 0, menu: null, busy: false, folded: state.folded, openContacts: {} };
+				render();
 			})
 			.catch(function (e) { if (e) message(e.message); });
 	}
