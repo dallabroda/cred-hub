@@ -9,8 +9,12 @@ Decisões do dono (26/10/2026):
 - telefone sem card só avisa (criar lead pela conversa é a credtech#43, congelada).
 
 O card é achado pelo telefone (mesma regra da entrada de leads: número nacional, sem o 55) ou pelo e-mail do
-contato, no próprio card ou nos contatos ligados a ele. O painel mostra e altera etapa e valor.
+contato, no próprio card ou nos contatos ligados a ele. O painel mostra e altera etapa, valor e status do card
+(Ganho/Perdido/Reabrir, com as mesmas validações do card no CRM); dados da Receita, campos do card e contatos só
+aparecem para leitura (editar fica no HubTech CRM).
 """
+
+from urllib.parse import quote
 
 import frappe
 from crm.fcrm.doctype.crm_lead.crm_lead import national_number
@@ -154,29 +158,88 @@ def _stages(pipeline):
 	]
 
 
+OUTCOMES = ("In progress", "Won", "Lost")
+# Dados da Receita mostrados no painel (moram na Organização do card, cred_hub.cnpj)
+REGISTRY_FIELDS = ("cnpj", "registration_status", "registry_phone", "registry_email")
+
+
+def _registry(organization):
+	"""Dados da Receita da Organização do card, só se o usuário pode ler a Organização."""
+	if not organization or not frappe.has_permission("CRM Organization", "read", organization):
+		return None
+	values = frappe.db.get_value("CRM Organization", organization, list(REGISTRY_FIELDS), as_dict=True)
+	return dict(values) if values else None
+
+
+def _contacts(name):
+	"""Contatos ligados ao card (espelho gravado pelo CRM na tabela do card), principal primeiro."""
+	rows = frappe.get_all(
+		"CRM Contacts",
+		filters={"parenttype": "CRM Deal", "parent": name},
+		fields=["contact", "full_name", "email", "mobile_no", "phone", "is_primary"],
+		order_by="is_primary desc, idx asc",
+	)
+	return [
+		{
+			"name": r.contact,
+			"full_name": r.full_name or r.contact,
+			"email": r.email,
+			"phone": r.mobile_no or r.phone,
+			"is_primary": bool(r.is_primary),
+			"url": get_url(f"/crm/contacts/{quote(r.contact)}"),
+		}
+		for r in rows
+	]
+
+
 def _card(row):
 	stage = frappe.db.get_value("CRM Deal Status", row.status, ["deal_status", "type", "color"], as_dict=True) or {}
 	return {
 		"name": row.name,
 		"title": row.lead_name or row.organization or row.name,
+		"organization": row.organization,
+		"organization_url": get_url(f"/crm/organizations/{quote(row.organization)}") if row.organization else None,
 		"pipeline": row.pipeline,
 		"pipeline_name": frappe.db.get_value("CRM Pipeline", row.pipeline, "pipeline_name") or row.pipeline,
 		"status": row.status,
 		"status_label": _(stage.get("deal_status") or row.status or ""),
 		"status_type": stage.get("type"),
 		"status_color": stage.get("color"),
+		"outcome": row.outcome or "In progress",
+		"lost_reason": _(row.lost_reason) if row.lost_reason else None,
 		"deal_value": row.deal_value,
 		# Com produtos, o CRM regrava o valor com o total deles: o painel mostra sem deixar editar
 		"value_from_products": bool(frappe.db.exists("CRM Products", {"parenttype": "CRM Deal", "parent": row.name})),
 		"currency": row.currency,
+		"expected_closure_date": str(row.expected_closure_date) if row.expected_closure_date else None,
+		"next_step": row.next_step,
+		"source": _(row.source) if row.source else None,
+		"email": row.email,
 		"owner": frappe.utils.get_fullname(row.deal_owner) if row.deal_owner else None,
 		"url": get_url(f"/crm/deals/{row.name}"),
 		"can_write": bool(frappe.has_permission("CRM Deal", "write", row.name)),
 		"stages": _stages(row.pipeline),
+		"registry": _registry(row.organization),
+		"contacts": _contacts(row.name),
 	}
 
 
-_FIELDS = ["name", "lead_name", "organization", "pipeline", "status", "deal_value", "currency", "deal_owner"]
+_FIELDS = [
+	"name",
+	"lead_name",
+	"organization",
+	"pipeline",
+	"status",
+	"deal_value",
+	"currency",
+	"deal_owner",
+	"outcome",
+	"lost_reason",
+	"expected_closure_date",
+	"next_step",
+	"source",
+	"email",
+]
 
 
 @frappe.whitelist(methods=["GET"])
@@ -191,14 +254,31 @@ def find_cards(phone=None, email=None):
 
 
 @frappe.whitelist(methods=["POST"])
-def update_card(name, status=None, deal_value=None):
-	"""Muda etapa e/ou valor com as validações do card (campos obrigatórios da etapa, motivo da perda etc.)."""
+def update_card(name, status=None, deal_value=None, outcome=None, lost_reason=None, lost_notes=None):
+	"""Muda etapa, valor e/ou status do card (Ganho, Perdido, Reabrir) com as validações do card (campos
+	obrigatórios da etapa, motivo da perda etc.), como os botões do card no CRM (credtech#315)."""
 	doc = frappe.get_doc("CRM Deal", name)
 	doc.check_permission("write")
 	if status:
 		doc.status = status
 	if deal_value not in (None, "") and not doc.get("products"):
 		doc.deal_value = flt(deal_value)
+	if outcome:
+		if outcome not in OUTCOMES:
+			frappe.throw(_("Invalid card status."), frappe.ValidationError)
+		doc.outcome = outcome
+		if outcome == "Lost":
+			doc.lost_reason = lost_reason or None
+			doc.lost_notes = lost_notes or None
 	doc.save()
 	row = frappe.get_list("CRM Deal", filters={"name": doc.name}, fields=_FIELDS)
 	return _card(row[0]) if row else None
+
+
+@frappe.whitelist(methods=["GET"])
+def lost_reasons():
+	"""Motivos de perda cadastrados no CRM (os mesmos da janela de motivo de perda do card)."""
+	return [
+		{"value": n, "label": _(n)}
+		for n in frappe.get_list("CRM Lost Reason", pluck="name", order_by="creation asc", limit_page_length=0)
+	]
