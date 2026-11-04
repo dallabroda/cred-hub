@@ -631,6 +631,31 @@ class TestCardTitles(IntegrationTestCase):
 		# a prévia não envia nada e o título em si está pronto
 		self.assertEqual(preview["problems"], [])
 
+	def test_address_set_from_the_contact_panel_also_counts(self):
+		"""O painel do Contato (campo nativo "address", restaurado no credtech#315) só define o Link direto,
+		sem Dynamic Link: _contact_address precisa achar o endereço dos dois jeitos."""
+		contact = self.partner("Socio Via Painel", "529.982.247-25", address=False)
+		address = frappe.get_doc(
+			{
+				"doctype": "Address",
+				"address_title": "Socio Via Painel",
+				"address_type": "Personal",
+				"address_line1": "Rua das Flores, 12",
+				"address_line2": "Centro",
+				"city": "Campinas",
+				"state": "SP",
+				"pincode": "13010-000",
+				"country": "Brazil",
+			}
+		).insert()
+		contact.address = address.name
+		contact.save()
+		deal = self.card()
+		preview = protest.preview_row(deal.name, deal.titles[0].name)
+		by_name = {c["name"]: c for c in preview["codebtors"]}
+		self.assertEqual(by_name["Socio Via Painel"]["missing"], [])
+		self.assertEqual(by_name["Socio Via Painel"]["address_from"], "contact")
+
 	def test_codebtors_only_go_when_the_operator_marks_them(self):
 		partner = self.partner("Socio Completo", "529.982.247-25")
 		deal = self.card()

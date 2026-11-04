@@ -20,8 +20,9 @@ CONTACT_FIELDS = [
 	{"fieldname": "last_enriched_at", "fieldtype": "Datetime", "label": "Localize query on", "read_only": 1},
 	{"fieldname": "assertiva_protocol", "fieldtype": "Data", "label": "Assertiva protocol", "length": 60, "read_only": 1},
 ]
-# Painel lateral do Contato
-CONTACT_PANEL_FIELDS = ["cpf", "has_whatsapp", "phone_assertiveness", "phone_carrier", "share_percentage", "last_enriched_at"]
+# Painel lateral do Contato. "address" é o campo nativo do Contact (Link > Address): a CENPROT exige o
+# endereço completo do codevedor para o protesto, e o operador precisa dele visível e editável aqui (credtech#315).
+CONTACT_PANEL_FIELDS = ["cpf", "has_whatsapp", "phone_assertiveness", "phone_carrier", "share_percentage", "last_enriched_at", "address"]
 
 DEAL_FIELDS = [
 	{"fieldname": "protest_section", "fieldtype": "Tab Break", "label": "Protest (CENPROT)"},

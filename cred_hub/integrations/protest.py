@@ -157,6 +157,22 @@ def create_collection_pipeline(settings):
 	return pipeline.name
 
 
+@frappe.whitelist()
+def collection_funnel_status() -> dict:
+	"""O que a tela de Políticas de Crédito & Compliance mostra sobre o funil de Cobrança (sem segredos da CENPROT)."""
+	frappe.only_for(["System Manager", "Sales Manager"])
+	settings = get_settings()
+	pipeline = settings.collection_pipeline
+	if pipeline and not frappe.db.exists("CRM Pipeline", pipeline):
+		pipeline = ""
+	return {
+		"enabled": bool(settings.cenprot_enabled),
+		"installed": bool(pipeline),
+		"pipeline": pipeline or "",
+		"stages": [_(stage[0]) for stage in COLLECTION_STAGES],
+	}
+
+
 # Título ------------------------------------------------------------------------------------------------------
 
 
@@ -190,11 +206,13 @@ def _address_party(address, neighborhood="", city="", state="") -> dict:
 
 
 def _contact_address(contact_name: str):
+	# Localize (credtech#290) cria o endereço com Dynamic Link pro contato; o painel do Contato
+	# (campo nativo "address", restaurado no credtech#315) só define o Link direto. Aceita os dois.
 	name = frappe.db.get_value(
 		"Dynamic Link",
 		{"link_doctype": "Contact", "link_name": contact_name, "parenttype": "Address"},
 		"parent",
-	)
+	) or frappe.db.get_value("Contact", contact_name, "address")
 	return frappe.get_doc("Address", name) if name else None
 
 
