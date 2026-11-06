@@ -20,6 +20,12 @@ def on_deal_update(doc, method=None):
 	if doc.status != settings["auto_trigger_stage"]:
 		return
 
+	# Proteção contra disparo acidental em funis de cobrança / recuperação
+	if doc.pipeline:
+		p_name = str(frappe.db.get_value("CRM Pipeline", doc.pipeline, "pipeline_name") or "").lower()
+		if any(w in p_name for w in ("collection", "cobrança", "cobranca", "recupera")):
+			return
+
 	# 1. Primeira Organização (Tomador / Devedor Principal)
 	if doc.organization and frappe.db.exists("CRM Organization", doc.organization):
 		org_cnpj = frappe.db.get_value("CRM Organization", doc.organization, "cnpj")
