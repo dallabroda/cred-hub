@@ -189,6 +189,10 @@ def _partner_restrictions(payload: Any) -> list[str]:
 
 def alerts(org, sections: list[dict[str, Any]], params: dict[str, Any]) -> list[str]:
 	"""Alertas da política calculados direto dos dados (sem IA): o mesmo dado dá sempre o mesmo alerta."""
+	if not getattr(frappe.flags, "in_test", False):
+		frappe.local.lang = "pt-BR"
+		if getattr(frappe.local, "job", None) is not None:
+			frappe.local.job.lang_resolved = True
 	out: list[str] = []
 	minimum = int(params.get("min_company_age_months") or 0)
 	age = _company_age_months(org)

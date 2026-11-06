@@ -174,6 +174,22 @@ KEY_LABELS = {
 	"pendenciafinanceira": "Pendência financeira",
 	"scoreentidades": "Scores da entidade",
 	"scoreentidade": "Score da entidade",
+	"ceis": "CEIS (Empresas Inidôneas e Suspensas)",
+	"cnep": "CNEP (Empresas Punidas)",
+	"certidao": "Certidão",
+	"certidao_codigo": "Código da certidão",
+	"conseguiu_emitir_certidao_negativa": "Certidão negativa emitida",
+	"consta": "Constam pendências",
+	"emissao_data": "Data de emissão",
+	"expedicao": "Expedição",
+	"normalizado_expedicao": "Expedição (normalizada)",
+	"normalizado_validade": "Validade (normalizada)",
+	"processos_encontrados": "Processos encontrados",
+	"total_de_processos": "Total de processos",
+	"validade": "Validade",
+	"validade_data": "Data de validade",
+	"documentos": "Documentos",
+	"site_receipt": "Comprovante da certidão",
 }
 
 # Palavras em português sem acento -> com acento, para o nome ficar legível quando o campo não está em KEY_LABELS

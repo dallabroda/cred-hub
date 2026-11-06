@@ -245,6 +245,9 @@ def run_job(
 	from cred_hub.credit_check import opinion as credit_opinion
 
 	try:
+		frappe.local.lang = "pt-BR"
+		if getattr(frappe.local, "job", None) is not None:
+			frappe.local.job.lang_resolved = True
 		settings_doc = frappe.get_single(SETTINGS)
 		current = status(organization_name, settings_doc)
 		enabled = {item["key"]: item for item in api._final_bureaus(settings_doc)}

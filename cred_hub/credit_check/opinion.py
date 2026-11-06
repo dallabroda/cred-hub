@@ -103,7 +103,7 @@ Regras obrigatórias:
 7. "result" é "Approve" (aprovar), "Approve with reservations" (aprovar com ressalvas) ou "Reject" (recusar), conforme a metodologia.
 8. "analysis" tem um item por tópico da metodologia (por exemplo, cada um dos 5 Cs), com a avaliação daquele tópico.
 9. "severity" de cada risco: "high", "medium" ou "low".
-10. Escreva em {language}, de forma clara e objetiva, para um analista de crédito. "summary" em até 6 frases."""
+10. Escreva OBRIGATORIAMENTE em {language} (pt-BR), de forma clara e objetiva, para um analista de crédito. Todos os textos ("summary", "topic", "assessment", "title", "detail" e "missing_data") devem estar 100% em português do Brasil — é proibido escrever qualquer frase, título ou tópico em inglês. "summary" em até 6 frases."""
 
 
 class OpinionInvalid(VertexInvalidOutput):
@@ -289,6 +289,9 @@ def build_input(
 ) -> tuple[dict[str, Any], dict[str, Any], list[str]]:
 	"""(dados enviados à IA, política em vigor, alertas da política). `as_of`: quando o parecer foi pedido, para o
 	prazo de reaproveitamento do pacote mínimo."""
+	frappe.local.lang = "pt-BR"
+	if getattr(frappe.local, "job", None) is not None:
+		frappe.local.job.lang_resolved = True
 	ctx = dossier.collect(organization_name)
 	org = frappe.get_doc(ORG, organization_name)
 	pol = policy_lib.current()
@@ -357,13 +360,16 @@ def build_input(
 
 def prompts(data: dict[str, Any], pol: dict[str, Any]) -> tuple[str, str, str]:
 	"""(instruções, mensagem com política e dados, JSON dos dados)."""
-	language = "português do Brasil" if (frappe.local.lang or "pt").lower().startswith("pt") else "English"
+	frappe.local.lang = "pt-BR"
+	if getattr(frappe.local, "job", None) is not None:
+		frappe.local.job.lang_resolved = True
+	language = "português do Brasil"
 	data_json = json.dumps(data, ensure_ascii=False, default=str)
 	if len(data_json) > MAX_INPUT_CHARS:
 		raise VertexError(_("The data for this opinion is too large ({0} characters).").format(len(data_json)))
 	user_text = (
 		f"<politica versao=\"{pol['version']}\">\n{pol['methodology']}\n</politica>\n\n"
-		f"<dados>\n{data_json}\n</dados>\n\nEscreva o parecer no formato pedido."
+		f"<dados>\n{data_json}\n</dados>\n\nEscreva o parecer no formato pedido, 100% em português do Brasil (pt-BR)."
 	)
 	return SYSTEM_PROMPT.replace("{language}", language), user_text, data_json
 
@@ -466,21 +472,28 @@ RESULT_LABELS = {
 SEVERITY_LABELS = {"high": "High risk", "medium": "Medium risk", "low": "Low risk"}
 
 PDF_CSS = """
-body { font-family: Arial, Helvetica, sans-serif; font-size: 10pt; color: #1a1a1a; }
-h1 { font-size: 17pt; margin: 0 0 2px; }
-h2 { font-size: 12pt; margin: 20px 0 6px; padding-bottom: 3px; border-bottom: 2px solid #6938ef; }
-.sub { color: #666; font-size: 9pt; margin-bottom: 10px; }
-.badge { display: inline-block; padding: 5px 14px; border-radius: 4px; color: #fff; font-weight: bold; font-size: 12pt; }
-.box { background: #f7f5ff; border: 1px solid #ddd3fd; padding: 8px 10px; margin: 8px 0; }
-.note { background: #fff7e0; border: 1px solid #f0d78c; padding: 6px 8px; margin: 8px 0; font-size: 9pt; }
-.item { margin: 0 0 9px; }
-.item .t { font-weight: bold; }
-.item .src { color: #555; font-size: 8.5pt; }
+@page { size: A4; margin: 10mm 12mm; }
+body { font-family: Arial, Helvetica, sans-serif; font-size: 8.8pt; color: #1e293b; line-height: 1.38; margin: 0; }
+.header-banner { background: #1e1b4b; color: #ffffff; padding: 10px 14px; border-radius: 6px; margin-bottom: 8px; }
+.header-banner h1 { font-size: 14pt; margin: 0 0 2px; color: #ffffff; }
+.header-banner .sub { color: #cbd5e1; font-size: 8.8pt; margin-bottom: 6px; }
+h2 { font-size: 10pt; margin: 10px 0 4px; padding: 3px 8px; background: #f1f5f9; border-left: 3px solid #4f46e5; color: #0f172a; page-break-after: avoid; }
+.badge { display: inline-block; padding: 4px 12px; border-radius: 4px; color: #fff; font-weight: bold; font-size: 9.5pt; }
+.box { background: #f8fafc; border: 1px solid #cbd5e1; border-left: 3px solid #6366f1; padding: 7px 10px; border-radius: 4px; margin: 4px 0 8px; font-size: 8.8pt; }
+.note { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; padding: 5px 8px; border-radius: 4px; margin: 6px 0; font-size: 8pt; }
+table { width: 100%; border-collapse: collapse; margin-bottom: 6px; }
+tr { page-break-inside: avoid; }
+th { background: #f8fafc; color: #334155; font-weight: bold; text-align: left; padding: 3px 6px; border: 1px solid #e2e8f0; font-size: 8pt; }
+td { padding: 4px 6px; vertical-align: top; border: 1px solid #e2e8f0; font-size: 8.3pt; }
+td.topic-col { width: 24%; font-weight: bold; background: #f8fafc; color: #1e1b4b; }
+.item { margin: 0 0 5px; padding: 4px 6px; border: 1px solid #e2e8f0; border-radius: 4px; page-break-inside: avoid; }
+.item .t { font-weight: bold; color: #0f172a; }
+.item .src { color: #64748b; font-size: 7.5pt; margin-top: 2px; }
 .warn { color: #b9770e; font-weight: bold; }
-.sev { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 8pt; color: #fff; margin-right: 4px; }
-.sev.high { background: #c0392b; } .sev.medium { background: #d68910; } .sev.low { background: #7f8c8d; }
-ul { margin: 4px 0 4px 18px; padding: 0; }
-.foot { margin-top: 22px; font-size: 8.5pt; color: #555; border-top: 1px solid #ccc; padding-top: 6px; }
+.sev { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 7.5pt; color: #fff; margin-right: 5px; font-weight: bold; }
+.sev.high { background: #c0392b; } .sev.medium { background: #d68910; } .sev.low { background: #64748b; }
+ul { margin: 3px 0 3px 16px; padding: 0; font-size: 8.2pt; }
+.foot { margin-top: 12px; font-size: 7.5pt; color: #64748b; border-top: 1px solid #cbd5e1; padding-top: 5px; }
 """
 
 
@@ -491,12 +504,17 @@ def _cited(item: dict[str, Any]) -> str:
 
 
 def build_pdf_html(doc, opinion: dict[str, Any], data: dict[str, Any], pol: dict[str, Any], alerts: list[str], generated_on: str) -> str:
+	frappe.local.lang = "pt-BR"
+	if getattr(frappe.local, "job", None) is not None:
+		frappe.local.job.lang_resolved = True
 	label, color = RESULT_LABELS[opinion["result"]]
 	company = data["company"]
 	parts = [f"<style>{PDF_CSS}</style>"]
+	parts.append('<div class="header-banner">')
 	parts.append(f"<h1>{escape(_('Credit opinion (recommendation)'))}</h1>")
-	parts.append(f'<div class="sub">{escape(_str(company["name"]))} · {escape(_str(company["cnpj"]))} · {escape(generated_on)}</div>')
+	parts.append(f'<div class="sub">{escape(_str(company["name"]))} · CNPJ {escape(_str(company["cnpj"]))} · {escape(generated_on)}</div>')
 	parts.append(f'<div><span class="badge" style="background:{color}">{escape(_(label))}</span></div>')
+	parts.append("</div>")
 	parts.append(
 		f'<div class="note">{escape(_("Recommendation written by AI from the query returns and the company credit policy. The decision belongs to the analyst."))}</div>'
 	)
@@ -504,8 +522,12 @@ def build_pdf_html(doc, opinion: dict[str, Any], data: dict[str, Any], pol: dict
 
 	if opinion["analysis"]:
 		parts.append(f"<h2>{escape(_('Analysis'))}</h2>")
+		parts.append("<table><thead><tr><th>Pilar / Tópico</th><th>Avaliação Técnica</th></tr></thead><tbody>")
 		for item in opinion["analysis"]:
-			parts.append(f'<div class="item"><div class="t">{escape(item["topic"])}</div><div>{escape(item["assessment"])}</div></div>')
+			parts.append(
+				f'<tr><td class="topic-col">{escape(item["topic"])}</td><td>{escape(item["assessment"])}</td></tr>'
+			)
+		parts.append("</tbody></table>")
 
 	parts.append(f"<h2>{escape(_('Risks'))}</h2>")
 	if not opinion["risks"]:
@@ -549,6 +571,9 @@ def build_pdf_html(doc, opinion: dict[str, Any], data: dict[str, Any], pol: dict
 
 def run(opinion_name: str) -> None:
 	"""Gera o parecer. Qualquer falha vira status 'Failed' com o motivo; o parecer que falha não conta no mês."""
+	frappe.local.lang = "pt-BR"
+	if getattr(frappe.local, "job", None) is not None:
+		frappe.local.job.lang_resolved = True
 	doc = frappe.get_doc(DOCTYPE, opinion_name)
 	if doc.status != "Queued":
 		return
@@ -566,6 +591,10 @@ def run(opinion_name: str) -> None:
 	try:
 		data, pol, alerts = build_input(doc.organization, doc.deal, as_of=doc.requested_on)
 		system, user_text, data_json = prompts(data, pol)
+		# Fecha qualquer transação de leitura antes da chamada externa longa ao Vertex AI para evitar erro 1020 no MariaDB
+		if not getattr(frappe.flags, "in_test", False):
+			frappe.db.commit()  # nosemgrep
+
 		client = vertex_client()
 		opinion = None
 		last_error: Exception | None = None
@@ -584,26 +613,18 @@ def run(opinion_name: str) -> None:
 			raise VertexError(_("The AI answered outside the expected format twice: {0}").format(last_error))
 		opinion["unverified_citations"] = verify_citations(opinion, data)
 
+		if not getattr(frappe.flags, "in_test", False):
+			frappe.db.commit()  # nosemgrep
+
 		generated_on = format_datetime(now_datetime())
 		from frappe.utils.file_manager import save_file
 		from frappe.utils.pdf import get_pdf
 
 		html = build_pdf_html(doc, opinion, data, pol, alerts, generated_on)
-		pdf = get_pdf(html, {"page-size": "A4", "margin-top": "12mm", "margin-bottom": "12mm"})
+		pdf = get_pdf(html, {"page-size": "A4", "margin-top": "10mm", "margin-bottom": "10mm", "margin-left": "12mm", "margin-right": "12mm"})
 		stamp = now_datetime().strftime("%Y%m%d-%H%M%S")
 		name = f"{FILE_PREFIX}{only_digits(data['company']['cnpj'] or '') or doc.organization}-{stamp}.pdf"
 		file_doc = save_file(name, pdf, ORG, doc.organization, is_private=1)
-		if doc.deal:
-			frappe.get_doc(
-				{
-					"doctype": "File",
-					"file_name": file_doc.file_name,
-					"file_url": file_doc.file_url,
-					"attached_to_doctype": "CRM Deal",
-					"attached_to_name": doc.deal,
-					"is_private": 1,
-				}
-			).insert(ignore_permissions=True)
 
 		charged = 0.0
 		if doc.is_extra:
@@ -614,6 +635,7 @@ def run(opinion_name: str) -> None:
 			except InsufficientCreditsError:
 				frappe.log_error(title=f"Cred Hub: saldo insuficiente na hora de cobrar o parecer extra {doc.name}")
 
+		doc.reload()
 		doc.update(
 			{
 				"status": "Done",
@@ -633,13 +655,45 @@ def run(opinion_name: str) -> None:
 			}
 		)
 		doc.save(ignore_permissions=True)
-		target = frappe.get_doc("CRM Deal", doc.deal) if doc.deal else frappe.get_doc(ORG, doc.organization)
-		target.add_comment(
-			"Comment",
-			_("Credit opinion (AI recommendation) generated: {0}. File: {1}").format(
-				_(RESULT_LABELS[opinion["result"]][0]), file_doc.file_name
-			),
+		if not getattr(frappe.flags, "in_test", False):
+			frappe.db.commit()  # nosemgrep
+
+		# Anexo e comentário no Card isolados para que lock concorrente em tabCRM Deal (1020) nunca reverta o parecer concluído
+		try:
+			if doc.deal and frappe.db.exists("CRM Deal", doc.deal):
+				frappe.get_doc(
+					{
+						"doctype": "File",
+						"file_name": file_doc.file_name,
+						"file_url": file_doc.file_url,
+						"attached_to_doctype": "CRM Deal",
+						"attached_to_name": doc.deal,
+						"is_private": 1,
+					}
+				).insert(ignore_permissions=True)
+				if not getattr(frappe.flags, "in_test", False):
+					frappe.db.commit()  # nosemgrep
+		except Exception:
+			if not getattr(frappe.flags, "in_test", False):
+				frappe.db.rollback()
+
+		comment_msg = _("Credit opinion (AI recommendation) generated: {0}. File: {1}").format(
+			_(RESULT_LABELS[opinion["result"]][0]), file_doc.file_name
 		)
+		for _retry in range(2):
+			try:
+				target = (
+					frappe.get_doc("CRM Deal", doc.deal)
+					if (doc.deal and frappe.db.exists("CRM Deal", doc.deal))
+					else frappe.get_doc(ORG, doc.organization)
+				)
+				target.add_comment("Comment", comment_msg)
+				if not getattr(frappe.flags, "in_test", False):
+					frappe.db.commit()  # nosemgrep
+				break
+			except Exception:
+				if not getattr(frappe.flags, "in_test", False):
+					frappe.db.rollback()
 	except (VertexError, VertexNotConfigured) as e:
 		_fail(doc, str(e), totals)
 	except Exception as e:  # noqa: BLE001 - qualquer falha deixa registro e nunca fica "Queued" para sempre
