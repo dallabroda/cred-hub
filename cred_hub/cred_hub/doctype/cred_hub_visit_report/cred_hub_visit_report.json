@@ -1,0 +1,159 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-11-05 16:30:00.000000",
+ "description": "Relatório de Visita Técnica / Comercial estruturado por Organização/Card.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "organization",
+  "deal",
+  "status",
+  "visit_type",
+  "visit_date",
+  "visitor_name",
+  "property_type",
+  "operational_status",
+  "inventory_level",
+  "employees_observed",
+  "recommendation",
+  "notes",
+  "photos_json",
+  "updated_by_user",
+  "updated_on_str"
+ ],
+ "fields": [
+  {
+   "fieldname": "organization",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Organization",
+   "options": "CRM Organization",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "deal",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Card",
+   "options": "CRM Deal",
+   "search_index": 1
+  },
+  {
+   "default": "not_done",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "not_done\nscheduled\ncompleted"
+  },
+  {
+   "default": "presencial",
+   "fieldname": "visit_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Visit Type",
+   "options": "presencial\nvideo\nterceirizada"
+  },
+  {
+   "fieldname": "visit_date",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Visit Date"
+  },
+  {
+   "fieldname": "visitor_name",
+   "fieldtype": "Data",
+   "label": "Visitor Name"
+  },
+  {
+   "default": "alugado",
+   "fieldname": "property_type",
+   "fieldtype": "Select",
+   "label": "Property Type",
+   "options": "proprio\nalugado\ncedido"
+  },
+  {
+   "default": "otimo",
+   "fieldname": "operational_status",
+   "fieldtype": "Select",
+   "label": "Operational Status",
+   "options": "otimo\nregular\nprecario\nincompativel"
+  },
+  {
+   "default": "normal",
+   "fieldname": "inventory_level",
+   "fieldtype": "Select",
+   "label": "Inventory Level",
+   "options": "alto\nnormal\nbaixo\nservicos"
+  },
+  {
+   "fieldname": "employees_observed",
+   "fieldtype": "Data",
+   "label": "Employees Observed"
+  },
+  {
+   "default": "favoravel",
+   "fieldname": "recommendation",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Recommendation",
+   "options": "favoravel\nressalvas\ndesfavoravel"
+  },
+  {
+   "fieldname": "notes",
+   "fieldtype": "Long Text",
+   "label": "Visit Notes"
+  },
+  {
+   "fieldname": "photos_json",
+   "fieldtype": "Long Text",
+   "label": "Photos (JSON)"
+  },
+  {
+   "fieldname": "updated_by_user",
+   "fieldtype": "Data",
+   "label": "Updated By"
+  },
+  {
+   "fieldname": "updated_on_str",
+   "fieldtype": "Data",
+   "label": "Updated On"
+  }
+ ],
+ "links": [],
+ "modified": "2026-11-05 16:30:00.000000",
+ "modified_by": "Administrator",
+ "module": "Cred Hub",
+ "name": "Cred Hub Visit Report",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "read": 1,
+   "role": "System Manager",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "read": 1,
+   "role": "Sales Manager",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "role": "Sales User",
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

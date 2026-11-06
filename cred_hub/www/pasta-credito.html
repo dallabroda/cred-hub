@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ title }}</title>
+<style>
+	:root {
+		--bg: #f5f5f7;
+		--card: #ffffff;
+		--fg: #111827;
+		--muted: #4b5563;
+		--subtle: #6b7280;
+		--border: #dcdde2;
+		--primary: #111827;
+		--primary-hover: #2a2b30;
+		--accent: #0070e0;
+		--ok: #1f7a3d;
+		--ok-bg: #e7f6ec;
+		--warn: #8a5a00;
+		--warn-bg: #fff4d6;
+		--err: #b42318;
+		--err-bg: #fef3f2;
+		--info: #0059b8;
+		--info-bg: #e5f1ff;
+	}
+	* { box-sizing: border-box; }
+	body {
+		margin: 0;
+		padding: 24px 16px 48px;
+		background: var(--bg);
+		color: var(--fg);
+		font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+	}
+	.container { max-width: 760px; margin: 0 auto; }
+	.card {
+		background: var(--card);
+		border: 1px solid var(--border);
+		border-radius: 12px;
+		padding: 24px;
+		margin-bottom: 16px;
+		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+	}
+	.header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+	.logo { max-height: 36px; width: auto; }
+	h1 { font-size: 22px; font-weight: 700; margin: 0 0 4px; color: var(--fg); }
+	h2 { font-size: 17px; font-weight: 600; margin: 0 0 8px; color: var(--fg); }
+	p { margin: 0 0 12px; color: var(--muted); }
+	.banner-lgpd {
+		background: var(--info-bg);
+		color: var(--info);
+		border: 1px solid #b3dbff;
+		border-radius: 8px;
+		padding: 12px 14px;
+		font-size: 13.5px;
+		margin-bottom: 16px;
+	}
+	.banner-error {
+		background: var(--err-bg);
+		color: var(--err);
+		border: 1px solid #fbd0cb;
+		border-radius: 8px;
+		padding: 12px 14px;
+		font-size: 14px;
+		margin-bottom: 16px;
+	}
+	.badge {
+		display: inline-flex;
+		align-items: center;
+		padding: 3px 10px;
+		border-radius: 999px;
+		font-size: 12.5px;
+		font-weight: 600;
+	}
+	.badge-ok { background: var(--ok-bg); color: var(--ok); }
+	.badge-info { background: var(--info-bg); color: var(--info); }
+	.badge-warn { background: var(--warn-bg); color: var(--warn); }
+	.badge-err { background: var(--err-bg); color: var(--err); }
+	.badge-gray { background: #e6e7eb; color: #374151; }
+	.input {
+		width: 100%;
+		height: 44px;
+		padding: 0 14px;
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		font-size: 15px;
+		color: var(--fg);
+		background: #fff;
+	}
+	.btn {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		gap: 6px;
+		height: 40px;
+		padding: 0 16px;
+		border-radius: 8px;
+		font-size: 14px;
+		font-weight: 600;
+		cursor: pointer;
+		border: 1px solid transparent;
+		background: var(--primary);
+		color: #fff;
+		text-decoration: none;
+	}
+	.btn:hover { background: var(--primary-hover); }
+	.btn:disabled { opacity: 0.55; cursor: not-allowed; }
+	.btn-outline {
+		background: #fff;
+		color: var(--fg);
+		border-color: var(--border);
+	}
+	.btn-outline:hover { background: #f3f4f6; }
+	.progress-wrap {
+		width: 100%;
+		height: 10px;
+		background: #e5e7eb;
+		border-radius: 999px;
+		overflow: hidden;
+		margin: 10px 0 6px;
+	}
+	.progress-bar {
+		height: 100%;
+		background: var(--ok);
+		transition: width 0.3s ease;
+	}
+	.doc-row {
+		border-top: 1px solid #e6e7eb;
+		padding: 16px 0;
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: space-between;
+		gap: 12px;
+	}
+	.doc-row:first-child { border-top: 0; padding-top: 4px; }
+	.doc-info { flex: 1; min-width: 240px; }
+	.doc-title { font-weight: 600; color: var(--fg); font-size: 15px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+	.doc-meta { font-size: 13px; color: var(--subtle); margin-top: 4px; }
+	.reject-box {
+		margin-top: 6px;
+		padding: 8px 10px;
+		background: var(--err-bg);
+		color: var(--err);
+		border-radius: 6px;
+		font-size: 13px;
+		font-weight: 500;
+	}
+	.hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="container">
+	<div class="card">
+		<div class="header">
+			<div>
+				<div style="font-size: 13px; font-weight: 600; color: var(--subtle); text-transform: uppercase; letter-spacing: 0.04em;">
+					{{ brand_name }} · Pasta Digital de Crédito
+				</div>
+				<h1 id="page-title">Envio Seguro de Documentos</h1>
+			</div>
+			{% if logo %}
+			<img src="{{ logo }}" alt="{{ brand_name }}" class="logo">
+			{% endif %}
+		</div>
+
+		<div class="banner-lgpd">
+			🔒 <strong>Caixa de Correio Blindada (Proteção LGPD):</strong> Para proteger o sigilo da sua empresa e dos sócios, este link permite <strong>apenas o envio</strong> de documentos. Nenhum arquivo enviado pode ser visualizado ou baixado por terceiros através deste link.
+		</div>
+
+		<div id="error-box" class="banner-error hidden"></div>
+
+		<!-- Etapa 1: Confirmação de CNPJ -->
+		<div id="step-cnpj" class="hidden" style="padding-top: 8px;">
+			<h2 id="company-welcome">Confirme o CNPJ da empresa</h2>
+			<p id="cnpj-hint-text">Digite o CNPJ da empresa para liberar a lista de envio de documentos.</p>
+			<form id="cnpj-form" style="display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px;">
+				<input type="text" id="cnpj-input" class="input" style="max-width: 280px;" placeholder="00.000.000/0001-00" required autofocus>
+				<button type="submit" class="btn" id="cnpj-submit">Confirmar e Acessar Pasta</button>
+			</form>
+		</div>
+
+		<!-- Etapa 2: Checklist de Envio -->
+		<div id="step-checklist" class="hidden">
+			<div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;">
+				<div>
+					<h2 id="checklist-company" style="margin-bottom: 2px;"></h2>
+					<div id="checklist-sub" style="font-size: 13px; color: var(--subtle);"></div>
+				</div>
+				<span id="summary-badge" class="badge badge-warn"></span>
+			</div>
+
+			<div class="progress-wrap">
+				<div id="progress-bar" class="progress-bar" style="width: 0%;"></div>
+			</div>
+
+			<div id="rejected-banner" class="banner-error hidden" style="margin-top: 12px;"></div>
+
+			<div id="doc-list" style="margin-top: 16px;"></div>
+		</div>
+	</div>
+
+	<!-- Card para envio de documento complementar extra pelo cliente/contador -->
+	<div id="extra-doc-card" class="card hidden">
+		<h2>+ Enviar Documento Complementar / Adicional</h2>
+		<p style="font-size: 13.5px;">Precisa enviar um documento extra que não está listado acima (ex.: extrato de outro banco, aditivo contratual, relação de notas fiscais)? Informe o nome abaixo e anexe o arquivo.</p>
+		<div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center;">
+			<input type="text" id="custom-label-input" class="input" style="flex: 1; min-width: 220px;" placeholder="Nome do documento (ex: Extrato Itaú Outubro)">
+			<input type="file" id="custom-file-input" class="hidden" accept=".pdf,.jpg,.jpeg,.png,.webp,.xlsx,.xls,.csv,.doc,.docx,.zip">
+			<button type="button" class="btn btn-outline" id="custom-upload-btn">📎 Escolher Arquivo e Enviar</button>
+		</div>
+	</div>
+</div>
+
+<script>
+(() => {
+	const TOKEN = {{ token | tojson }};
+	const CSRF = {{ csrf_token | tojson }};
+	let confirmedCnpj = "";
+
+	const errorBox = document.getElementById("error-box");
+	const stepCnpj = document.getElementById("step-cnpj");
+	const stepChecklist = document.getElementById("step-checklist");
+	const extraDocCard = document.getElementById("extra-doc-card");
+
+	function showError(msg) {
+		if (!msg) {
+			errorBox.classList.add("hidden");
+			errorBox.textContent = "";
+			return;
+		}
+		errorBox.textContent = msg;
+		errorBox.classList.remove("hidden");
+	}
+
+	async function callApi(method, body) {
+		const res = await fetch(`/api/method/cred_hub.credit_check.api.${method}`, {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+				"X-Frappe-CSRF-Token": CSRF || "Guest",
+			},
+			body: JSON.stringify(body || {}),
+		});
+		const data = await res.json();
+		if (!res.ok || data.exc) {
+			let msg = "Não foi possível processar a solicitação.";
+			if (data._server_messages) {
+				try {
+					const parsed = JSON.parse(data._server_messages);
+					msg = JSON.parse(parsed[0]).message || msg;
+				} catch (e) {}
+			} else if (data.message) {
+				msg = data.message;
+			}
+			throw new Error(msg);
+		}
+		return data.message;
+	}
+
+	function statusBadgeHtml(item) {
+		if (item.status === "verified") {
+			return '<span class="badge badge-ok">✓ Conferido e Aprovado</span>';
+		}
+		if (item.status === "attached") {
+			return '<span class="badge badge-info">📥 Recebido (em conferência)</span>';
+		}
+		if (item.status === "rejected") {
+			return '<span class="badge badge-err">⚠ Reenviar documento</span>';
+		}
+		return '<span class="badge badge-warn">Pendente de envio</span>';
+	}
+
+	function renderChecklist(data) {
+		stepCnpj.classList.add("hidden");
+		stepChecklist.classList.remove("hidden");
+		extraDocCard.classList.remove("hidden");
+
+		document.getElementById("checklist-company").textContent = data.company_name;
+		const s = data.summary;
+		document.getElementById("checklist-sub").textContent =
+			`${s.attached_count} de ${s.total} documentos enviados · ${s.verified_count} conferidos pela equipe`;
+
+		const badge = document.getElementById("summary-badge");
+		if (s.all_required_verified) {
+			badge.className = "badge badge-ok";
+			badge.textContent = "Obrigatórios Conferidos ✓";
+		} else {
+			badge.className = "badge badge-warn";
+			badge.textContent = `${s.required_verified_count}/${s.required_total} obrigatórios conferidos`;
+		}
+
+		const pct = s.total ? Math.round((s.attached_count / s.total) * 100) : 100;
+		document.getElementById("progress-bar").style.width = `${pct}%`;
+
+		const rejBanner = document.getElementById("rejected-banner");
+		const rejectedItems = data.checklist.filter((it) => it.status === "rejected");
+		if (rejectedItems.length > 0) {
+			rejBanner.innerHTML = `<strong>⚠ Substituição Solicitada (${rejectedItems.length}):</strong> A equipe de análise revisou os arquivos e solicitou o reenvio de <strong>${rejectedItems.map((it) => escapeHtml(it.label)).join(", ")}</strong>. Veja o motivo abaixo e clique em <em>Substituir arquivo</em>.`;
+			rejBanner.classList.remove("hidden");
+		} else {
+			rejBanner.classList.add("hidden");
+			rejBanner.innerHTML = "";
+		}
+
+		const listEl = document.getElementById("doc-list");
+		listEl.innerHTML = "";
+
+		const sortedChecklist = [...data.checklist].sort((a, b) => {
+			const weight = (st) => (st === "rejected" ? 0 : st === "pending" ? 1 : st === "attached" ? 2 : 3);
+			return weight(a.status) - weight(b.status);
+		});
+
+		sortedChecklist.forEach((item) => {
+			const row = document.createElement("div");
+			row.className = "doc-row";
+
+			const info = document.createElement("div");
+			info.className = "doc-info";
+
+			const title = document.createElement("div");
+			title.className = "doc-title";
+			let expiryBadge = "";
+			if (item.valid_until) {
+				if (item.is_expired) {
+					expiryBadge = `<span class="badge badge-err">⏰ Vencido em ${escapeHtml(item.valid_until)}</span>`;
+				} else if (item.expiring_soon) {
+					expiryBadge = `<span class="badge badge-warn">⏰ Vence em ${escapeHtml(item.valid_until)}</span>`;
+				} else {
+					expiryBadge = `<span class="badge badge-gray">📅 Validade: ${escapeHtml(item.valid_until)}</span>`;
+				}
+			}
+			title.innerHTML = `<span>${escapeHtml(item.label)}</span>
+				<span class="badge badge-gray">${escapeHtml(item.category)}</span>
+				${item.required ? '<span style="color: var(--err); font-size: 12px;">Obrigatório</span>' : ""}
+				${expiryBadge}`;
+			info.appendChild(title);
+
+			const meta = document.createElement("div");
+			meta.className = "doc-meta";
+			if (item.status === "verified") {
+				meta.textContent = `Documento conferido e bloqueado para alterações (${item.updated_on || "OK"}).`;
+			} else if (item.has_file) {
+				meta.textContent = `Arquivo recebido em ${item.updated_on || "hoje"} (protegido contra download).`;
+			} else {
+				meta.textContent = "Aguardando envio do arquivo (PDF, imagem ou planilha até 15 MB).";
+			}
+			info.appendChild(meta);
+
+			if (item.rejection_reason) {
+				const rej = document.createElement("div");
+				rej.className = "reject-box";
+				rej.textContent = `Motivo para reenvio: ${item.rejection_reason}`;
+				info.appendChild(rej);
+			}
+
+			const actions = document.createElement("div");
+			actions.style = "display: flex; align-items: center; gap: 8px; flex-wrap: wrap;";
+			actions.innerHTML = statusBadgeHtml(item);
+
+			if (!item.locked) {
+				const expiryInput = document.createElement("input");
+				expiryInput.type = "date";
+				expiryInput.className = "input";
+				expiryInput.style = "width: 145px; padding: 6px 8px; font-size: 12.5px;";
+				expiryInput.title = "Data de vencimento do documento (se aplicável)";
+				expiryInput.value = item.valid_until || "";
+
+				const fileInput = document.createElement("input");
+				fileInput.type = "file";
+				fileInput.className = "hidden";
+				fileInput.accept = ".pdf,.jpg,.jpeg,.png,.webp,.xlsx,.xls,.csv,.doc,.docx,.zip";
+
+				const btn = document.createElement("button");
+				btn.type = "button";
+				btn.className = item.has_file ? "btn btn-outline" : "btn";
+				btn.textContent = item.has_file ? "Substituir arquivo" : "📎 Enviar arquivo";
+				btn.addEventListener("click", () => fileInput.click());
+
+				fileInput.addEventListener("change", async () => {
+					const file = fileInput.files && fileInput.files[0];
+					if (!file) return;
+					btn.disabled = true;
+					btn.textContent = "Enviando...";
+					showError("");
+					try {
+						const b64 = await toBase64(file);
+						const updated = await callApi("public_upload_document", {
+							token: TOKEN,
+							cnpj: confirmedCnpj,
+							item_key: item.key,
+							file_name: file.name,
+							file_content_base64: b64,
+							valid_until: expiryInput.value || "",
+						});
+						renderChecklist(updated);
+					} catch (err) {
+						showError(err.message);
+						btn.disabled = false;
+						btn.textContent = item.has_file ? "Substituir arquivo" : "📎 Enviar arquivo";
+					}
+				});
+
+				const expiryWrap = document.createElement("label");
+				expiryWrap.style = "display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; color: var(--subtle);";
+				expiryWrap.innerHTML = "<span>Vencimento (opc.):</span>";
+				expiryWrap.appendChild(expiryInput);
+
+				actions.appendChild(expiryWrap);
+				actions.appendChild(fileInput);
+				actions.appendChild(btn);
+			}
+
+			row.appendChild(info);
+			row.appendChild(actions);
+			listEl.appendChild(row);
+		});
+	}
+
+	function escapeHtml(str) {
+		const d = document.createElement("div");
+		d.textContent = str || "";
+		return d.innerHTML;
+	}
+
+	function toBase64(file) {
+		return new Promise((resolve, reject) => {
+			const reader = new FileReader();
+			reader.onload = () => resolve(reader.result);
+			reader.onerror = reject;
+			reader.readAsDataURL(file);
+		});
+	}
+
+	// Envio de documento complementar
+	const customBtn = document.getElementById("custom-upload-btn");
+	const customFile = document.getElementById("custom-file-input");
+	const customLabel = document.getElementById("custom-label-input");
+
+	customBtn.addEventListener("click", () => {
+		if (!customLabel.value.trim()) {
+			showError("Digite primeiro o nome do documento complementar que deseja enviar.");
+			customLabel.focus();
+			return;
+		}
+		customFile.click();
+	});
+
+	customFile.addEventListener("change", async () => {
+		const file = customFile.files && customFile.files[0];
+		if (!file) return;
+		customBtn.disabled = true;
+		customBtn.textContent = "Enviando...";
+		showError("");
+		try {
+			const b64 = await toBase64(file);
+			const updated = await callApi("public_upload_document", {
+				token: TOKEN,
+				cnpj: confirmedCnpj,
+				item_key: "__custom__",
+				custom_label: customLabel.value.trim(),
+				file_name: file.name,
+				file_content_base64: b64,
+			});
+			customLabel.value = "";
+			customFile.value = "";
+			renderChecklist(updated);
+		} catch (err) {
+			showError(err.message);
+		} finally {
+			customBtn.disabled = false;
+			customBtn.textContent = "📎 Escolher Arquivo e Enviar";
+		}
+	});
+
+	document.getElementById("cnpj-form").addEventListener("submit", async (e) => {
+		e.preventDefault();
+		const val = document.getElementById("cnpj-input").value.trim();
+		const btn = document.getElementById("cnpj-submit");
+		btn.disabled = true;
+		showError("");
+		try {
+			const data = await callApi("public_verify_and_list", { token: TOKEN, cnpj: val });
+			confirmedCnpj = val;
+			renderChecklist(data);
+		} catch (err) {
+			showError(err.message);
+		} finally {
+			btn.disabled = false;
+		}
+	});
+
+	async function init() {
+		if (!TOKEN) {
+			showError("Link incompleto: nenhum código de acesso informado.");
+			return;
+		}
+		try {
+			const info = await callApi("public_get_portal_info", { token: TOKEN });
+			document.getElementById("company-welcome").textContent =
+				`Pasta Digital · ${info.company_name}`;
+			if (info.requires_cnpj) {
+				document.getElementById("cnpj-hint-text").textContent =
+					`Para segurança dos dados, digite o CNPJ completo da empresa (${info.cnpj_hint}) para acessar a lista de envio.`;
+				stepCnpj.classList.remove("hidden");
+			} else {
+				const data = await callApi("public_verify_and_list", { token: TOKEN, cnpj: "" });
+				renderChecklist(data);
+			}
+		} catch (err) {
+			showError(err.message);
+		}
+	}
+
+	init();
+})();
+</script>
+</body>
+</html>

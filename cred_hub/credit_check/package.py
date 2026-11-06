@@ -82,7 +82,12 @@ def save(items: Any, reuse_days: Any) -> dict[str, Any]:
 	if days < 0 or days > MAX_REUSE_DAYS:
 		frappe.throw(_("Queries can be reused for at most {0} days.").format(MAX_REUSE_DAYS))
 	ordered = [item for item in allowed if item in items]
-	frappe.db.set_single_value(SETTINGS, FIELD, json.dumps({"items": ordered, "reuse_days": days}))
+	frappe.db.set_single_value(
+		SETTINGS,
+		FIELD,
+		json.dumps({"items": ordered, "reuse_days": days}),
+		update_modified=False,
+	)
 	return config()
 
 

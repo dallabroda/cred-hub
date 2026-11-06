@@ -28,6 +28,7 @@ from cred_hub.credit_check import opinion as credit_opinion
 from cred_hub.credit_check import package as credit_package
 from cred_hub.credit_check import policy as credit_policy
 from cred_hub.credit_check import partners as partners_lib
+from cred_hub.credit_check import onboarding as credit_onboarding
 from cred_hub.credit_check import template as credit_template
 from cred_hub.credit_check.premium_bureaus import PREMIUM_BUREAUS
 from cred_hub.credit_check.rules import pre_filter_needs_acknowledgement
@@ -800,3 +801,409 @@ def generate_credit_package(
 		"opinion": opinion_name,
 		"opinion_skipped": opinion_skipped,
 	}
+
+@frappe.whitelist()
+def get_checklist_template() -> dict[str, Any]:
+	"""Modelo do checklist de documentos de crédito (Pasta Digital) configurado na empresa."""
+	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
+	return credit_onboarding.get_checklist_template()
+
+
+@frappe.whitelist()
+def save_checklist_template(items: Any) -> dict[str, Any]:
+	"""Salva o modelo de checklist de documentos de crédito. Só administradores."""
+	frappe.only_for("System Manager")
+	return credit_onboarding.save_checklist_template(items)
+
+
+def _onboarding_context(
+	deal_name: str | None = None,
+	organization_name: str | None = None,
+	organization: str | None = None,
+	deal: str | None = None,
+) -> dict[str, Any]:
+	"""Resolve a Organização e opcionalmente o Card para operações da Pasta Digital e Relatório de Visita."""
+	resolved_deal = deal_name or deal
+	resolved_org = organization_name or organization
+	if not resolved_deal and not resolved_org:
+		frappe.throw(_("Inform a deal or an organization."))
+	_check_deal_and_org_permission(resolved_deal, resolved_org)
+
+	deal_doc = frappe.get_doc("CRM Deal", resolved_deal) if resolved_deal else None
+	if deal_doc and not resolved_org:
+		resolved_org = deal_doc.organization
+	if not resolved_org or not frappe.db.exists("CRM Organization", resolved_org):
+		frappe.throw(_("Organization not found."))
+
+	return {
+		"deal": deal_doc,
+		"organization": resolved_org,
+	}
+
+
+@frappe.whitelist()
+def get_credit_onboarding(
+	organization_name: str | None = None,
+	deal_name: str | None = None,
+	organization: str | None = None,
+	deal: str | None = None,
+) -> dict[str, Any]:
+	"""Checklist de documentos (Pasta Digital) e Relatório de Visita Técnica/Comercial da empresa."""
+	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
+	ctx = _onboarding_context(deal_name, organization_name, organization, deal)
+	return credit_onboarding.get_onboarding(ctx["organization"], ctx["deal"].name if ctx["deal"] else None)
+
+
+@frappe.whitelist()
+def update_checklist_item(
+	organization_name: str | None = None,
+	item_key: str = "",
+	status: str | None = None,
+	file_url: str | None = None,
+	file_name: str | None = None,
+	notes: str | None = None,
+	deal_name: str | None = None,
+	organization: str | None = None,
+	deal: str | None = None,
+	valid_until: str | None = None,
+) -> dict[str, Any]:
+	"""Anexa arquivo, define vencimento (se aplicável), dá check (Conferido) ou registra pendência/rejeição em um documento do checklist."""
+	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
+	ctx = _onboarding_context(deal_name, organization_name, organization, deal)
+	return credit_onboarding.update_checklist_item(
+		organization_name=ctx["organization"],
+		item_key=item_key,
+		status=status,
+		file_url=file_url,
+		file_name=file_name,
+		notes=notes,
+		deal_name=ctx["deal"].name if ctx["deal"] else None,
+		valid_until=valid_until,
+	)
+
+
+@frappe.whitelist()
+def update_credit_checklist_item(
+	organization_name: str | None = None,
+	item_key: str = "",
+	status: str | None = None,
+	file_url: str | None = None,
+	file_name: str | None = None,
+	notes: str | None = None,
+	deal_name: str | None = None,
+	organization: str | None = None,
+	deal: str | None = None,
+	valid_until: str | None = None,
+) -> dict[str, Any]:
+	"""Alias REST para update_checklist_item."""
+	return update_checklist_item(
+		organization_name=organization_name,
+		item_key=item_key,
+		status=status,
+		file_url=file_url,
+		file_name=file_name,
+		notes=notes,
+		deal_name=deal_name,
+		organization=organization,
+		deal=deal,
+		valid_until=valid_until,
+	)
+
+
+@frappe.whitelist()
+def save_visit_report(
+	organization_name: str | None = None,
+	visit_data: Any = None,
+	deal_name: str | None = None,
+	organization: str | None = None,
+	deal: str | None = None,
+) -> dict[str, Any]:
+	"""Salva o Relatório de Visita Técnica / Comercial (in loco ou remota) com fotos e parecer do visitador."""
+	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
+	ctx = _onboarding_context(deal_name, organization_name, organization, deal)
+	return credit_onboarding.save_visit_report(
+		organization_name=ctx["organization"],
+		visit_data=visit_data,
+		deal_name=ctx["deal"].name if ctx["deal"] else None,
+	)
+
+
+@frappe.whitelist()
+def save_credit_visit_report(
+	organization_name: str | None = None,
+	visit_data: Any = None,
+	deal_name: str | None = None,
+	organization: str | None = None,
+	deal: str | None = None,
+) -> dict[str, Any]:
+	"""Alias REST para save_visit_report."""
+	return save_visit_report(
+		organization_name=organization_name,
+		visit_data=visit_data,
+		deal_name=deal_name,
+		organization=organization,
+		deal=deal,
+	)
+
+
+@frappe.whitelist()
+def add_custom_checklist_item(
+	organization_name: str | None = None,
+	label: str = "",
+	category: str = "Específico",
+	required: bool = True,
+	deal_name: str | None = None,
+	organization: str | None = None,
+	deal: str | None = None,
+) -> dict[str, Any]:
+	"""Adiciona um documento específico avulso ao checklist desta empresa/card."""
+	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
+	ctx = _onboarding_context(deal_name, organization_name, organization, deal)
+	return credit_onboarding.add_custom_checklist_item(
+		organization_name=ctx["organization"],
+		label=label,
+		category=category,
+		required=_truthy(required),
+		deal_name=ctx["deal"].name if ctx["deal"] else None,
+	)
+
+
+@frappe.whitelist()
+def remove_custom_checklist_item(
+	organization_name: str | None = None,
+	item_key: str = "",
+	deal_name: str | None = None,
+	organization: str | None = None,
+	deal: str | None = None,
+) -> dict[str, Any]:
+	"""Remove um documento específico avulso do checklist desta empresa/card."""
+	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
+	ctx = _onboarding_context(deal_name, organization_name, organization, deal)
+	return credit_onboarding.remove_custom_checklist_item(
+		organization_name=ctx["organization"],
+		item_key=item_key,
+		deal_name=ctx["deal"].name if ctx["deal"] else None,
+	)
+
+
+@frappe.whitelist()
+def generate_portal_link(
+	organization_name: str | None = None,
+	deal_name: str | None = None,
+	regenerate: bool = False,
+	organization: str | None = None,
+	deal: str | None = None,
+) -> dict[str, Any]:
+	"""Gera (ou regenera) o Link Externo Blindado da Pasta Digital para o cliente/contador enviar documentos."""
+	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
+	ctx = _onboarding_context(deal_name, organization_name, organization, deal)
+	return credit_onboarding.generate_portal_link(
+		organization_name=ctx["organization"],
+		deal_name=ctx["deal"].name if ctx["deal"] else None,
+		regenerate=_truthy(regenerate),
+	)
+
+
+@frappe.whitelist()
+def create_onboarding_portal_link(
+	organization_name: str | None = None,
+	deal_name: str | None = None,
+	regenerate: bool = False,
+	organization: str | None = None,
+	deal: str | None = None,
+) -> dict[str, Any]:
+	"""Alias REST para generate_portal_link."""
+	return generate_portal_link(
+		organization_name=organization_name,
+		deal_name=deal_name,
+		regenerate=regenerate,
+		organization=organization,
+		deal=deal,
+	)
+
+
+@frappe.whitelist()
+def revoke_portal_link(
+	organization_name: str | None = None,
+	deal_name: str | None = None,
+	organization: str | None = None,
+	deal: str | None = None,
+) -> dict[str, Any]:
+	"""Revoga imediatamente o Link Externo da Pasta Digital."""
+	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
+	ctx = _onboarding_context(deal_name, organization_name, organization, deal)
+	return credit_onboarding.revoke_portal_link(
+		organization_name=ctx["organization"],
+		deal_name=ctx["deal"].name if ctx["deal"] else None,
+	)
+
+
+@frappe.whitelist()
+def check_deal(
+	deal_name: str | None = None,
+	organization_name: str | None = None,
+	force: bool = False,
+	deal: str | None = None,
+	organization: str | None = None,
+) -> dict[str, Any]:
+	"""Alias REST para trigger_check."""
+	return trigger_check(
+		deal_name=deal_name or deal,
+		organization_name=organization_name or organization,
+		force=force,
+	)
+
+
+@frappe.whitelist(allow_guest=True)
+def public_get_portal_info(token: str) -> dict[str, Any]:
+	"""Metadados mínimos do Link Externo antes da confirmação do CNPJ (não expõe documentos nem arquivos)."""
+	return credit_onboarding.public_get_portal_info(token)
+
+
+@frappe.whitelist(allow_guest=True)
+def public_verify_and_list(token: str, cnpj: str = "") -> dict[str, Any]:
+	"""Valida o CNPJ e retorna a lista de documentos em modo Caixa de Correio Blindada (sem URLs de download)."""
+	return credit_onboarding.public_verify_and_list(token, cnpj)
+
+
+@frappe.whitelist(allow_guest=True)
+def public_upload_document(
+	token: str,
+	cnpj: str,
+	item_key: str,
+	file_name: str,
+	file_content_base64: str,
+	custom_label: str = "",
+	valid_until: str = "",
+) -> dict[str, Any]:
+	"""Recebe um documento enviado pelo cliente no Link Externo Blindado e salva como arquivo privado no HubTech."""
+	return credit_onboarding.public_upload_document(
+		token=token,
+		cnpj=cnpj,
+		item_key=item_key,
+		file_name=file_name,
+		file_content_base64=file_content_base64,
+		custom_label=custom_label,
+		valid_until=valid_until,
+	)
+
+
+@frappe.whitelist()
+def analyze_checklist_document(
+	organization_name: str | None = None,
+	item_key: str = "",
+	deal_name: str | None = None,
+	organization: str | None = None,
+	deal: str | None = None,
+) -> dict[str, Any]:
+	"""Executa a leitura inteligente (OCR/Parser) de um documento anexado na Pasta Digital e atualiza o resumo extraído."""
+	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
+	ctx = _onboarding_context(deal_name, organization_name, organization, deal)
+	org_name = ctx["organization"]
+	deal_id = ctx["deal"].name if ctx["deal"] else None
+	state = credit_onboarding._load_org_state(org_name)
+	checklist_state = state.get("checklist") if isinstance(state.get("checklist"), dict) else {}
+	entry = checklist_state.get(item_key) if isinstance(checklist_state.get(item_key), dict) else {}
+	file_url = str(entry.get("file_url") or "").strip()
+	file_name = str(entry.get("file_name") or "").strip()
+	if not file_url:
+		frappe.throw(_("Attach a file to this checklist document before running smart extraction."))
+	from cred_hub.credit_check.committee import extract_document_insights
+
+	extracted = extract_document_insights(
+		organization_name=org_name,
+		item_key=item_key,
+		file_url=file_url,
+		file_name=file_name,
+	)
+	entry["extracted_data"] = extracted
+	checklist_state[item_key] = entry
+	state["checklist"] = checklist_state
+	credit_onboarding._save_org_state(org_name, state, deal_name=deal_id)
+	return credit_onboarding.get_onboarding(org_name, deal_id)
+
+
+@frappe.whitelist()
+def get_credit_committee(
+	organization_name: str | None = None,
+	deal_name: str | None = None,
+	organization: str | None = None,
+	deal: str | None = None,
+) -> dict[str, Any]:
+	"""Retorna o Rating Interno (AA–E), Calculadora de Limite Sugerido, Grupo Econômico e Mesa de Comitê de Crédito."""
+	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
+	ctx = _onboarding_context(deal_name, organization_name, organization, deal)
+	from cred_hub.credit_check.committee import get_committee_state
+
+	return get_committee_state(ctx["organization"], ctx["deal"].name if ctx["deal"] else None)
+
+
+@frappe.whitelist()
+def save_committee_proposal(
+	organization_name: str | None = None,
+	deal_name: str | None = None,
+	proposed_limit: float = 0,
+	proposed_concentration: float = 0,
+	required_quorum: int = 1,
+	validity_days: int = 180,
+	conditions_notes: str = "",
+	organization: str | None = None,
+	deal: str | None = None,
+) -> dict[str, Any]:
+	"""Salva a proposta de limite/alçada, quórum exigido e condicionantes na Mesa de Comitê de Crédito."""
+	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
+	ctx = _onboarding_context(deal_name, organization_name, organization, deal)
+	from cred_hub.credit_check.committee import save_committee_proposal as _save_proposal
+
+	_save_proposal(
+		organization_name=ctx["organization"],
+		deal_name=ctx["deal"].name if ctx["deal"] else None,
+		proposed_limit=proposed_limit,
+		proposed_concentration=proposed_concentration,
+		required_quorum=required_quorum,
+		validity_days=validity_days,
+		conditions_notes=conditions_notes,
+	)
+	return credit_onboarding.get_onboarding(ctx["organization"], ctx["deal"].name if ctx["deal"] else None)
+
+
+@frappe.whitelist()
+def cast_committee_vote(
+	organization_name: str | None = None,
+	deal_name: str | None = None,
+	vote: str = "approve",
+	voted_limit: float | None = None,
+	notes: str = "",
+	organization: str | None = None,
+	deal: str | None = None,
+) -> dict[str, Any]:
+	"""Registra o voto auditável do membro de alçada na Mesa de Comitê de Crédito."""
+	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
+	ctx = _onboarding_context(deal_name, organization_name, organization, deal)
+	from cred_hub.credit_check.committee import cast_committee_vote as _cast_vote
+
+	_cast_vote(
+		organization_name=ctx["organization"],
+		deal_name=ctx["deal"].name if ctx["deal"] else None,
+		vote=vote,
+		voted_limit=voted_limit,
+		notes=notes,
+	)
+	return credit_onboarding.get_onboarding(ctx["organization"], ctx["deal"].name if ctx["deal"] else None)
+
+
+@frappe.whitelist()
+def get_whatsapp_onboarding_reminder(
+	organization_name: str | None = None,
+	deal_name: str | None = None,
+	organization: str | None = None,
+	deal: str | None = None,
+) -> dict[str, Any]:
+	"""Gera a mensagem pronta e telefone para cobrar documentos pendentes/recusados/vencidos via WhatsApp."""
+	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
+	ctx = _onboarding_context(deal_name, organization_name, organization, deal)
+	from cred_hub.credit_check.committee import build_whatsapp_onboarding_reminder
+
+	return build_whatsapp_onboarding_reminder(ctx["organization"], ctx["deal"].name if ctx["deal"] else None)
+
+

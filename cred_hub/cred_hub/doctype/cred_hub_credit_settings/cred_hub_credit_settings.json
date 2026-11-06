@@ -45,7 +45,12 @@
   "section_opinion",
   "allow_paid_extra_opinions",
   "section_package",
-  "dossier_package_json"
+  "dossier_package_json",
+  "credit_checklist_template_json",
+  "section_stage_gate",
+  "enforce_checklist_on_stage_gate",
+  "require_verified_checklist_on_committee",
+  "enforce_dossier_on_committee"
  ],
  "fields": [
   {
@@ -60,7 +65,7 @@
    "label": "Etapa 0 — Sanções CEIS/CNEP (Portal da Transparência / CGU, grátis)"
   },
   {
-   "default": "0",
+   "default": "1",
    "description": "Roda antes de tudo, de graça — credencial da CredTech, sem nada pra você configurar aqui. Se achar sanção e 'Reprovar' estiver marcado, nem chama os provedores pagos abaixo — economiza o custo inteiro da consulta.",
    "fieldname": "cgu_enabled",
    "fieldtype": "Check",
@@ -311,11 +316,45 @@
    "fieldtype": "Long Text",
    "hidden": 1,
    "label": "Pacote mínimo (JSON)"
+  },
+  {
+   "description": "Modelo de checklist de documentos exigidos na pasta de crédito (JSON).",
+   "fieldname": "credit_checklist_template_json",
+   "fieldtype": "Long Text",
+   "hidden": 1,
+   "label": "Checklist de documentos (JSON)"
+  },
+  {
+   "fieldname": "section_stage_gate",
+   "fieldtype": "Section Break",
+   "label": "Travas de Governança no Funil (Stage Gate)"
+  },
+  {
+   "default": "0",
+   "description": "Impede avançar o Card para Análise, Comitê ou Crédito Concedido se faltarem documentos obrigatórios na Pasta Digital.",
+   "fieldname": "enforce_checklist_on_stage_gate",
+   "fieldtype": "Check",
+   "label": "Exigir documentos obrigatórios da Pasta Digital antes de Análise / Comitê"
+  },
+  {
+   "default": "0",
+   "depends_on": "eval:doc.enforce_checklist_on_stage_gate",
+   "description": "Exige que os documentos obrigatórios estejam com check de Conferido (Verified) pela mesa de crédito antes de avançar para Comitê / Crédito Concedido.",
+   "fieldname": "require_verified_checklist_on_committee",
+   "fieldtype": "Check",
+   "label": "Exigir conferência (Verified) dos documentos antes do Comitê"
+  },
+  {
+   "default": "0",
+   "description": "Impede avançar o Card para Comitê ou Crédito Concedido sem um Dossiê / Relatório de Crédito gerado.",
+   "fieldname": "enforce_dossier_on_committee",
+   "fieldtype": "Check",
+   "label": "Exigir Dossiê de Crédito gerado antes do Comitê"
   }
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-11-02 22:00:00.000000",
+ "modified": "2026-11-05 16:30:00.000000",
  "modified_by": "Administrator",
  "module": "Cred Hub",
  "name": "Cred Hub Credit Settings",

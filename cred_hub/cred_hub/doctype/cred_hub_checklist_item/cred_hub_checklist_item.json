@@ -1,0 +1,158 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-11-05 16:30:00.000000",
+ "description": "Item relacional da Pasta Digital de Crédito por Organização/Card.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "organization",
+  "deal",
+  "item_key",
+  "label",
+  "category",
+  "required",
+  "is_custom",
+  "status",
+  "file_url",
+  "file_name",
+  "valid_until",
+  "extracted_summary_json",
+  "notes",
+  "updated_by_user",
+  "updated_on_str"
+ ],
+ "fields": [
+  {
+   "fieldname": "organization",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Organization",
+   "options": "CRM Organization",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "deal",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Card",
+   "options": "CRM Deal",
+   "search_index": 1
+  },
+  {
+   "fieldname": "item_key",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Document Key",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "label",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Document Label",
+   "reqd": 1
+  },
+  {
+   "default": "Geral",
+   "fieldname": "category",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Category"
+  },
+  {
+   "default": "1",
+   "fieldname": "required",
+   "fieldtype": "Check",
+   "label": "Required"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_custom",
+   "fieldtype": "Check",
+   "label": "Is Custom Document"
+  },
+  {
+   "default": "pending",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "pending\nattached\nverified\nrejected",
+   "search_index": 1
+  },
+  {
+   "fieldname": "file_url",
+   "fieldtype": "Data",
+   "label": "File URL",
+   "length": 500
+  },
+  {
+   "fieldname": "file_name",
+   "fieldtype": "Data",
+   "label": "File Name",
+   "length": 255
+  },
+  {
+   "fieldname": "valid_until",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Valid Until (if applicable)"
+  },
+  {
+   "fieldname": "extracted_summary_json",
+   "fieldtype": "Long Text",
+   "label": "Extracted Summary JSON (AI)"
+  },
+  {
+   "fieldname": "notes",
+   "fieldtype": "Small Text",
+   "label": "Notes / Rejection Reason"
+  },
+  {
+   "fieldname": "updated_by_user",
+   "fieldtype": "Data",
+   "label": "Updated By"
+  },
+  {
+   "fieldname": "updated_on_str",
+   "fieldtype": "Data",
+   "label": "Updated On"
+  }
+ ],
+ "links": [],
+ "modified": "2026-11-05 16:30:00.000000",
+ "modified_by": "Administrator",
+ "module": "Cred Hub",
+ "name": "Cred Hub Checklist Item",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "read": 1,
+   "role": "System Manager",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "read": 1,
+   "role": "Sales Manager",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "role": "Sales User",
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

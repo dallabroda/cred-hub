@@ -32,6 +32,7 @@ from frappe.utils import cint, flt, format_datetime, now_datetime
 from cred_hub.billing import InsufficientCreditsError, spend_credits, wallet_balance
 from cred_hub.cnpj.mapping import only_digits
 from cred_hub.credit_check import dossier
+from cred_hub.credit_check import onboarding as onboarding_lib
 from cred_hub.credit_check import package as package_lib
 from cred_hub.credit_check import policy as policy_lib
 from cred_hub.credit_check.clients.vertex import (
@@ -337,6 +338,7 @@ def build_input(
 		},
 		"policy_alerts": alerts,
 		"minimum_package": package_lib.for_ai(organization_name, as_of=as_of),
+		"onboarding": onboarding_lib.for_ai(organization_name),
 		"queries": [
 			{
 				"provider": section["provider"],

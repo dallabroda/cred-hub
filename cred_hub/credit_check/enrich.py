@@ -25,7 +25,7 @@ from frappe import _
 from frappe.utils import add_days, today
 
 from cred_hub.cnpj.mapping import format_cnpj, is_valid_cnpj, only_digits
-from cred_hub.credit_check.clients.cgu import CGUError, fetch_ceis_cnep
+from cred_hub.credit_check.clients.cgu import CGUError, fetch_ceis_cnep, fetch_ceis_cnep_open_data
 from cred_hub.credit_check.clients.directd import (
 	fetch_fgts_regularidade,
 	fetch_lawsuits_directd,
@@ -270,18 +270,21 @@ def run_background_check(
 	# O retorno inteiro de cada chamada, como o provedor devolveu (credtech#316): o dossiê mostra tudo
 	raw_responses: list[dict[str, Any]] = []
 	skip_paid_providers = False
-	if settings.get("cgu_enabled"):
+	if settings.get("cgu_enabled", True):
 		try:
 			cgu_api_key = platform_cgu_api_key()
 			with capture() as calls:
 				cgu_data = fetch_ceis_cnep(digits, cgu_api_key)
 			raw_responses.extend(calls)
-			if cgu_data.get("sanctioned") and settings.get("block_on_ceis_cnep", False):
-				skip_paid_providers = True
-		except PlatformCredentialNotConfigured as e:
-			frappe.log_error(title="Cred Hub: CGU sem credencial de plataforma", message=str(e))
-		except CGUError as e:
-			frappe.log_error(title=f"Cred Hub: CGU CEIS/CNEP falhou para CNPJ {cnpj}", message=str(e))
+		except (PlatformCredentialNotConfigured, CGUError):
+			try:
+				with capture() as calls:
+					cgu_data = fetch_ceis_cnep_open_data(digits)
+				raw_responses.extend(calls)
+			except CGUError as e:
+				frappe.log_error(title=f"Cred Hub: CGU CEIS/CNEP falhou para CNPJ {cnpj}", message=str(e))
+		if cgu_data and cgu_data.get("sanctioned") and settings.get("block_on_ceis_cnep", False):
+			skip_paid_providers = True
 
 	# Chamada aos provedores externos habilitados — cada um isolado, sem fail-open
 	providers = _build_providers(settings)
@@ -293,8 +296,8 @@ def run_background_check(
 	# provedores na conta dele. A CredTech não cobra nada (client_total_cost fica 0).
 	total_cost = 0.0
 
-	if not enabled_providers and not skip_paid_providers and not failures:
-		failures.append(_("no provider is enabled in Credit & Legal Bureaus settings"))
+	if not enabled_providers and not skip_paid_providers and not failures and cgu_data is None:
+		failures.append(_("nenhum provedor de triagem habilitado em Políticas de Crédito & Compliance"))
 	else:
 		for provider in enabled_providers:
 			if not provider.token.strip():
@@ -340,12 +343,24 @@ def run_background_check(
 	# Um parecer 'Error' nunca fica em cache: a próxima tentativa deve consultar de novo
 	valid_until_date = today_date if verdict == VERDICT_ERROR else add_days(today_date, CACHE_DAYS)
 
-	if verdict == VERDICT_ERROR:
+	lawsuits_checked = bool(settings.get("escavador_enabled") or settings.get("directd_enabled")) and not skip_paid_providers and verdict != VERDICT_ERROR
+	infosimples_checked = bool(settings.get("infosimples_enabled")) and not skip_paid_providers and verdict != VERDICT_ERROR
+	protests_checked = bool(settings.get("infosimples_enabled") or settings.get("directd_enabled")) and not skip_paid_providers and verdict != VERDICT_ERROR
+	fgts_checked = bool(settings.get("directd_enabled") and settings.get("directd_fgts_enabled")) and not skip_paid_providers and verdict != VERDICT_ERROR
+
+	if not infosimples_checked:
 		pgfn_status = "Não verificado"
 	elif (metrics.get("pgfn_debt") or 0.0) > 0:
 		pgfn_status = "Inscrito na Dívida Ativa"
 	else:
 		pgfn_status = "Regular"
+
+	fgts_status_val = (metrics.get("fgts_status") or "Regular") if fgts_checked else "Não verificado"
+	cnd_fed_val = metrics.get("cnd_federal_status", "Regular") if infosimples_checked else "Não verificado"
+	cndt_val = metrics.get("cndt_status", "Regular") if infosimples_checked else "Não verificado"
+
+	if not enabled_providers and cgu_data is not None and verdict == "Pre-Approved":
+		summary = "Sanções CEIS/CNEP verificadas no Portal da Transparência/CGU (nenhuma sanção encontrada). Para consultar Processos, PGFN, Protestos e FGTS nesta triagem, habilite Escavador, Infosimples ou DirectD em Políticas de Crédito & Compliance."
 
 	report_doc = frappe.get_doc({
 		"doctype": "Cred Hub Credit Report",
@@ -364,13 +379,13 @@ def run_background_check(
 		"has_bankruptcy_recovery": 1 if metrics.get("has_bankruptcy") else 0,
 		"pgfn_status": pgfn_status,
 		"pgfn_total_debt": metrics.get("pgfn_debt") or 0.0,
-		"cnd_federal_status": metrics.get("cnd_federal_status", "Regular"),
+		"cnd_federal_status": cnd_fed_val,
 		"cnd_federal_pdf_url": metrics.get("cnd_federal_pdf", ""),
-		"cndt_status": metrics.get("cndt_status", "Regular"),
+		"cndt_status": cndt_val,
 		"cndt_pdf_url": metrics.get("cndt_pdf", ""),
 		"cenprot_has_protests": 1 if metrics.get("cenprot_has_protest") else 0,
 		"cenprot_protests_count": metrics.get("cenprot_protests_count") or 0,
-		"fgts_status": metrics.get("fgts_status") or "Regular",
+		"fgts_status": fgts_status_val,
 		"sintegra_situacao_cadastral": results["directd_sintegra"].get("situacao_cadastral") or "",
 		"total_cost": total_cost,
 		"client_total_cost": 0.0,
@@ -385,6 +400,7 @@ def run_background_check(
 				"directd_fgts": results["directd_fgts"],
 				"directd_sintegra": results["directd_sintegra"],
 				"failures": failures,
+				"checked_sources": {"cgu": cgu_data is not None, "lawsuits": lawsuits_checked, "pgfn": infosimples_checked, "protests": protests_checked, "fgts": fgts_checked},
 				"raw_responses": raw_responses,
 			},
 			ensure_ascii=False,

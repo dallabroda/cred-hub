@@ -1,0 +1,188 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-11-05 18:10:00.000000",
+ "description": "Proposta estruturada de Limite, Condicionantes, Alçadas e Votos da Mesa de Comitê de Crédito.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "organization",
+  "deal",
+  "status",
+  "internal_rating",
+  "internal_score",
+  "requested_limit",
+  "suggested_limit",
+  "recommended_limit",
+  "approved_limit",
+  "max_sacado_concentration",
+  "interest_rate_monthly",
+  "max_term_days",
+  "limit_valid_until",
+  "required_tier",
+  "required_votes",
+  "covenants_json",
+  "votes_json",
+  "committee_notes",
+  "decided_on",
+  "decided_by"
+ ],
+ "fields": [
+  {
+   "fieldname": "organization",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Organization",
+   "options": "CRM Organization",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "deal",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Card",
+   "options": "CRM Deal",
+   "search_index": 1
+  },
+  {
+   "default": "Draft",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Draft\nIn Voting\nApproved\nApproved with Reservations\nRejected",
+   "search_index": 1
+  },
+  {
+   "fieldname": "internal_rating",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Internal Rating"
+  },
+  {
+   "default": "0",
+   "fieldname": "internal_score",
+   "fieldtype": "Int",
+   "label": "Internal Score (0-1000)"
+  },
+  {
+   "default": "0",
+   "fieldname": "requested_limit",
+   "fieldtype": "Currency",
+   "label": "Requested Limit"
+  },
+  {
+   "default": "0",
+   "fieldname": "suggested_limit",
+   "fieldtype": "Currency",
+   "label": "Policy Suggested Limit"
+  },
+  {
+   "default": "0",
+   "fieldname": "recommended_limit",
+   "fieldtype": "Currency",
+   "label": "Analyst Recommended Limit"
+  },
+  {
+   "default": "0",
+   "fieldname": "approved_limit",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Committee Approved Limit"
+  },
+  {
+   "default": "0",
+   "fieldname": "max_sacado_concentration",
+   "fieldtype": "Currency",
+   "label": "Max Concentration per Sacado"
+  },
+  {
+   "default": "0",
+   "fieldname": "interest_rate_monthly",
+   "fieldtype": "Float",
+   "label": "Monthly Rate / Factor (%)"
+  },
+  {
+   "default": "0",
+   "fieldname": "max_term_days",
+   "fieldtype": "Int",
+   "label": "Max Term (Days)"
+  },
+  {
+   "fieldname": "limit_valid_until",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Limit Valid Until"
+  },
+  {
+   "fieldname": "required_tier",
+   "fieldtype": "Data",
+   "label": "Required Approval Tier"
+  },
+  {
+   "default": "1",
+   "fieldname": "required_votes",
+   "fieldtype": "Int",
+   "label": "Required Votes"
+  },
+  {
+   "fieldname": "covenants_json",
+   "fieldtype": "Long Text",
+   "label": "Covenants & Guarantees JSON"
+  },
+  {
+   "fieldname": "votes_json",
+   "fieldtype": "Long Text",
+   "label": "Audit Votes JSON"
+  },
+  {
+   "fieldname": "committee_notes",
+   "fieldtype": "Small Text",
+   "label": "Committee Notes / Conditions"
+  },
+  {
+   "fieldname": "decided_on",
+   "fieldtype": "Datetime",
+   "label": "Decided On"
+  },
+  {
+   "fieldname": "decided_by",
+   "fieldtype": "Data",
+   "label": "Decided By"
+  }
+ ],
+ "links": [],
+ "modified": "2026-11-05 18:10:00.000000",
+ "modified_by": "Administrator",
+ "module": "Cred Hub",
+ "name": "Cred Hub Credit Committee",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "read": 1,
+   "role": "System Manager",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "read": 1,
+   "role": "Sales Manager",
+   "write": 1
+  },
+  {
+   "create": 1,
+   "read": 1,
+   "role": "Sales User",
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

@@ -18,6 +18,7 @@ estiver mal configurada, o campo fica "não verificado" — nunca trava o resto 
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import requests
@@ -100,4 +101,83 @@ def fetch_ceis_cnep(cnpj: str, api_key: str, base_url: str = DEFAULT_BASE_URL, t
 		"cnep_count": len(cnep),
 		"sanctions": sanctions,
 		"raw": {"ceis": ceis, "cnep": cnep},
+	}
+
+
+def fetch_ceis_cnep_open_data(cnpj: str, timeout: int = DEFAULT_TIMEOUT) -> dict[str, Any]:
+	"""Fallback oficial sem necessidade de chave de API: consulta a base diária de Dados Abertos da CGU
+	(https://dadosabertos-download.cgu.gov.br/PortalDaTransparencia/saida/{ceis|cnep}/{YYYYMMDD}_{CEIS|CNEP}.zip),
+	mantendo índice compacto em disco (/tmp) por 24h para resposta instantânea (< 1ms após o download diário)."""
+	import csv
+	import datetime
+	import io
+	import json
+	import tempfile
+	import zipfile
+
+	digits = only_digits(cnpj)
+	if not digits or len(digits) != 14:
+		raise ValueError(f"CNPJ inválido para consulta CEIS/CNEP: {cnpj}")
+
+	today_utc = datetime.datetime.now(datetime.timezone.utc).date()
+	cache_dir = Path(tempfile.gettempdir())
+	cache_file = cache_dir / f"cred_hub_cgu_open_data_{today_utc.strftime('%Y%m%d')}.json"
+
+	index: dict[str, dict[str, list[dict[str, Any]]]] | None = None
+	if cache_file.exists():
+		try:
+			index = json.loads(cache_file.read_text(encoding="utf-8"))
+		except Exception:
+			index = None
+
+	if index is None:
+		index = {"ceis": {}, "cnep": {}}
+		for kind in ("ceis", "cnep"):
+			loaded = False
+			for delta in range(0, 6):
+				d = (today_utc - datetime.timedelta(days=delta)).strftime("%Y%m%d")
+				url = f"https://dadosabertos-download.cgu.gov.br/PortalDaTransparencia/saida/{kind}/{d}_{kind.upper()}.zip"
+				try:
+					r = requests.get(url, timeout=timeout, headers={"User-Agent": "Mozilla/5.0"})
+					if r.status_code != 200:
+						continue
+					z = zipfile.ZipFile(io.BytesIO(r.content))
+					with z.open(z.namelist()[0]) as raw_csv:
+						text_stream = io.TextIOWrapper(raw_csv, encoding="latin-1", errors="replace")
+						reader = csv.DictReader(text_stream, delimiter=";")
+						for row in reader:
+							doc_digits = only_digits(row.get("CPF OU CNPJ DO SANCIONADO") or "")
+							if len(doc_digits) != 14:
+								continue
+							item = {
+								"tipo": (row.get("CATEGORIA DA SANÇÃO") or "").strip(),
+								"orgao": (row.get("ÓRGÃO SANCIONADOR") or "").strip(),
+								"data_inicio": (row.get("DATA INÍCIO SANÇÃO") or "").strip(),
+								"data_fim": (row.get("DATA FINAL SANÇÃO") or "").strip(),
+								"texto_publicacao": (row.get("PUBLICAÇÃO") or "").strip(),
+								"link_publicacao": "",
+								"numero_processo": (row.get("NÚMERO DO PROCESSO") or "").strip().strip("'"),
+							}
+							index[kind].setdefault(doc_digits, []).append(item)
+					loaded = True
+					break
+				except Exception:
+					continue
+			if not loaded:
+				raise CGUError(f"Não foi possível baixar a base pública {kind.upper()} do Portal da Transparência.")
+		try:
+			cache_file.write_text(json.dumps(index, ensure_ascii=False), encoding="utf-8")
+		except Exception:
+			pass
+
+	ceis_list = index.get("ceis", {}).get(digits, [])
+	cnep_list = index.get("cnep", {}).get(digits, [])
+	sanctions = ceis_list + cnep_list
+	record("Portal da Transparência (Dados Abertos CGU)", "ceis_cnep", {"ceis": ceis_list, "cnep": cnep_list})
+	return {
+		"sanctioned": bool(sanctions),
+		"ceis_count": len(ceis_list),
+		"cnep_count": len(cnep_list),
+		"sanctions": sanctions,
+		"raw": {"ceis": ceis_list, "cnep": cnep_list, "source": "dadosabertos-download.cgu.gov.br"},
 	}
