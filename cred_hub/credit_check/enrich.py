@@ -310,6 +310,19 @@ def run_background_check(
 
 	# Chamada aos provedores externos habilitados — cada um isolado, sem fail-open
 	org_uf = str(org_doc.get("state") or "").strip()
+	if not org_uf or len(org_uf) != 2:
+		# Fallback: tentar obter UF da Receita Federal (OpenCNPJ/BrasilAPI) sem custo
+		try:
+			from cred_hub.cnpj.client import fetch as fetch_cnpj_data
+
+			cnpj_info = fetch_cnpj_data(digits)
+			rec_uf = str(cnpj_info.get("state") or cnpj_info.get("uf") or "").strip().upper()
+			if len(rec_uf) == 2:
+				org_uf = rec_uf
+				frappe.db.set_value("CRM Organization", org_doc.name, "state", rec_uf, update_modified=False)
+		except Exception:
+			pass
+
 	providers = _build_providers(settings, org_uf=org_uf, tier_1_only=bool(tier_1_only))
 	enabled_providers = [] if skip_paid_providers else [p for p in providers if p.enabled]
 

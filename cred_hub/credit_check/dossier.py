@@ -518,6 +518,16 @@ def _render_lawsuits_section(node: dict[str, Any]) -> str:
 
 def _render_scr_section(node: dict[str, Any]) -> str:
 	"""Renderização executiva compacta para SCR Analítico - Resumo BACEN."""
+	msg = node.get("mensagem") or node.get("message") or ""
+	status_code = str(node.get("codigo") or node.get("status") or "")
+	if "autoriza" in msg.lower() or "termo" in msg.lower() or status_code in ("403", "401", "sem_autorizacao"):
+		return (
+			'<div class="alert alert-warning" style="margin: 8px 0; padding: 10px 14px; background: #FFF4D6; border: 1px solid #E6D499; border-radius: 6px; color: #8A5A00; font-size: 13px;">'
+			'<strong>⚠️ SCR BACEN Pendente de Consentimento:</strong> '
+			'Esta consulta exige Termo de Consentimento / Autorização BACEN assinado pela empresa para liberação dos dados pelo Banco Central.'
+			'</div>'
+		)
+
 	cart = node.get("carteiraCredito") or {}
 	ind = node.get("indice") or {}
 	p_cat = node.get("percentualCategoria") or {}

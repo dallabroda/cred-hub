@@ -861,6 +861,17 @@ def get_dossier_package_status(
 		selected_contacts=contacts_list,
 		items_override=items_override,
 	)
+	deal_amount = 0.0
+	if ctx["deal"]:
+		deal_amount = flt(
+			ctx["deal"].get("deal_value")
+			or ctx["deal"].get("amount")
+			or ctx["deal"].get("annual_revenue")
+			or 0.0
+		)
+	elif organization_name and frappe.db.exists("CRM Organization", organization_name):
+		deal_amount = flt(frappe.db.get_value("CRM Organization", organization_name, "annual_revenue") or 0.0)
+
 	return {
 		**current,
 		"verdict": ctx["verdict"],
@@ -869,6 +880,7 @@ def get_dossier_package_status(
 		"can_run_queries": True,  # qualquer usuário gera o dossiê, com as consultas pagas do pacote (dono, 02/11/2026)
 		"running": is_job_enqueued(credit_package.job_id(ctx["organization"])),
 		"opinion": credit_opinion.status(),
+		"deal_amount": deal_amount,
 	}
 
 
