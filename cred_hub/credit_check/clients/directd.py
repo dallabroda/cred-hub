@@ -152,60 +152,106 @@ def merge_protest_sources(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any
 
 
 def parse_directd_processos_payload(payload: dict[str, Any], digits: str) -> dict[str, Any]:
-	"""Converte o retorno de ProcessosJudiciaisSimplificada para o mesmo formato usado pelo
-	cliente do Escavador (total_count, defendant_count, highest_value, has_bankruptcy_recovery,
-	critical_lawsuits), para reaproveitar as regras de risco já existentes em rules.py."""
+	"""Converte o retorno de ProcessosJudiciaisSimplificada ou ProcessosJudiciaisCompleta para o
+	mesmo formato usado pelo cliente do Escavador (total_count, defendant_count, highest_value,
+	has_bankruptcy_recovery, critical_lawsuits), separando Polo Passivo confirmado de Polo Ativo
+	e de vínculos fracos por homônimo (`origemDocumento == 'AGREGADO'`)."""
 	retorno = payload.get("retorno") or {}
 	processos = retorno.get("processos") or []
 
 	defendant_count = 0
 	plaintiff_count = 0
 	other_count = 0
+	homonym_suspect_count = 0
+	penhoras_count = 0
 	has_bankruptcy = False
+	has_penhoras = False
 	highest_value = 0.0
+	defendant_total_value = 0.0
 	critical_lawsuits: list[dict[str, Any]] = []
 
 	for item in processos:
 		numero = item.get("numeroProcesso") or ""
-		classe = item.get("classe") or ""
-		assunto = item.get("assuntoPrincipal") or ""
-		full_text = f"{classe} {assunto}"
-		status = item.get("status") or ""
-		tribunal = item.get("tribunal") or ""
-		valor = float(item.get("valorAcao") or 0.0)
+		classificacao = item.get("classificacao")
+		classe = item.get("classe") or (classificacao.get("descricao") if isinstance(classificacao, dict) else "") or ""
+		assuntos_list = item.get("assuntos") or []
+		assuntos_str = ", ".join(
+			(a.get("assunto") or "") for a in assuntos_list if isinstance(a, dict) and a.get("assunto")
+		)
+		assunto = item.get("assuntoPrincipal") or assuntos_str or ""
+		area_direito = item.get("areaDireito") or ""
+		full_text = f"{area_direito} {classe} {assunto}".strip()
+
+		detalhes_status = item.get("detalhesStatusProcesso") or {}
+		status = item.get("status") or detalhes_status.get("statusDetalhes") or ""
+		orgao = item.get("orgaoJulgador") or {}
+		tribunal = item.get("tribunal") or (orgao.get("tribunal") if isinstance(orgao, dict) else "") or ""
+		valor_raw = item.get("valorProcesso") if item.get("valorProcesso") is not None else item.get("valorAcao")
+		valor = _to_float(valor_raw)
+
+		penhoras = detalhes_status.get("penhoras") or []
+		if penhoras:
+			has_penhoras = True
+			penhoras_count += len(penhoras)
 
 		partes = item.get("partes") or []
-		is_defendant = any((p.get("polo") or "").upper() in ("PASSIVO", "REU", "EXECUTADO") and p.get("documento") == digits for p in partes)
-		is_plaintiff = any((p.get("polo") or "").upper() in ("ATIVO", "AUTOR", "EXEQUENTE") and p.get("documento") == digits for p in partes)
+		matched_parties = [
+			p for p in partes if isinstance(p, dict) and only_digits(str(p.get("documento") or "")) == digits
+		]
+		is_homonym_suspect = bool(
+			matched_parties
+			and all((p.get("origemDocumento") or "").upper() == "AGREGADO" for p in matched_parties)
+		)
+
+		is_defendant = any(
+			(p.get("polo") or p.get("posicaoProcessual") or "").upper()
+			in ("PASSIVO", "REU", "RÉU", "EXECUTADO", "RECLAMADO", "EXECUTADA", "RECLAMADA")
+			for p in matched_parties
+		)
+		is_plaintiff = any(
+			(p.get("polo") or p.get("posicaoProcessual") or "").upper()
+			in ("ATIVO", "AUTOR", "AUTORA", "EXEQUENTE", "RECLAMANTE")
+			for p in matched_parties
+		)
 		if not partes:
-			# Sem identificação de partes: trata como indeterminado (nunca assume favorável)
 			is_defendant = False
 			is_plaintiff = False
 
-		if is_defendant:
+		if is_homonym_suspect:
+			homonym_suspect_count += 1
+			other_count += 1
+		elif is_defendant:
 			defendant_count += 1
+			defendant_total_value += valor
+			if valor > highest_value:
+				highest_value = valor
 		elif is_plaintiff:
 			plaintiff_count += 1
 		else:
 			other_count += 1
+			if not partes and valor > highest_value:
+				highest_value = valor
 
-		is_bankruptcy = bool(RE_BANKRUPTCY.search(full_text))
+		is_bankruptcy = bool(RE_BANKRUPTCY.search(full_text)) and not is_homonym_suspect and not is_plaintiff
 		if is_bankruptcy:
 			has_bankruptcy = True
 		is_execution = bool(RE_EXECUTION.search(full_text))
 
-		if valor > highest_value:
-			highest_value = valor
-
-		if is_bankruptcy or (is_defendant and is_execution) or (is_defendant and valor >= 10000.0):
+		if (
+			is_bankruptcy
+			or (is_defendant and not is_homonym_suspect and (is_execution or valor >= 10000.0 or bool(penhoras)))
+		):
 			critical_lawsuits.append({
 				"numero_cnj": numero,
-				"titulo": assunto,
+				"titulo": assunto or classe,
 				"polo": "PASSIVO" if is_defendant else "OUTRO",
 				"tribunal": tribunal,
+				"area_direito": area_direito,
 				"assunto": assunto,
 				"is_bankruptcy": is_bankruptcy,
 				"is_execution": is_execution,
+				"has_penhora": bool(penhoras),
+				"penhoras_count": len(penhoras),
 				"valor": valor,
 				"status": status,
 			})
@@ -214,10 +260,14 @@ def parse_directd_processos_payload(payload: dict[str, Any], digits: str) -> dic
 		"cnpj": digits,
 		"total_count": retorno.get("totalProcessos") or len(processos),
 		"defendant_count": defendant_count,
+		"defendant_total_value": defendant_total_value,
 		"plaintiff_count": plaintiff_count,
 		"other_count": other_count,
+		"homonym_suspect_count": homonym_suspect_count,
 		"highest_value": highest_value,
 		"has_bankruptcy_recovery": has_bankruptcy,
+		"has_penhoras": has_penhoras,
+		"penhoras_count": penhoras_count,
 		"critical_lawsuits": critical_lawsuits,
 		"items_analyzed": len(processos),
 		"raw_envolvido": {},
@@ -234,6 +284,18 @@ def fetch_lawsuits_directd(cnpj: str, token: str, base_url: str = DEFAULT_BASE_U
 	return parse_directd_processos_payload(data, digits)
 
 
+def fetch_processos_completa(documento: str, token: str, base_url: str = DEFAULT_BASE_URL, timeout: int = DEFAULT_TIMEOUT) -> dict[str, Any]:
+	"""Processos Judiciais - Completa (R$ 3,30/consulta, PF ou PJ). Inclui órgão julgador,
+	classificação, assuntos, origemDocumento (TRIBUNAL vs AGREGADO), julgamentos e penhoras."""
+	params = _cpf_ou_cnpj_params(documento)
+	digits = only_digits(documento)
+
+	data = _request_directd("ProcessosJudiciaisCompleta", params, token, base_url, timeout)
+	parsed = parse_directd_processos_payload(data, digits)
+	parsed["raw"] = data.get("retorno") or {}
+	return parsed
+
+
 def fetch_fgts_regularidade(cnpj: str, token: str, base_url: str = DEFAULT_BASE_URL, timeout: int = DEFAULT_TIMEOUT) -> dict[str, Any]:
 	"""FGTS - Regularidade do Empregador (automático, R$ 0,36/consulta)."""
 	digits = only_digits(cnpj)
@@ -242,29 +304,59 @@ def fetch_fgts_regularidade(cnpj: str, token: str, base_url: str = DEFAULT_BASE_
 
 	data = _get_directd("CaixaRegularidadeEmpregadorFGTS", digits, token, base_url, timeout)
 	retorno = data.get("retorno") or {}
-	irregular = bool(retorno.get("flagIrregularidade") or retorno.get("irregular"))
+	status_str = str(retorno.get("status") or "")
+	irregular = bool(
+		retorno.get("possuiIrregularidade")
+		or retorno.get("flagIrregularidade")
+		or retorno.get("irregular")
+		or ("IRREGULAR" in status_str.upper())
+	)
 
 	return {
 		"is_regular": not irregular,
-		"status": retorno.get("status") or ("Irregular" if irregular else "Regular"),
+		"status": status_str or ("Irregular" if irregular else "Regular"),
 		"certificado_numero": retorno.get("numeroCertificado") or retorno.get("numeroCRF") or "",
+		"periodo_validade": retorno.get("periodoValidade") or {},
 		"raw": retorno,
 	}
 
 
-def fetch_sintegra_ccc(cnpj: str, token: str, base_url: str = DEFAULT_BASE_URL, timeout: int = DEFAULT_TIMEOUT) -> dict[str, Any]:
-	"""Sintegra/CCC - Cadastro de Contribuintes do ICMS (automático, R$ 1,80/consulta)."""
+def fetch_sintegra_ccc(
+	cnpj: str,
+	token: str,
+	uf: str = "",
+	base_url: str = DEFAULT_BASE_URL,
+	timeout: int = DEFAULT_TIMEOUT,
+) -> dict[str, Any]:
+	"""Sintegra/CCC - Cadastro Centralizado de Contribuinte (R$ 0,36/consulta quando UF informada via
+	/api/SintegraCCC; fallback para SintegraCCC-Completa caso UF não seja passada)."""
 	digits = only_digits(cnpj)
 	if not digits or len(digits) != 14:
 		raise ValueError(f"CNPJ inválido para consulta Sintegra/CCC: {cnpj}")
 
-	data = _get_directd("SintegraCCC-Completa", digits, token, base_url, timeout)
+	clean_uf = (uf or "").strip().upper()
+	if len(clean_uf) == 2:
+		data = _request_directd("SintegraCCC", {"CNPJ": digits, "Uf": clean_uf}, token, base_url, timeout)
+	else:
+		data = _get_directd("SintegraCCC-Completa", digits, token, base_url, timeout)
 	retorno = data.get("retorno") or {}
-	inscricoes = retorno.get("listaInscricoesEstaduaisSintegra") or retorno.get("inscricoesEstaduais") or []
+	inscricoes = retorno.get("inscricoesEstaduais") or retorno.get("listaInscricoesEstaduaisSintegra") or []
 
 	return {
-		"situacao_cadastral": retorno.get("situacaoCadastral") or "",
-		"situacao_cnpj": retorno.get("situacaoCnpj") or retorno.get("situacaoDoCnpj") or "",
+		"situacao_cadastral": (
+			retorno.get("situacaoCadastral")
+			or retorno.get("situacaoContribuinteNaData")
+			or retorno.get("situacaoCNPJ")
+			or retorno.get("situacaoCnpj")
+			or ""
+		),
+		"situacao_cnpj": (
+			retorno.get("situacaoCNPJ")
+			or retorno.get("situacaoCnpj")
+			or retorno.get("situacaoDoCnpj")
+			or ""
+		),
+		"regime_apuracao": retorno.get("regimeApuracao") or "",
 		"inscricoes_estaduais": inscricoes,
 		"raw": retorno,
 	}
@@ -317,6 +409,94 @@ def fetch_boa_vista_risco_pj(cnpj: str, token: str, base_url: str = DEFAULT_BASE
 	}
 
 
+def fetch_boa_vista_acerta_pf(
+	cpf: str, token: str, base_url: str = DEFAULT_BASE_URL, timeout: int = DEFAULT_TIMEOUT
+) -> dict[str, Any]:
+	"""Boa Vista - Acerta Completo Positivo PF (bureau pago sob demanda para sócios/PF, R$ 14,03/consulta)."""
+	digits = only_digits(cpf)
+	if not digits or len(digits) != 11:
+		raise ValueError(f"CPF inválido para consulta Boa Vista Acerta Completo Positivo PF: {cpf}")
+
+	data = _request_directd("BoaVistaAcertaCompletoPositivoPF", {"CPF": digits}, token, base_url, timeout)
+	retorno = data.get("retorno") or {}
+	ident = retorno.get("identificacaoBasica") or {}
+
+	scores_list = (retorno.get("scores") or {}).get("ocorrencias") or []
+	score_block = (scores_list[0] if scores_list and isinstance(scores_list[0], dict) else None) or retorno.get("score") or {}
+
+	debitos_resumo = (retorno.get("debitos") or {}).get("resumo") or {}
+	pendencias = retorno.get("pendenciasFinanceiras") or debitos_resumo or {}
+	protestos = retorno.get("protestos") or {}
+	cheque_bacen = retorno.get("chequeSemFundoBacen") or retorno.get("chequesSemFundoBacen") or {}
+	cheque_varejo = retorno.get("chequeSemFundoVarejo") or retorno.get("chequesSemFundoVarejo") or {}
+	acoes = retorno.get("acoesCiveis") or {}
+	falencias = retorno.get("falenciasAcoesRecuperacoes") or retorno.get("falenciasRecuperacoesJudiciais") or {}
+	renda_presumida = retorno.get("rendaPresumida") or {}
+	participacoes = (
+		(retorno.get("participacaoEmEmpresas") or {}).get("ocorrencias")
+		or retorno.get("participacoesSocietarias")
+		or []
+	)
+
+	pend_qty = int(_to_float(pendencias.get("quantidadeOcorrencia") or pendencias.get("quantidade")))
+	prot_qty = int(_to_float(protestos.get("quantidadeOcorrencia") or protestos.get("quantidade")))
+	acoes_qty = int(_to_float(acoes.get("quantidadeOcorrencia") or acoes.get("quantidade")))
+	fal_qty = int(_to_float(falencias.get("quantidadeOcorrencia") or falencias.get("quantidade")))
+	chq_b_qty = int(_to_float(cheque_bacen.get("quantidadeOcorrencia") or cheque_bacen.get("quantidade")))
+	chq_v_qty = int(_to_float(cheque_varejo.get("quantidadeOcorrencia") or cheque_varejo.get("quantidade")))
+
+	return {
+		"cpf": retorno.get("cpf") or ident.get("cpf") or digits,
+		"nome": retorno.get("nome") or ident.get("nome") or "",
+		"cpf_situacao": retorno.get("cpfSituacao") or ident.get("situacaoCPF") or "",
+		"indicacao_obito": retorno.get("indicacaoObito") or ident.get("possuiObito") or "",
+		"score": _to_float(score_block.get("score")) or None,
+		"classificacao_abc": score_block.get("classificacaoABC") or "",
+		"probabilidade_inadimplencia": score_block.get("probabilidadeInadimplencia") or "",
+		"risco": score_block.get("risco") or "",
+		"faixa_renda": retorno.get("faixaRenda") or renda_presumida.get("faixa") or "",
+		"renda_presumida": renda_presumida.get("valorPresumido") or renda_presumida.get("rendaAnual") or "",
+		"classe_social": retorno.get("classeSocial") or "",
+		"poder_aquisitivo": retorno.get("poderAquisitivo") or "",
+		"has_financial_pendencies": pend_qty > 0,
+		"financial_pendencies_count": pend_qty,
+		"financial_pendencies_value": _to_float(pendencias.get("valorTotal")),
+		"has_protests": prot_qty > 0,
+		"protests_count": prot_qty,
+		"protests_value": _to_float(protestos.get("valorTotal")),
+		"has_bad_checks": (chq_b_qty + chq_v_qty) > 0,
+		"has_civil_lawsuits": acoes_qty > 0,
+		"civil_lawsuits_count": acoes_qty,
+		"has_bankruptcy_recovery": fal_qty > 0,
+		"participacoes_empresas": participacoes,
+		"raw": retorno,
+	}
+
+
+def fetch_nivel_socioeconomico(
+	cpf: str, token: str, base_url: str = DEFAULT_BASE_URL, timeout: int = DEFAULT_TIMEOUT
+) -> dict[str, Any]:
+	"""Nível Socioeconômico e Renda Estimada PF (R$ 0,36/consulta)."""
+	digits = only_digits(cpf)
+	if not digits or len(digits) != 11:
+		raise ValueError(f"CPF inválido para consulta de Nível Socioeconômico: {cpf}")
+
+	data = _request_directd("NivelSocioeconomico", {"CPF": digits}, token, base_url, timeout)
+	retorno = data.get("retorno") or {}
+	return {
+		"cpf": retorno.get("cpf") or digits,
+		"renda_estimada": _to_float(retorno.get("rendaEstimada")),
+		"renda_estimada_texto": retorno.get("rendaEstimada") or "",
+		"renda_faixa_salarial": retorno.get("rendaFaixaSalarial") or "",
+		"classe_social": retorno.get("classeSocial") or "",
+		"escolaridade": retorno.get("escolaridade") or "",
+		"cbo": retorno.get("cbo") or "",
+		"codigo_cbo": retorno.get("codigoCBO") or "",
+		"perfil_domiciliar": retorno.get("perfilDomiciliar") or {},
+		"raw": retorno,
+	}
+
+
 def fetch_dossie_credito_completo(documento: str, token: str, base_url: str = DEFAULT_BASE_URL, timeout: int = DEFAULT_TIMEOUT) -> dict[str, Any]:
 	"""Dossiê QUOD - Completo (bureau pago sob demanda, R$ 6,99/consulta). Aceita CPF ou CNPJ —
 	usa `entidadeJuridica` para CNPJ e `entidadeFisica`/`pessoaFisica` para CPF."""
@@ -331,7 +511,7 @@ def fetch_dossie_credito_completo(documento: str, token: str, base_url: str = DE
 		or retorno.get("pessoaFisica")
 		or {}
 	)
-	score_entidades = entidade.get("scoreEntidades") or {}
+	score_entidades = entidade.get("scoreEntidades") or entidade.get("scoreEntidade") or {}
 	score_block = (
 		score_entidades.get("entidadeJuridica")
 		or score_entidades.get("entidadeFisica")

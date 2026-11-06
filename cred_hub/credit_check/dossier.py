@@ -9,12 +9,13 @@ anexo para auditoria técnica.
 from __future__ import annotations
 
 import json
+import re
 from html import escape
 from typing import Any
 
 import frappe
 from frappe import _
-from frappe.utils import format_datetime, now_datetime
+from frappe.utils import date_diff, format_datetime, getdate, now_datetime, today
 
 from cred_hub.cnpj.mapping import only_digits
 from cred_hub.credit_check import partners as partners_lib
@@ -27,9 +28,14 @@ ORG = "CRM Organization"
 # Nome do produto de cada chamada automática (provedor, endpoint)
 PRODUCT_LABELS = {
 	"ceis_cnep": "Sanções Públicas CEIS/CNEP (CGU)",
-	"score": "Score de Crédito (QUOD)",
+	"score": "Score de crédito (QUOD)",
 	"protestosbasica": "Protestos Nacional (IEPTB)",
 	"processosjudiciaissimplificada": "Processos Judiciais (Simplificada)",
+	"processosjudiciaiscompleta": "Processos Judiciais - Completa (com Penhoras)",
+	"boavistariscopositivopj": "Boa Vista - Risco Positivo PJ",
+	"boavistaacertacompletopositivopf": "Boa Vista - Acerta Completo Positivo PF",
+	"dossiecreditocompleto": "Dossiê QUOD - Completo",
+	"nivelsocioeconomico": "Nível Socioeconômico e Renda Presumida PF",
 	"caixaregularidadeempregadorfgts": "Regularidade do Empregador (FGTS)",
 	"sintegraccc-completa": "Sintegra / CCC",
 	"sintegraccc": "Sintegra / CCC",
@@ -77,6 +83,24 @@ TECHNICAL_META_KEYS = {
 }
 
 MAX_TABLE_ITEMS = 15
+
+
+def _parse_num(val: Any) -> float:
+	if val is None or isinstance(val, bool):
+		return 0.0
+	if isinstance(val, (int, float)):
+		return float(val)
+	s = re.sub(r"[^\d,.\-]", "", str(val))
+	if not s or not re.search(r"\d", s):
+		return 0.0
+	if "," in s:
+		s = s.replace(".", "").replace(",", ".")
+	elif s.count(".") > 1:
+		s = s.replace(".", "")
+	try:
+		return float(s)
+	except ValueError:
+		return 0.0
 
 
 def format_value(value: Any) -> str:
@@ -261,12 +285,34 @@ td.value-single { width: 64%; word-break: break-word; color: #0f172a; }
 tr.group td { background: #eef2ff; font-weight: bold; color: #312e81; font-size: 8pt; padding: 3px 6px; }
 .orig { color: #94a3b8; font-size: 7pt; font-weight: normal; }
 .note { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; padding: 5px 8px; border-radius: 4px; margin: 6px 0; font-size: 7.8pt; }
+.alert-box { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; padding: 5px 8px; border-radius: 4px; margin: 6px 0; font-size: 8pt; font-weight: 600; }
 .ok-box { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; padding: 4px 8px; border-radius: 4px; margin: 4px 0; font-size: 8pt; font-weight: 600; }
 .kpi-table td { text-align: center; background: #f8fafc; padding: 5px 4px; }
 .kpi-val { font-size: 10pt; font-weight: bold; color: #1e1b4b; display: block; }
 .kpi-lbl { font-size: 7pt; color: #64748b; text-transform: uppercase; display: block; }
 .muted { color: #64748b; font-size: 7.5pt; font-style: italic; margin: 2px 0 6px; }
 .chip-list { font-size: 7.5pt; color: #334155; background: #f8fafc; border: 1px solid #e2e8f0; padding: 4px 6px; border-radius: 4px; margin-bottom: 6px; }
+"""
+
+SCOPED_VIEW_CSS = """
+.ct-dossier-view { font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 12.5px; color: #1E1F23; line-height: 1.45; }
+.ct-dossier-view h3 { font-size: 13px; margin: 12px 0 6px; color: #1E1F23; font-weight: 600; }
+.ct-dossier-view table { width: 100%; border-collapse: collapse; margin-bottom: 10px; background: #FFFFFF; border-radius: 6px; overflow: hidden; }
+.ct-dossier-view th { background: #F5F5F7; color: #5E6068; font-weight: 600; text-align: left; padding: 6px 10px; border: 1px solid #E6E7EB; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.02em; }
+.ct-dossier-view td { padding: 6px 10px; vertical-align: top; border: 1px solid #E6E7EB; font-size: 12px; color: #1E1F23; }
+.ct-dossier-view td.label { width: 22%; color: #5E6068; background: #F5F5F7; font-weight: 600; }
+.ct-dossier-view td.value { width: 28%; word-break: break-word; color: #1E1F23; }
+.ct-dossier-view td.label-single { width: 35%; color: #5E6068; background: #F5F5F7; font-weight: 600; }
+.ct-dossier-view td.value-single { width: 65%; word-break: break-word; color: #1E1F23; }
+.ct-dossier-view .orig { color: #8A8C94; font-size: 10.5px; font-weight: normal; }
+.ct-dossier-view .note { background: #FFF4D6; border: 1px solid #FDE68A; color: #8A5A00; padding: 8px 10px; border-radius: 6px; margin: 8px 0; font-size: 12px; }
+.ct-dossier-view .alert-box { background: #FEF3F2; border: 1px solid #FECACA; color: #B42318; padding: 8px 10px; border-radius: 6px; margin: 8px 0; font-size: 12px; font-weight: 600; }
+.ct-dossier-view .ok-box { background: #E7F6EC; border: 1px solid #BBF7D0; color: #1F7A3D; padding: 8px 10px; border-radius: 6px; margin: 8px 0; font-size: 12px; font-weight: 600; }
+.ct-dossier-view .kpi-table td { text-align: center; background: #F5F5F7; padding: 8px 6px; }
+.ct-dossier-view .kpi-val { font-size: 14px; font-weight: 700; color: #1E1F23; display: block; }
+.ct-dossier-view .kpi-lbl { font-size: 10.5px; color: #5E6068; text-transform: uppercase; display: block; margin-top: 2px; }
+.ct-dossier-view .muted { color: #8A8C94; font-size: 11.5px; font-style: italic; margin: 4px 0 8px; }
+.ct-dossier-view .chip-list { font-size: 11.5px; color: #2A2B30; background: #F5F5F7; border: 1px solid #E6E7EB; padding: 6px 8px; border-radius: 6px; margin-bottom: 8px; }
 """
 
 
@@ -285,7 +331,7 @@ def _fmt_brl(val: Any) -> str:
 		num = float(val)
 		return f"R$ {num:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 	except (ValueError, TypeError):
-		return str(val)
+		return escape(str(val))
 
 
 def _kv_grid_html(pairs: list[tuple[str, str]], two_columns_per_row: bool = True) -> str:
@@ -335,7 +381,7 @@ def _unwrap_payload(payload: Any) -> Any:
 
 
 def _render_lawsuits_section(node: dict[str, Any]) -> str:
-	"""Renderização executiva compacta para Processos Judiciais (DirectD / Escavador): resumo + tabela horizontal."""
+	"""Renderização executiva compacta para Processos Judiciais (Simplificada, Completa com Penhoras e Escavador)."""
 	procs = node.get("processos") or []
 	total = node.get("totalProcessos") if node.get("totalProcessos") is not None else len(procs)
 	obs = node.get("observacoes") or ""
@@ -345,59 +391,88 @@ def _render_lawsuits_section(node: dict[str, Any]) -> str:
 
 	passivo_count = 0
 	ativo_count = 0
+	homonym_count = 0
+	penhoras_total = 0
 	total_val = 0.0
 	max_val = 0.0
 	parsed_rows = []
+	penhora_alerts: list[str] = []
 
 	for p in procs:
 		if not isinstance(p, dict):
 			continue
-		val_raw = p.get("valorAcao") or p.get("valor") or 0.0
-		try:
-			val = float(val_raw) if val_raw is not None else 0.0
-		except (ValueError, TypeError):
-			val = 0.0
-		if val > 0:
-			total_val += val
-			if val > max_val:
-				max_val = val
+		val_raw = p.get("valorAcao") if p.get("valorAcao") is not None else (p.get("valorProcesso") if p.get("valorProcesso") is not None else p.get("valor"))
+		val = _parse_num(val_raw)
+
+		detalhes = p.get("detalhesStatusProcesso") if isinstance(p.get("detalhesStatusProcesso"), dict) else {}
+		penhoras = detalhes.get("penhoras") if isinstance(detalhes.get("penhoras"), list) else []
+		if penhoras:
+			penhoras_total += len(penhoras)
+			num_cnj = str(p.get("numeroProcesso") or p.get("numero_cnj") or "—")
+			penhora_alerts.append(f"Processo {num_cnj}: {len(penhoras)} penhora(s)/bloqueio(s) registrado(s)")
 
 		partes = p.get("partes") or []
 		polos = set()
-		partes_resumo = []
+		has_confirmed_target = False
+		has_only_agregado = False
+		agregado_seen = False
 		for pt in partes:
 			if isinstance(pt, dict):
+				origem = str(pt.get("origemDocumento") or "").upper()
+				if origem == "AGREGADO":
+					agregado_seen = True
+				elif origem in ("API", "DOCUMENTO", "RECEITA", "TRIBUNAL", ""):
+					has_confirmed_target = True
 				polo = str(pt.get("polo") or pt.get("tipo") or "").upper()
-				nome = str(pt.get("nomeCompleto") or pt.get("nome") or "").strip()
 				if "PASSIVO" in polo or "REU" in polo or "PROMOVIDO" in polo or "EXECUTADO" in polo:
 					polos.add("Passivo")
 				elif "ATIVO" in polo or "AUTOR" in polo or "PROMOVENTE" in polo or "EXEQUENTE" in polo:
 					polos.add("Ativo")
-				if nome and len(partes_resumo) < 2:
-					partes_resumo.append(nome[:38])
-		if "Passivo" in polos:
-			passivo_count += 1
-		elif "Ativo" in polos:
-			ativo_count += 1
+
+		if agregado_seen and not has_confirmed_target:
+			has_only_agregado = True
+			homonym_count += 1
+		else:
+			if val > 0:
+				total_val += val
+				if val > max_val:
+					max_val = val
+			if "Passivo" in polos:
+				passivo_count += 1
+			elif "Ativo" in polos:
+				ativo_count += 1
+
+		orgao = p.get("orgaoJulgador") if isinstance(p.get("orgaoJulgador"), dict) else {}
+		tribunal_name = p.get("tribunal") or orgao.get("tribunal") or orgao.get("vara") or "—"
+		grau = p.get("grau") or (p.get("instancia", {}).get("grauInstancia") if isinstance(p.get("instancia"), dict) else "")
+		tribunal_str = f"{tribunal_name}{(' · ' + str(grau) + 'ºG') if grau else ''}"
+
+		classif = p.get("classificacao") if isinstance(p.get("classificacao"), dict) else {}
+		classe_str = str(p.get("classe") or classif.get("descricao") or "").strip()
+		assunto_str = str(p.get("assuntoPrincipal") or p.get("assunto") or "").strip()
+		if not assunto_str and isinstance(p.get("assuntos"), list):
+			assuntos_list = [str(a.get("assunto") or "").strip() for a in p["assuntos"] if isinstance(a, dict) and a.get("assunto")]
+			assunto_str = ", ".join(assuntos_list[:2])
 
 		ult = p.get("ultimaMovimentacao")
 		ult_str = ""
 		if isinstance(ult, dict):
 			ult_str = f"{str(ult.get('data') or '')[:10]} · {str(ult.get('descricao') or '')[:40]}".strip(" ·")
 
+		data_ini = str(p.get("dataAjuizamento") or p.get("dataInicio") or "")[:10]
+		status_proc = str(p.get("status") or p.get("statusProcesso") or "")
+		penhora_tag = f" [⚠ {len(penhoras)} Penhora(s)]" if penhoras else ""
+		homonym_tag = " [Possível Homônimo]" if has_only_agregado else ""
+
 		parsed_rows.append(
 			{
-				"val_sort": val,
+				"val_sort": val if not has_only_agregado else -1.0,
 				"numero": str(p.get("numeroProcesso") or p.get("numero_cnj") or "—"),
-				"tribunal": f"{p.get('tribunal') or '—'}{(' · ' + str(p.get('grau')) + 'ºG') if p.get('grau') else ''}",
-				"assunto": " / ".join(
-					filter(None, [str(p.get("classe") or "").strip(), str(p.get("assuntoPrincipal") or p.get("assunto") or "").strip()])
-				)[:75] or "—",
-				"polo": "/".join(sorted(polos)) or "—",
+				"tribunal": tribunal_str,
+				"assunto": (" / ".join(filter(None, [classe_str, assunto_str]))[:75] or "—") + penhora_tag + homonym_tag,
+				"polo": ("/".join(sorted(polos)) or "—") + (" (Homônimo?)" if has_only_agregado else ""),
 				"valor": _fmt_brl(val) if val > 0 else "—",
-				"data_status": " · ".join(
-					filter(None, [str(p.get("dataAjuizamento") or "")[:10], str(p.get("status") or ""), ult_str])
-				)[:65] or "—",
+				"data_status": " · ".join(filter(None, [data_ini, status_proc, ult_str]))[:65] or "—",
 			}
 		)
 
@@ -407,14 +482,25 @@ def _render_lawsuits_section(node: dict[str, Any]) -> str:
 	parts = [
 		'<table class="kpi-table"><tr>',
 		f'<td><span class="kpi-val">{total}</span><span class="kpi-lbl">Total de Processos</span></td>',
-		f'<td><span class="kpi-val">{passivo_count}</span><span class="kpi-lbl">Envolvendo Polo Passivo</span></td>',
+		f'<td><span class="kpi-val">{passivo_count}</span><span class="kpi-lbl">Polo Passivo Confirmado</span></td>',
 		f'<td><span class="kpi-val">{_fmt_brl(total_val)}</span><span class="kpi-lbl">Soma dos Valores</span></td>',
 		f'<td><span class="kpi-val">{_fmt_brl(max_val)}</span><span class="kpi-lbl">Maior Valor de Causa</span></td>',
+		f'<td><span class="kpi-val">{penhoras_total}</span><span class="kpi-lbl">Penhoras / Bloqueios</span></td>',
 		"</tr></table>",
-		"<table><thead><tr>",
-		"<th>Nº Processo (CNJ)</th><th>Tribunal</th><th>Classe / Assunto Principal</th><th>Polo</th><th>Valor</th><th>Ajuizamento / Status</th>",
-		"</tr></thead><tbody>",
 	]
+	if penhora_alerts:
+		parts.append(f'<div class="alert-box">⚠ Alerta de Penhora/Execução: {"; ".join(escape(a) for a in penhora_alerts[:5])}</div>')
+	if homonym_count:
+		parts.append(
+			f'<div class="note">ℹ {homonym_count} processo(s) vieram com documento inferido por nome (origemDocumento=AGREGADO) e foram separados da contagem de réu confirmado para evitar falso positivo de homônimo.</div>'
+		)
+	parts.extend(
+		[
+			"<table><thead><tr>",
+			"<th>Nº Processo (CNJ)</th><th>Tribunal</th><th>Classe / Assunto Principal</th><th>Polo</th><th>Valor</th><th>Ajuizamento / Status</th>",
+			"</tr></thead><tbody>",
+		]
+	)
 	for r in shown:
 		parts.append(
 			f"<tr><td>{escape(r['numero'])}</td><td>{escape(r['tribunal'])}</td>"
@@ -471,6 +557,80 @@ def _render_scr_section(node: dict[str, Any]) -> str:
 		("Exposição Vencida por Linha", escape(" · ".join(active_venc) if active_venc else "0% em todas as modalidades"))
 	)
 	parts.append(_kv_grid_html(pairs, two_columns_per_row=True))
+	return "".join(parts)
+
+
+def _render_boavista_header(node: dict[str, Any]) -> str:
+	"""Cabeçalho executivo para Boa Vista Risco Positivo PJ ou Acerta Completo Positivo PF."""
+	scores = node.get("scores") or {}
+	sc_pos = scores.get("scorePositivo") or {}
+	ind_neg = node.get("indicadoresNegocio") or {}
+	fat_node = ind_neg.get("faturamentoPresumido") if isinstance(ind_neg.get("faturamentoPresumido"), dict) else {}
+	lim_node = ind_neg.get("limiteCredito") if isinstance(ind_neg.get("limiteCredito"), dict) else {}
+	renda_node = ind_neg.get("rendaPresumida") if isinstance(ind_neg.get("rendaPresumida"), dict) else {}
+	cons_ant = node.get("consultasAnteriores") if isinstance(node.get("consultasAnteriores"), dict) else {}
+	prot = node.get("protestos") if isinstance(node.get("protestos"), dict) else {}
+	pend = node.get("pendenciasRestricoes") if isinstance(node.get("pendenciasRestricoes"), dict) else {}
+
+	score_val = sc_pos.get("pontuacao") or sc_pos.get("score") or node.get("score") or "—"
+	classif = sc_pos.get("classificacao_alfabetica") or sc_pos.get("probabilidade") or sc_pos.get("texto") or "—"
+	fat_or_renda = fat_node.get("valor") or renda_node.get("valor") or node.get("rendaPresumida") or "—"
+	fat_lbl = "Faturamento Presumido" if fat_node.get("valor") else "Renda Presumida"
+	limite = lim_node.get("valor") or "—"
+	cons_30 = cons_ant.get("ultimos30Dias") if cons_ant.get("ultimos30Dias") is not None else "0"
+	cons_90 = cons_ant.get("de31a90Dias") if cons_ant.get("de31a90Dias") is not None else "0"
+	prot_qtd = prot.get("quantidadeTotal") or 0
+	prot_val = prot.get("valorTotal") or "0,00"
+	pend_qtd = pend.get("quantidadeTotal") or 0
+
+	parts = [
+		'<table class="kpi-table"><tr>',
+		f'<td><span class="kpi-val">{escape(format_value(score_val))}</span><span class="kpi-lbl">Score Positivo ({escape(str(classif)[:24])})</span></td>',
+		f'<td><span class="kpi-val">{escape(format_value(fat_or_renda))}</span><span class="kpi-lbl">{escape(fat_lbl)}</span></td>',
+		f'<td><span class="kpi-val">{escape(format_value(limite))}</span><span class="kpi-lbl">Limite Sugerido Bureau</span></td>',
+		f'<td><span class="kpi-val">{escape(str(prot_qtd))} ({escape(str(prot_val))})</span><span class="kpi-lbl">Protestos</span></td>',
+		f'<td><span class="kpi-val">{escape(str(pend_qtd))}</span><span class="kpi-lbl">Pendências / Restrições</span></td>',
+		f'<td><span class="kpi-val">{escape(str(cons_30))} (30d) / {escape(str(cons_90))} (90d)</span><span class="kpi-lbl">Buscas no Mercado</span></td>',
+		"</tr></table>",
+	]
+	try:
+		if int(_parse_num(cons_30)) >= 8:
+			parts.append(
+				f'<div class="alert-box">⚠ Alerta de Busca Acelerada de Crédito: {escape(str(cons_30))} consultas no mercado nos últimos 30 dias (possível estresse de caixa ou tentativa de alavancagem simultânea).</div>'
+			)
+	except Exception:
+		pass
+	return "".join(parts)
+
+
+def _render_quod_header(sub: dict[str, Any]) -> str:
+	"""Cabeçalho executivo para Dossiê QUOD Completo (PJ ou PF)."""
+	sc_block = sub.get("scoreEntidades") or sub.get("scoreEntidade") or {}
+	sc = (sc_block.get("scoreCredito") if isinstance(sc_block, dict) else {}) or {}
+	pend = sub.get("pendenciaFinanceira") if isinstance(sub.get("pendenciaFinanceira"), dict) else {}
+	prots = pend.get("protestos") if isinstance(pend.get("protestos"), list) else []
+	negs = pend.get("negativacoes") if isinstance(pend.get("negativacoes"), list) else []
+	hist = sub.get("historicoConsulta") if isinstance(sub.get("historicoConsulta"), dict) else {}
+	cons_30 = hist.get("ultimos30Dias") if hist.get("ultimos30Dias") is not None else "0"
+	freq_pag = sub.get("frequenciaPagamentos") or sc_block.get("capacidadePagamento") or "—"
+
+	parts = [
+		'<table class="kpi-table"><tr>',
+		f'<td><span class="kpi-val">{escape(format_value(sc.get("score")))}</span><span class="kpi-lbl">Score QUOD ({escape(format_value(sc.get("faixaScore")))})</span></td>',
+		f'<td><span class="kpi-val">{escape(format_value(sc.get("probabilidadeInadimplencia")))}</span><span class="kpi-lbl">Prob. Inadimplência</span></td>',
+		f'<td><span class="kpi-val">{escape(format_value(freq_pag))}</span><span class="kpi-lbl">Pontualidade / Capacidade</span></td>',
+		f'<td><span class="kpi-val">{len(prots)}</span><span class="kpi-lbl">Protestos Detalhados</span></td>',
+		f'<td><span class="kpi-val">{len(negs)} ({escape(format_value(pend.get("totalPendencia")))})</span><span class="kpi-lbl">Negativações / Total</span></td>',
+		f'<td><span class="kpi-val">{escape(str(cons_30))}</span><span class="kpi-lbl">Consultas 30 Dias</span></td>',
+		"</tr></table>",
+	]
+	try:
+		if int(_parse_num(cons_30)) >= 8:
+			parts.append(
+				f'<div class="alert-box">⚠ Alerta de Busca Acelerada de Crédito: {escape(str(cons_30))} consultas ao documento nos últimos 30 dias.</div>'
+			)
+	except Exception:
+		pass
 	return "".join(parts)
 
 
@@ -560,7 +720,12 @@ def _render_compact_node(node: Any, depth: int = 0) -> str:
 	if "entidadeJuridica" in node or "entidadeFisica" in node:
 		sub = node.get("entidadeJuridica") or node.get("entidadeFisica") or {}
 		if isinstance(sub, dict):
-			return _render_compact_node(sub, depth)
+			header = _render_quod_header(sub) if depth == 0 else ""
+			return header + _render_compact_node(sub, depth + 1)
+
+	header_prefix = ""
+	if depth == 0 and ("scores" in node and ("indicadoresNegocio" in node or "pendenciasRestricoes" in node)):
+		header_prefix = _render_boavista_header(node)
 
 	scalar_pairs: list[tuple[str, str]] = []
 	sub_blocks: list[str] = []
@@ -611,11 +776,183 @@ def _render_compact_node(node: Any, depth: int = 0) -> str:
 			shown = _("(empty)") if isinstance(value, (dict, list)) else format_value(value)
 			scalar_pairs.append((_label_html(key), escape(shown)))
 
-	out: list[str] = []
+	out: list[str] = [header_prefix] if header_prefix else []
 	if scalar_pairs:
 		out.append(_kv_grid_html(scalar_pairs, two_columns_per_row=(len(scalar_pairs) >= 4)))
 	out.extend(sub_blocks)
 	return "".join(out)
+
+
+def render_query_html(bureau_or_product: str, payload: Any) -> str:
+	"""Renderiza o retorno de uma consulta individual em HTML executivo escopado para visualização na tela (modal)."""
+	frappe.local.lang = "pt-BR"
+	if getattr(frappe.local, "job", None) is not None:
+		frappe.local.job.lang_resolved = True
+	cleaned = _unwrap_payload(payload)
+	body = _render_compact_node(cleaned)
+	return f'<div class="ct-dossier-view"><style>{SCOPED_VIEW_CSS}</style>{body}</div>'
+
+
+def summarize_highlights(organization_name: str) -> dict[str, Any]:
+	"""Consolida os indicadores-chave e alertas de fraude de todas as consultas já realizadas para o painel executivo."""
+	ctx = collect(organization_name)
+	org = frappe.get_doc(ORG, organization_name)
+	highlights: dict[str, Any] = {
+		"scores": [],
+		"revenue_presumed": None,
+		"credit_limit_suggested": None,
+		"scr_due": None,
+		"scr_overdue": None,
+		"scr_risk_class": None,
+		"scr_institutions": None,
+		"protests_count": 0,
+		"protests_amount": 0.0,
+		"negativations_count": 0,
+		"lawsuits_defendant": 0,
+		"penhoras_count": 0,
+		"inquiries_30d": 0,
+		"fraud_alerts": [],
+	}
+
+	company_age_days = 0
+	if org.get("activity_start_date"):
+		try:
+			company_age_days = date_diff(today(), getdate(org.activity_start_date))
+		except Exception:
+			company_age_days = 0
+
+	for sec in ctx["sections"]:
+		payload = _unwrap_payload(sec["payload"])
+		if not isinstance(payload, dict):
+			continue
+		subj = sec["subject"]
+		prod = sec["product"]
+
+		# Dossiê QUOD
+		sub_quod = payload.get("entidadeJuridica") or payload.get("entidadeFisica")
+		if isinstance(sub_quod, dict):
+			sc_b = sub_quod.get("scoreEntidades") or sub_quod.get("scoreEntidade") or {}
+			sc_c = (sc_b.get("scoreCredito") if isinstance(sc_b, dict) else {}) or {}
+			if sc_c.get("score") is not None:
+				highlights["scores"].append(
+					{
+						"source": "QUOD",
+						"subject": subj,
+						"score": sc_c.get("score"),
+						"band": sc_c.get("faixaScore") or sc_c.get("probabilidadeInadimplencia") or "",
+					}
+				)
+			pend = sub_quod.get("pendenciaFinanceira") if isinstance(sub_quod.get("pendenciaFinanceira"), dict) else {}
+			prots = pend.get("protestos") if isinstance(pend.get("protestos"), list) else []
+			negs = pend.get("negativacoes") if isinstance(pend.get("negativacoes"), list) else []
+			highlights["protests_count"] = max(highlights["protests_count"], len(prots))
+			highlights["negativations_count"] = max(highlights["negativations_count"], len(negs))
+			hist = sub_quod.get("historicoConsulta") if isinstance(sub_quod.get("historicoConsulta"), dict) else {}
+			c30 = int(_parse_num(hist.get("ultimos30Dias")))
+			if c30 > highlights["inquiries_30d"]:
+				highlights["inquiries_30d"] = c30
+
+		# Boa Vista PJ / PF
+		if "scores" in payload and isinstance(payload.get("scores"), dict):
+			sc_pos = payload["scores"].get("scorePositivo") or {}
+			pt = sc_pos.get("pontuacao") or sc_pos.get("score")
+			if pt is not None:
+				highlights["scores"].append(
+					{
+						"source": "Boa Vista",
+						"subject": subj,
+						"score": pt,
+						"band": sc_pos.get("classificacao_alfabetica") or sc_pos.get("probabilidade") or "",
+					}
+				)
+			ind_neg = payload.get("indicadoresNegocio") if isinstance(payload.get("indicadoresNegocio"), dict) else {}
+			fat = ind_neg.get("faturamentoPresumido") if isinstance(ind_neg.get("faturamentoPresumido"), dict) else {}
+			lim = ind_neg.get("limiteCredito") if isinstance(ind_neg.get("limiteCredito"), dict) else {}
+			if fat.get("valor") and not highlights["revenue_presumed"]:
+				highlights["revenue_presumed"] = fat.get("valor")
+			if lim.get("valor") and not highlights["credit_limit_suggested"]:
+				highlights["credit_limit_suggested"] = lim.get("valor")
+			cons_ant = payload.get("consultasAnteriores") if isinstance(payload.get("consultasAnteriores"), dict) else {}
+			c30 = int(_parse_num(cons_ant.get("ultimos30Dias")))
+			if c30 > highlights["inquiries_30d"]:
+				highlights["inquiries_30d"] = c30
+
+			# Checa entrada recente de sócio em empresa antiga
+			qsa_bv = ((payload.get("quadroSocietario") or {}).get("socios") if isinstance(payload.get("quadroSocietario"), dict) else None) or []
+			if company_age_days > 730 and isinstance(qsa_bv, list):
+				for socio in qsa_bv:
+					if isinstance(socio, dict) and socio.get("dataEntrada"):
+						try:
+							days_in = date_diff(today(), getdate(str(socio["dataEntrada"])[:10]))
+							if 0 <= days_in <= 180:
+								msg = f"Alteração societária recente: sócio {socio.get('nome', '')} ingressou há {days_in} dias em CNPJ com {company_age_days // 365} anos."
+								if msg not in highlights["fraud_alerts"]:
+									highlights["fraud_alerts"].append(msg)
+						except Exception:
+							pass
+
+		# SCR Bacen
+		if "carteiraCredito" in payload and isinstance(payload.get("carteiraCredito"), dict):
+			cart = payload["carteiraCredito"]
+			highlights["scr_due"] = cart.get("valorVencer")
+			highlights["scr_overdue"] = cart.get("valorVencida")
+			highlights["scr_risk_class"] = payload.get("classeRisco")
+			highlights["scr_institutions"] = payload.get("quantidadeInstituicoes")
+
+		# Processos Judiciais
+		if "processos" in payload and isinstance(payload.get("processos"), list):
+			for pr in payload["processos"]:
+				if isinstance(pr, dict):
+					det = pr.get("detalhesStatusProcesso") if isinstance(pr.get("detalhesStatusProcesso"), dict) else {}
+					pen = det.get("penhoras") if isinstance(det.get("penhoras"), list) else []
+					highlights["penhoras_count"] += len(pen)
+
+		# Serasa
+		if "reports" in payload and isinstance(payload.get("reports"), list) and payload["reports"]:
+			rep0 = payload["reports"][0] if isinstance(payload["reports"][0], dict) else {}
+			sc_s = rep0.get("score") if isinstance(rep0.get("score"), dict) else {}
+			if sc_s.get("score") is not None:
+				highlights["scores"].append(
+					{
+						"source": "Serasa",
+						"subject": subj,
+						"score": sc_s.get("score"),
+						"band": sc_s.get("message") or "",
+					}
+				)
+		elif "OptionalFeatures" in payload and isinstance(payload.get("OptionalFeatures"), dict):
+			sc_s = payload["OptionalFeatures"].get("Score") or {}
+			if sc_s.get("Score") is not None:
+				highlights["scores"].append(
+					{
+						"source": "Serasa",
+						"subject": subj,
+						"score": sc_s.get("Score"),
+						"band": sc_s.get("Message") or "",
+					}
+				)
+
+		# Produtinhos avulsos
+		if prod and "Score" in prod and payload.get("pessoaJuridica", {}).get("score"):
+			highlights["scores"].append(
+				{
+					"source": "QUOD Score",
+					"subject": subj,
+					"score": payload["pessoaJuridica"]["score"],
+					"band": payload["pessoaJuridica"].get("faixaScore") or "",
+				}
+			)
+
+	if highlights["inquiries_30d"] >= 8:
+		msg = f"Volume atípico de buscas de crédito: {highlights['inquiries_30d']} consultas ao documento nos últimos 30 dias."
+		if msg not in highlights["fraud_alerts"]:
+			highlights["fraud_alerts"].append(msg)
+	if highlights["penhoras_count"] > 0:
+		msg = f"Foram identificadas {highlights['penhoras_count']} penhora(s)/bloqueio(s) em processos judiciais."
+		if msg not in highlights["fraud_alerts"]:
+			highlights["fraud_alerts"].append(msg)
+
+	return highlights
 
 
 def build_html(ctx: dict[str, Any], generated_by: str, generated_on: str) -> str:
@@ -799,5 +1136,5 @@ def list_files(organization_name: str) -> list[dict[str, Any]]:
 		},
 		fields=["name", "file_name", "file_url", "creation", "owner"],
 		order_by="creation desc",
-		limit_page_length=60,
+		limit_page_length=50,
 	)

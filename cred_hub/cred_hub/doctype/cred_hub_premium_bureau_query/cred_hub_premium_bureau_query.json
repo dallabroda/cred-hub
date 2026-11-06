@@ -30,7 +30,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Bureau",
-   "options": "serasa\nboavista_risco\ndossie_quod\nscr_bacen",
+   "options": "serasa\nboavista_risco\nboavista_acerta_pf\ndossie_quod\nscr_bacen\nprocessos_completa\nnivel_socioeconomico",
    "read_only": 1,
    "reqd": 1
   },
