@@ -16,8 +16,11 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from cred_hub.credit_check.clients.directd import (
+	fetch_boa_vista_acerta_pf,
 	fetch_boa_vista_risco_pj,
 	fetch_dossie_credito_completo,
+	fetch_nivel_socioeconomico,
+	fetch_processos_completa,
 	fetch_scr_bacen,
 )
 
@@ -31,6 +34,7 @@ class PremiumBureau:
 	fetch: Callable[[str, str], dict[str, Any]]  # (documento, token) -> dados
 	price_reference: float  # preço de tabela da DirectD por consulta (só referência, quem cobra é a DirectD)
 	enabled_field: str  # campo do Cred Hub Credit Settings que liga este bureau
+	tier: int = 2  # nível sugerido no funil progressivo (1 = Inicial, 2 = Médio, 3 = Profundo)
 
 
 PREMIUM_BUREAUS: dict[str, PremiumBureau] = {
@@ -40,6 +44,15 @@ PREMIUM_BUREAUS: dict[str, PremiumBureau] = {
 		fetch=fetch_boa_vista_risco_pj,
 		price_reference=14.03,
 		enabled_field="boavista_risco_enabled",
+		tier=3,
+	),
+	"boavista_acerta_pf": PremiumBureau(
+		key="boavista_acerta_pf",
+		label="Boa Vista - Acerta Completo Positivo PF",
+		fetch=fetch_boa_vista_acerta_pf,
+		price_reference=14.03,
+		enabled_field="boavista_acerta_pf_enabled",
+		tier=3,
 	),
 	"dossie_quod": PremiumBureau(
 		key="dossie_quod",
@@ -47,6 +60,7 @@ PREMIUM_BUREAUS: dict[str, PremiumBureau] = {
 		fetch=fetch_dossie_credito_completo,
 		price_reference=6.99,
 		enabled_field="dossie_quod_enabled",
+		tier=2,
 	),
 	"scr_bacen": PremiumBureau(
 		key="scr_bacen",
@@ -54,5 +68,22 @@ PREMIUM_BUREAUS: dict[str, PremiumBureau] = {
 		fetch=fetch_scr_bacen,
 		price_reference=3.90,
 		enabled_field="scr_bacen_enabled",
+		tier=2,
+	),
+	"processos_completa": PremiumBureau(
+		key="processos_completa",
+		label="Processos Judiciais - Completa (com Penhoras)",
+		fetch=fetch_processos_completa,
+		price_reference=3.30,
+		enabled_field="processos_completa_enabled",
+		tier=3,
+	),
+	"nivel_socioeconomico": PremiumBureau(
+		key="nivel_socioeconomico",
+		label="Nível Socioeconômico e Renda Presumida PF",
+		fetch=fetch_nivel_socioeconomico,
+		price_reference=0.36,
+		enabled_field="nivel_socioeconomico_enabled",
+		tier=1,
 	),
 }

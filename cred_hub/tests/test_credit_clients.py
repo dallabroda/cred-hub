@@ -433,3 +433,64 @@ def test_premium_bureaus_registry_has_list_price_and_settings_toggle():
 		assert bureau.price_reference > 0
 		assert bureau.enabled_field == enabled_field
 		assert not hasattr(bureau, "client_price")
+
+
+def test_directd_processos_completa_penhoras_and_homonyms():
+	payload = {
+		"retorno": {
+			"totalProcessos": 2,
+			"processos": [
+				{
+					"numeroProcesso": "1001234-55.2023.8.26.0100",
+					"orgaoJulgador": {"tribunal": "TJSP", "vara": "1ª Vara Cível"},
+					"classificacao": {"descricao": "Execução de Título Extrajudicial"},
+					"assuntos": [{"assunto": "Duplicata"}],
+					"statusProcesso": "Ativo",
+					"valorProcesso": "125.400,50",
+					"detalhesStatusProcesso": {"penhoras": [{"tipo": "SISBAJUD", "valor": "50.000,00"}]},
+					"partes": [{"polo": "PASSIVO", "documento": "12345678000199", "origemDocumento": "DOCUMENTO"}],
+				},
+				{
+					"numeroProcesso": "2009999-11.2022.8.26.0100",
+					"valorProcesso": "900.000,00",
+					"partes": [{"polo": "PASSIVO", "documento": "12345678000199", "origemDocumento": "AGREGADO"}],
+				},
+			],
+		}
+	}
+	res = parse_directd_processos_payload(payload, "12345678000199")
+	assert res["total_count"] == 2
+	assert res["defendant_count"] == 1  # homônimo (AGREGADO) separado do réu confirmado
+	assert res["homonym_suspect_count"] == 1
+	assert res["highest_value"] == 125400.50
+	assert res["has_penhoras"] is True
+	assert res["penhoras_count"] == 1
+	assert res["critical_lawsuits"][0]["tribunal"] == "TJSP"
+
+
+@patch("cred_hub.credit_check.clients.directd.requests.get")
+def test_directd_sintegra_ccc_with_uf_uses_single_state_endpoint(mock_get):
+	mock_resp = MagicMock()
+	mock_resp.status_code = 200
+	mock_resp.ok = True
+	mock_resp.json.return_value = {"retorno": {"situacaoCNPJ": "Habilitado", "inscricoesEstaduais": ["110042490114"]}}
+	mock_get.return_value = mock_resp
+
+	res = fetch_sintegra_ccc("12345678000199", "token", uf="SP")
+	assert res["situacao_cadastral"] == "Habilitado"
+	assert res["inscricoes_estaduais"] == ["110042490114"]
+	assert mock_get.call_args.args[0].endswith("/api/SintegraCCC")
+	assert mock_get.call_args.kwargs["params"]["Uf"] == "SP"
+
+
+@patch("cred_hub.credit_check.clients.directd.requests.get")
+def test_directd_fgts_possui_irregularidade(mock_get):
+	mock_resp = MagicMock()
+	mock_resp.status_code = 200
+	mock_resp.ok = True
+	mock_resp.json.return_value = {"retorno": {"possuiIrregularidade": True, "resultado": "Irregular perante o FGTS"}}
+	mock_get.return_value = mock_resp
+
+	res = fetch_fgts_regularidade("12345678000199", "token")
+	assert res["is_regular"] is False
+	assert "Irregular" in res["status"]

@@ -59,6 +59,7 @@ DIRECTD_SCORE_ESTIMATED_COST = 1.98
 DIRECTD_PROTESTS_ESTIMATED_COST = 2.95
 DIRECTD_PROCESSOS_ESTIMATED_COST = 1.50
 DIRECTD_FGTS_ESTIMATED_COST = 0.36
+DIRECTD_SINTEGRA_UF_ESTIMATED_COST = 0.36
 DIRECTD_SINTEGRA_ESTIMATED_COST = 1.80
 
 EMPTY_ESCAVADOR_DATA = {"total_count": 0, "defendant_count": 0, "highest_value": 0.0, "has_bankruptcy_recovery": False}
@@ -108,6 +109,9 @@ def get_credit_settings() -> dict[str, Any]:
 		"infosimples_enabled": bool(doc.get("infosimples_enabled")),
 		"infosimples_token": doc.get_password("infosimples_token") if doc.get("infosimples_token") else "",
 		"directd_enabled": bool(doc.get("directd_enabled")),
+		"directd_score_enabled": bool(doc.get("directd_score_enabled")),
+		"directd_protestos_enabled": bool(doc.get("directd_protestos_enabled")),
+		"directd_processos_enabled": bool(doc.get("directd_processos_enabled")),
 		"directd_token": doc.get_password("directd_token") if doc.get("directd_token") else "",
 		"min_directd_score": int(doc.get("min_directd_score") or 0),
 		"directd_fgts_enabled": bool(doc.get("directd_fgts_enabled")),
@@ -124,7 +128,11 @@ def get_credit_settings() -> dict[str, Any]:
 	}
 
 
-def _build_providers(settings: dict[str, Any]) -> list[ProviderCheck]:
+def _build_providers(
+	settings: dict[str, Any],
+	org_uf: str = "",
+	tier_1_only: bool = False,
+) -> list[ProviderCheck]:
 	"""Monta a lista de provedores habilitados nesta empresa. Adicionar um novo provedor
 	(ex.: Serasa automático, CENPROT direto) é só acrescentar um `ProviderCheck` aqui — o
 	orquestrador abaixo trata todos de forma genérica e sem fail-open.
@@ -133,12 +141,26 @@ def _build_providers(settings: dict[str, Any]) -> list[ProviderCheck]:
 	principal, que vira falha (fail-closed)."""
 	infosimples_token = settings.get("infosimples_token") or ""
 	directd_token = settings.get("directd_token") or ""
+	uf_clean = (org_uf or "").strip().upper()
+	has_uf = len(uf_clean) == 2
+
+	def _fetch_sintegra_for_org(cnpj_digits: str, token: str) -> dict[str, Any]:
+		if has_uf:
+			return fetch_sintegra_ccc(cnpj_digits, token, uf=uf_clean)
+		return fetch_sintegra_ccc(cnpj_digits, token)
+
+	directd_base = bool(settings.get("directd_enabled")) and not tier_1_only
+	score_on = (directd_base or bool(settings.get("directd_score_enabled"))) and not tier_1_only
+	protestos_on = (directd_base or bool(settings.get("directd_protestos_enabled"))) and not tier_1_only
+	processos_on = (directd_base or bool(settings.get("directd_processos_enabled"))) and not tier_1_only
+	fgts_on = bool(settings.get("directd_fgts_enabled"))
+	sintegra_on = bool(settings.get("directd_sintegra_enabled"))
 
 	return [
 		ProviderCheck(
 			key="escavador",
 			label="Escavador",
-			enabled=bool(settings.get("escavador_enabled")),
+			enabled=bool(settings.get("escavador_enabled")) and not tier_1_only,
 			token=settings.get("escavador_token") or "",
 			fetch=fetch_lawsuits,
 			empty_result=EMPTY_ESCAVADOR_DATA,
@@ -155,12 +177,11 @@ def _build_providers(settings: dict[str, Any]) -> list[ProviderCheck]:
 			estimated_cost=INFOSIMPLES_ESTIMATED_COST,
 			data_slot="infosimples",
 		),
-		# DirectD — só os produtos de Crédito/Processos pedidos pelo dono, não o catálogo inteiro.
-		# Um único toggle habilita cada um; todos usam o mesmo token DirectD do cliente.
+		# DirectD — produtos avulsos de Crédito/Processos (suprimidos quando tier_1_only=True para evitar redundância com Dossiê QUOD / Boa Vista)
 		ProviderCheck(
 			key="directd_score",
 			label="DirectD Score (QUOD)",
-			enabled=bool(settings.get("directd_enabled")),
+			enabled=score_on,
 			token=directd_token,
 			fetch=fetch_score,
 			empty_result=EMPTY_DIRECTD_SCORE_DATA,
@@ -170,7 +191,7 @@ def _build_providers(settings: dict[str, Any]) -> list[ProviderCheck]:
 		ProviderCheck(
 			key="directd_protestos",
 			label="DirectD Protestos Nacional",
-			enabled=bool(settings.get("directd_enabled")),
+			enabled=protestos_on,
 			token=directd_token,
 			fetch=fetch_protests_nacional,
 			empty_result=EMPTY_DIRECTD_PROTESTS_DATA,
@@ -180,7 +201,7 @@ def _build_providers(settings: dict[str, Any]) -> list[ProviderCheck]:
 		ProviderCheck(
 			key="directd_processos",
 			label="DirectD Processos Judiciais",
-			enabled=bool(settings.get("directd_enabled")),
+			enabled=processos_on,
 			token=directd_token,
 			fetch=fetch_lawsuits_directd,
 			empty_result=EMPTY_ESCAVADOR_DATA,
@@ -190,7 +211,7 @@ def _build_providers(settings: dict[str, Any]) -> list[ProviderCheck]:
 		ProviderCheck(
 			key="directd_fgts",
 			label="DirectD FGTS",
-			enabled=bool(settings.get("directd_enabled")) and bool(settings.get("directd_fgts_enabled")),
+			enabled=fgts_on,
 			token=directd_token,
 			fetch=fetch_fgts_regularidade,
 			empty_result=EMPTY_FGTS_DATA,
@@ -200,11 +221,11 @@ def _build_providers(settings: dict[str, Any]) -> list[ProviderCheck]:
 		ProviderCheck(
 			key="directd_sintegra",
 			label="DirectD Sintegra/CCC",
-			enabled=bool(settings.get("directd_enabled")) and bool(settings.get("directd_sintegra_enabled")),
+			enabled=sintegra_on,
 			token=directd_token,
-			fetch=fetch_sintegra_ccc,
+			fetch=_fetch_sintegra_for_org,
 			empty_result=EMPTY_SINTEGRA_DATA,
-			estimated_cost=DIRECTD_SINTEGRA_ESTIMATED_COST,
+			estimated_cost=DIRECTD_SINTEGRA_UF_ESTIMATED_COST if has_uf else DIRECTD_SINTEGRA_ESTIMATED_COST,
 			data_slot="directd_sintegra",
 		),
 	]
@@ -230,6 +251,7 @@ def run_background_check(
 	organization_name: str | None = None,
 	force: bool = False,
 	user: str | None = None,
+	tier_1_only: bool = False,
 ) -> str | None:
 	"""Executa a triagem jurídica e fiscal da organização ligada."""
 	settings = get_credit_settings()
@@ -287,7 +309,8 @@ def run_background_check(
 			skip_paid_providers = True
 
 	# Chamada aos provedores externos habilitados — cada um isolado, sem fail-open
-	providers = _build_providers(settings)
+	org_uf = str(org_doc.get("state") or "").strip()
+	providers = _build_providers(settings, org_uf=org_uf, tier_1_only=bool(tier_1_only))
 	enabled_providers = [] if skip_paid_providers else [p for p in providers if p.enabled]
 
 	failures: list[str] = []
@@ -341,12 +364,17 @@ def run_background_check(
 	# Gravação do DocType 'Cred Hub Credit Report'
 	today_date = today()
 	# Um parecer 'Error' nunca fica em cache: a próxima tentativa deve consultar de novo
-	valid_until_date = today_date if verdict == VERDICT_ERROR else add_days(today_date, CACHE_DAYS)
+	try:
+		from cred_hub.credit_check import package as _pkg_lib
+		cache_days = int(_pkg_lib.config().get("reuse_days") or CACHE_DAYS)
+	except Exception:
+		cache_days = CACHE_DAYS
+	valid_until_date = today_date if verdict == VERDICT_ERROR else add_days(today_date, cache_days)
 
-	lawsuits_checked = bool(settings.get("escavador_enabled") or settings.get("directd_enabled")) and not skip_paid_providers and verdict != VERDICT_ERROR
+	lawsuits_checked = bool(settings.get("escavador_enabled") or settings.get("directd_enabled") or settings.get("directd_processos_enabled")) and not tier_1_only and not skip_paid_providers and verdict != VERDICT_ERROR
 	infosimples_checked = bool(settings.get("infosimples_enabled")) and not skip_paid_providers and verdict != VERDICT_ERROR
-	protests_checked = bool(settings.get("infosimples_enabled") or settings.get("directd_enabled")) and not skip_paid_providers and verdict != VERDICT_ERROR
-	fgts_checked = bool(settings.get("directd_enabled") and settings.get("directd_fgts_enabled")) and not skip_paid_providers and verdict != VERDICT_ERROR
+	protests_checked = bool(settings.get("infosimples_enabled") or ((settings.get("directd_enabled") or settings.get("directd_protestos_enabled")) and not tier_1_only)) and not skip_paid_providers and verdict != VERDICT_ERROR
+	fgts_checked = bool(settings.get("directd_fgts_enabled")) and not skip_paid_providers and verdict != VERDICT_ERROR
 
 	if not infosimples_checked:
 		pgfn_status = "Não verificado"

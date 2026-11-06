@@ -31,20 +31,20 @@ DEFAULT_METHODOLOGY = """Metodologia padrão de análise de crédito de empresas
 
 Objetivo: recomendar se a operação pode seguir, usando só os dados consultados e os dados do card. A decisão é sempre do analista.
 
-1. Caráter (histórico de pagamento e conduta): protestos, negativações (PEFIN, REFIN), cheques sem fundo, ações de cobrança, sanções (CEIS/CNEP), score e probabilidade de inadimplência. Pese a recência e o valor: um protesto antigo e pequeno pesa menos que vários recentes. Restrição de sócio também pesa no caráter da empresa.
+1. Caráter (histórico de pagamento e conduta): protestos, negativações (PEFIN, REFIN), cheques sem fundo, ações de cobrança, execuções/penhoras, sanções (CEIS/CNEP), score e probabilidade de inadimplência. Pese a recência e o valor: um protesto antigo e pequeno pesa menos que vários recentes. Restrição de sócio também pesa no caráter da empresa.
 
-2. Capacidade (gerar caixa para pagar): faturamento informado e presumido, porte, tempo de atividade, dívida bancária no SCR (valor a vencer, valor vencido, número de instituições) e consultas recentes de outras empresas (muitas consultas em pouco tempo podem indicar busca de crédito). Compare o valor pedido com o faturamento e com a dívida bancária.
+2. Capacidade (gerar caixa para pagar): faturamento informado e presumido, limite de crédito sugerido pelos bureaus, porte, tempo de atividade, dívida bancária no SCR (valor a vencer, valor vencido, número de instituições) e consultas recentes de outras empresas (muitas consultas em 30 dias podem indicar busca acelerada de crédito ou estresse de caixa). Compare o valor pedido na operação com o faturamento presumido e com a dívida bancária de curto prazo.
 
-3. Capital (patrimônio e estrutura): capital social, natureza jurídica, quadro societário, dívida ativa da União (PGFN) e situação cadastral.
+3. Capital (patrimônio e estrutura): capital social, natureza jurídica, quadro societário (atenção a entrada muito recente de sócios em empresas antigas), dívida ativa da União (PGFN) e situação cadastral/estadual (Sintegra/FGTS).
 
-4. Colateral (garantias): as garantias oferecidas no card. Se não houver garantia informada, diga.
+4. Colateral (garantias): as garantias oferecidas no card. Se não houver garantia informada, diga e recomende condicionantes adequadas (como aval dos sócios administradores ou confirmação de lastro).
 
 5. Condições (contexto da operação): finalidade, prazo, setor de atividade (CNAE) e o que falta saber.
 
 Como concluir:
 - Aprovar: sem restrições relevantes e capacidade compatível com o valor pedido.
-- Aprovar com ressalvas: há pontos de atenção que o analista deve tratar antes de liberar (por exemplo, pedir garantia, confirmar faturamento, reduzir a exposição).
-- Recusar: restrições graves e recentes; restrições ativas (protestos, negativações ou cheques sem fundo) junto com score na faixa de risco mais alta do bureau (por exemplo, até 300 numa escala de 0 a 1000) ou probabilidade de inadimplência alta; falência ou recuperação judicial; ou incapacidade evidente de pagar.
+- Aprovar com ressalvas: há pontos de atenção que o analista deve tratar antes de liberar (por exemplo, pedir garantia/aval, confirmar faturamento, reduzir a exposição).
+- Recusar: restrições graves e recentes; restrições ativas (protestos, negativações, penhoras ou cheques sem fundo) junto com score na faixa de risco mais alta do bureau (por exemplo, até 300 numa escala de 0 a 1000) ou probabilidade de inadimplência alta; falência ou recuperação judicial; ou incapacidade evidente de pagar.
 
 Dado que falta não vira aprovação: se uma consulta do pacote mínimo falhou ou não foi feita, ou se faltou uma informação importante do card (como o valor pedido), diga qual e recomende no máximo "aprovar com ressalvas". Consulta fora do pacote mínimo que não foi feita não muda o resultado."""
 
@@ -166,7 +166,7 @@ def _scr_overdue(payload: Any) -> tuple[float, float] | None:
 
 
 def _partner_restrictions(payload: Any) -> list[str]:
-	"""Restrições de um sócio no Dossiê QUOD (pendência financeira) ou no SCR (dívida vencida)."""
+	"""Restrições de um sócio no Dossiê QUOD, no Boa Vista Acerta PF, em Processos Completa ou no SCR."""
 	found = []
 	if not isinstance(payload, dict):
 		return found
@@ -181,6 +181,29 @@ def _partner_restrictions(payload: Any) -> list[str]:
 			items = pendencia.get(key)
 			if isinstance(items, list) and items:
 				found.append(f"{key}: {len(items)}")
+
+	# Boa Vista Acerta PF
+	if "scores" in retorno and ("pendenciasRestricoes" in retorno or "protestos" in retorno):
+		prot_bv = retorno.get("protestos") if isinstance(retorno.get("protestos"), dict) else {}
+		pend_bv = retorno.get("pendenciasRestricoes") if isinstance(retorno.get("pendenciasRestricoes"), dict) else {}
+		pq = int(br_number(prot_bv.get("quantidadeTotal")) or 0)
+		nq = int(br_number(pend_bv.get("quantidadeTotal")) or 0)
+		if pq > 0:
+			found.append(f"protestos: {pq}")
+		if nq > 0:
+			found.append(f"pendências financeiras: {nq}")
+
+	# Processos Completa (penhoras)
+	procs = retorno.get("processos") if isinstance(retorno.get("processos"), list) else []
+	pen_count = 0
+	for pr in procs:
+		if isinstance(pr, dict):
+			det = pr.get("detalhesStatusProcesso") if isinstance(pr.get("detalhesStatusProcesso"), dict) else {}
+			pen = det.get("penhoras") if isinstance(det.get("penhoras"), list) else []
+			pen_count += len(pen)
+	if pen_count > 0:
+		found.append(f"penhoras judiciais: {pen_count}")
+
 	scr = _scr_overdue(payload)
 	if scr and scr[0] > 0:
 		found.append(_("overdue bank debt (SCR) of R$ {0:,.2f}").format(scr[0]))

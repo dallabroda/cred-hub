@@ -23,7 +23,7 @@ from cred_hub.credit_check.premium_bureaus import PREMIUM_BUREAUS
 
 SETTINGS = "Cred Hub Credit Settings"
 FIELD = "dossier_package_json"
-COMPANY_BUREAUS = ("dossie_quod", "scr_bacen", "boavista_risco", "serasa")
+COMPANY_BUREAUS = ("dossie_quod", "scr_bacen", "boavista_risco", "processos_completa", "serasa")
 PARTNER_BUREAUS = partners_lib.PARTNER_BUREAUS
 DEFAULT_ITEMS = ("company:dossie_quod", "company:scr_bacen")
 DEFAULT_REUSE_DAYS = 30
@@ -31,6 +31,11 @@ MAX_REUSE_DAYS = 365
 DONE = "Concluído"  # status gravado na consulta que deu certo (o mesmo das consultas avulsas)
 FAILED = "Erro"
 JOB_PREFIX = "credit_package::"
+
+TIER_PRESETS = {
+	2: ["company:dossie_quod", "company:scr_bacen"],
+	3: ["company:boavista_risco", "company:scr_bacen", "company:processos_completa", "partners:boavista_acerta_pf"],
+}
 
 
 def valid_items() -> list[str]:
@@ -75,6 +80,12 @@ def save(items: Any, reuse_days: Any) -> dict[str, Any]:
 		frappe.throw(_("Unknown item in the minimum package: {0}").format(", ".join(unknown)))
 	if not any(item.startswith("company:") for item in items):
 		frappe.throw(_("The minimum package needs at least one query of the company."))
+	if "company:boavista_risco" in items and "company:serasa" in items:
+		frappe.throw(
+			_(
+				"Boa Vista Risco Positivo PJ e Serasa Relatório Avançado PJ são mutuamente exclusivos no Nível 3 (escolha um ou outro para evitar custo redundante)."
+			)
+		)
 	try:
 		days = int(reuse_days)
 	except (TypeError, ValueError):
@@ -101,6 +112,8 @@ def options(settings_doc=None) -> list[dict[str, Any]]:
 	for item in valid_items():
 		scope, bureau = item.split(":", 1)
 		option = enabled.get(bureau)
+		registry = PREMIUM_BUREAUS.get(bureau)
+		tier = 3 if bureau == "serasa" else (registry.tier if registry else 2)
 		result.append(
 			{
 				"item": item,
@@ -111,6 +124,7 @@ def options(settings_doc=None) -> list[dict[str, Any]]:
 				"provider": "Serasa Experian" if bureau == "serasa" else "DirectD",
 				"enabled": bool(option),
 				"configured": bool(option and option["configured"]),
+				"tier": tier,
 			}
 		)
 	return result
@@ -138,7 +152,13 @@ def _error_of(row) -> str:
 		return ""
 
 
-def status(organization_name: str, settings_doc=None, as_of=None) -> dict[str, Any]:
+def status(
+	organization_name: str,
+	settings_doc=None,
+	as_of=None,
+	selected_contacts: list[str] | None = None,
+	items_override: list[str] | None = None,
+) -> dict[str, Any]:
 	"""A situação do pacote para uma Organização: cada item por empresa ou sócio, como "reused" (consulta que deu
 	certo dentro do prazo), "missing" (falta consultar) ou "unavailable" (bureau desligado ou sem credencial).
 
@@ -148,22 +168,26 @@ def status(organization_name: str, settings_doc=None, as_of=None) -> dict[str, A
 
 	settings_doc = settings_doc or frappe.get_single(SETTINGS)
 	conf = config(settings_doc)
+	target_items = [str(i) for i in items_override if str(i) in valid_items()] if items_override else conf["items"]
 	enabled = {item["key"]: item for item in api._final_bureaus(settings_doc)}
 	org = frappe.db.get_value("CRM Organization", organization_name, ["organization_name", "cnpj"], as_dict=True) or {}
 	reference = get_datetime(as_of) if as_of else now_datetime()
 	since = add_days(reference, -conf["reuse_days"])
-	wants_partners = any(item.startswith("partners:") for item in conf["items"])
+	wants_partners = any(item.startswith("partners:") for item in target_items)
 	partners = partners_lib.partners_of(organization_name) if wants_partners else []
+	selected_set = {str(c) for c in selected_contacts} if selected_contacts is not None else None
 
 	entries: list[dict[str, Any]] = []
-	for item in conf["items"]:
+	for item in target_items:
 		scope, bureau = item.split(":", 1)
 		option = enabled.get(bureau)
 		if scope == "company":
 			subjects = [{"contact": None, "name": org.get("organization_name") or organization_name, "document": org.get("cnpj") or ""}]
 		else:
 			subjects = [
-				{"contact": p["contact"], "name": p["name"], "document": only_digits(p["cpf"])} for p in partners if p["has_cpf"]
+				{"contact": p["contact"], "name": p["name"], "document": only_digits(p["cpf"]), "is_admin": p.get("is_admin", False)}
+				for p in partners
+				if p["has_cpf"] and (selected_set is None or p["contact"] in selected_set)
 			]
 		for subject in subjects:
 			entry = {
@@ -239,6 +263,8 @@ def run_job(
 	verdict: str = "Not Checked",
 	warning_acknowledged: bool = False,
 	opinion_name: str | None = None,
+	selected_contacts: list[str] | None = None,
+	items_override: list[str] | None = None,
 ) -> None:
 	"""Em segundo plano: faz as consultas que faltam no pacote, gera o PDF 1 e, se pedido, o parecer (PDF 2)."""
 	from cred_hub.credit_check import api, dossier
@@ -249,7 +275,12 @@ def run_job(
 		if getattr(frappe.local, "job", None) is not None:
 			frappe.local.job.lang_resolved = True
 		settings_doc = frappe.get_single(SETTINGS)
-		current = status(organization_name, settings_doc)
+		current = status(
+			organization_name,
+			settings_doc,
+			selected_contacts=selected_contacts,
+			items_override=items_override,
+		)
 		enabled = {item["key"]: item for item in api._final_bureaus(settings_doc)}
 		cnpj = frappe.db.get_value("CRM Organization", organization_name, "cnpj") or ""
 		done, failed, spent = [], [], 0.0
