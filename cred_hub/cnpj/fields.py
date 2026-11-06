@@ -96,5 +96,4 @@ SIDE_PANEL_FIELDS = [
 	"share_capital",
 	"registry_phone",
 	"registry_email",
-	"cnpj_checked_on",
 ]

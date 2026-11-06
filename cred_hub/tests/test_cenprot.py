@@ -772,3 +772,9 @@ class TestCardTitles(IntegrationTestCase):
 		self.assertTrue(result["ok"])
 		self.assertEqual([a for a, _ in session.sent].count("EnviarTitulo"), 2)
 		sleep.assert_called_once()
+
+	def test_install_collection_template_creates_pipeline_and_returns_status(self):
+		status = protest.install_collection_template()
+		self.assertTrue(status["installed"])
+		self.assertTrue(status["pipeline"])
+		self.assertEqual(len(status["stages"]), 6)

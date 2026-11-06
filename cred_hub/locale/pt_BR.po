@@ -3001,3 +3001,88 @@ msgstr "Recebemos um pedido para redefinir a senha da sua conta."
 
 msgid "If you did not ask for it, ignore this e-mail: your password stays the same."
 msgstr "Se você não pediu, ignore este e-mail: sua senha continua a mesma."
+
+msgid "Invalid document checklist format."
+msgstr "Formato inválido da lista de documentos."
+
+msgid "Keep at least one active document in the checklist."
+msgstr "Mantenha pelo menos um documento ativo no checklist."
+
+msgid "Select a checklist document."
+msgstr "Selecione um documento do checklist."
+
+msgid "Unknown checklist document: {0}"
+msgstr "Documento desconhecido no checklist: {0}"
+
+msgid "Invalid document status: {0}"
+msgstr "Status de documento inválido: {0}"
+
+msgid "Pending"
+msgstr "Pendente"
+
+msgid "Attached"
+msgstr "Anexado"
+
+msgid "Verified ✓"
+msgstr "Conferido ✓"
+
+msgid "Rejected / Resubmit"
+msgstr "Rejeitado / Reenviar"
+
+msgid "Credit Document Checklist"
+msgstr "Checklist de Documentos de Crédito"
+
+msgid "Invalid visit report data."
+msgstr "Dados inválidos no relatório de visita."
+
+msgid "Favorable"
+msgstr "Favorável"
+
+msgid "Favorable with reservations"
+msgstr "Favorável com ressalvas"
+
+msgid "Unfavorable"
+msgstr "Desfavorável"
+
+msgid "Technical / Commercial Visit Report"
+msgstr "Relatório de Visita Técnica / Comercial"
+
+msgid "Street (Logradouro)"
+msgstr "Logradouro"
+
+msgid "Street number"
+msgstr "Número"
+
+msgid "Complement"
+msgstr "Complemento"
+
+msgid "Neighborhood (Bairro)"
+msgstr "Bairro"
+
+msgid "City (Município)"
+msgstr "Município"
+
+msgid "Credit & Digital Folder"
+msgstr "Crédito PJ e Pasta Digital"
+
+msgid "Credit & Digital Folder: read"
+msgstr "Crédito PJ e Pasta Digital: ler"
+
+msgid "Credit & Digital Folder: write"
+msgstr "Crédito PJ e Pasta Digital: gravar"
+
+msgid "Cannot move card to {0}: the following required documents in the Digital Folder are still pending or rejected: {1}"
+msgstr "Não é possível avançar o Card para {0}: os seguintes documentos obrigatórios da Pasta Digital ainda estão pendentes ou recusados: {1}"
+
+msgid "Cannot move card to {0}: all required documents in the Digital Folder must be verified (checked) by the credit team first. Pending verification: {1}"
+msgstr "Não é possível avançar o Card para {0}: todos os documentos obrigatórios da Pasta Digital precisam estar conferidos (Verified) pela mesa de crédito. Pendentes de conferência: {1}"
+
+msgid "Cannot move card to {0}: generate the Credit Dossier / Risk Report for this company before advancing to Committee."
+msgstr "Não é possível avançar o Card para {0}: gere o Dossiê / Relatório de Crédito desta empresa antes de avançar para o Comitê."
+
+msgid "Invalid pagination cursor."
+msgstr "Cursor de paginação inválido."
+
+msgid "Provide a valid CPF (11 digits) or CNPJ (14 digits)."
+msgstr "Informe um CPF (11 dígitos) ou CNPJ (14 dígitos) válido."
+

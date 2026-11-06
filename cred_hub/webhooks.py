@@ -1,7 +1,7 @@
 """Sistema de Webhooks de Saída do HubTech em Tempo Real (credtech#288).
 
 Dispara eventos HTTP assíncronos (deal.created, deal.stage_changed, deal.won, deal.lost, deal.deleted,
-contact.created, contact.updated) com validação de integridade via HMAC-SHA256 (X-HubTech-Signature).
+contact.created, contact.updated, checklist.item_rejected) com validação de integridade via HMAC-SHA256 (X-HubTech-Signature).
 """
 
 import hashlib
@@ -24,6 +24,8 @@ EVENT_FIELD_MAP = {
 	"deal.deleted": "deal_deleted",
 	"contact.created": "contact_created",
 	"contact.updated": "contact_updated",
+	"checklist.item_rejected": "checklist_item_rejected",
+	"credit.limit_decided": "credit_limit_decided",
 }
 
 
@@ -62,6 +64,53 @@ def on_contact_insert(doc, method=None):
 def on_contact_update(doc, method=None):
 	"""Disparado após alterar um contato (contact.updated)."""
 	_trigger_event("contact.updated", _contact_payload(doc), pipeline=None, reference_doctype="Contact", reference_name=doc.name)
+
+
+def trigger_checklist_rejected(
+	organization_name: str,
+	deal_name: str | None,
+	item_key: str,
+	label: str,
+	reason: str,
+	portal_url: str,
+):
+	"""Dispara evento checklist.item_rejected quando um documento da Pasta Digital é recusado."""
+	pipeline = None
+	if deal_name and frappe.db.exists("CRM Deal", deal_name):
+		pipeline = frappe.db.get_value("CRM Deal", deal_name, "pipeline")
+	payload = {
+		"organization": organization_name,
+		"deal": deal_name,
+		"item_key": item_key,
+		"document_label": label,
+		"rejection_reason": reason,
+		"portal_url": portal_url,
+	}
+	_trigger_event(
+		"checklist.item_rejected",
+		payload,
+		pipeline=pipeline,
+		reference_doctype="CRM Deal" if deal_name else "CRM Organization",
+		reference_name=deal_name or organization_name,
+	)
+
+
+def trigger_credit_limit_decided(
+	organization_name: str,
+	deal_name: str | None,
+	committee_payload: dict,
+):
+	"""Dispara evento credit.limit_decided quando a Mesa de Comitê de Crédito aprova ou reprova um limite."""
+	pipeline = None
+	if deal_name and frappe.db.exists("CRM Deal", deal_name):
+		pipeline = frappe.db.get_value("CRM Deal", deal_name, "pipeline")
+	_trigger_event(
+		"credit.limit_decided",
+		committee_payload,
+		pipeline=pipeline,
+		reference_doctype="CRM Deal" if deal_name else "CRM Organization",
+		reference_name=deal_name or organization_name,
+	)
 
 
 def _deal_payload(doc) -> dict:
@@ -122,8 +171,15 @@ def _trigger_event(event_name: str, payload_data: dict, pipeline: str | None, re
 		)
 
 
-def send_webhook(webhook_name: str, event_name: str, payload_data: dict, reference_doctype: str = "", reference_name: str = ""):
-	"""Executado pelo worker em segundo plano para envio HTTP com assinatura HMAC."""
+def send_webhook(
+	webhook_name: str,
+	event_name: str,
+	payload_data: dict,
+	reference_doctype: str = "",
+	reference_name: str = "",
+	attempt: int = 1,
+):
+	"""Executado pelo worker em segundo plano para envio HTTP com assinatura HMAC e retentativa automática."""
 	if not frappe.db.exists(WEBHOOK_DOCTYPE, webhook_name):
 		return
 
@@ -135,6 +191,7 @@ def send_webhook(webhook_name: str, event_name: str, payload_data: dict, referen
 	body = {
 		"event": event_name,
 		"delivery_id": delivery_id,
+		"attempt": attempt,
 		"timestamp": now_datetime().isoformat(),
 		"data": payload_data,
 	}
@@ -149,12 +206,14 @@ def send_webhook(webhook_name: str, event_name: str, payload_data: dict, referen
 		"X-HubTech-Signature": signature,
 		"X-HubTech-Event": event_name,
 		"X-HubTech-Delivery": delivery_id,
+		"X-HubTech-Attempt": str(attempt),
 	}
 
 	start_time = time.time()
 	status = "Failed"
 	status_code = None
 	response_text = ""
+	retryable = False
 
 	try:
 		from cred_hub.email_company import safe_http
@@ -169,16 +228,19 @@ def send_webhook(webhook_name: str, event_name: str, payload_data: dict, referen
 			status_code = resp.status_code
 			response_text = resp.text[:2000]
 			status = "Success" if resp.ok else "Failed"
+			retryable = status_code in (408, 429, 500, 502, 503, 504)
 		finally:
 			session.close()
 	except safe_http.BlockedAddress as exc:
 		response_text = f"Security error: Destination blocked ({exc})"
 		status_code = 0
 		status = "Failed"
+		retryable = False
 	except Exception as exc:
 		response_text = f"Connection error: {str(exc)[:1500]}"
 		status_code = 0
 		status = "Failed"
+		retryable = True
 	finally:
 		duration_ms = int((time.time() - start_time) * 1000)
 
@@ -216,3 +278,54 @@ def send_webhook(webhook_name: str, event_name: str, payload_data: dict, referen
 		frappe.db.commit()
 	except Exception:
 		frappe.log_error(title="Cred Hub Webhook: falha ao gravar log de entrega")
+
+	# Auto-retry até 3 tentativas em falhas transitórias (5xx / timeout / 429)
+	if status == "Failed" and retryable and attempt < 3 and not getattr(frappe.flags, "in_test", False):
+		frappe.enqueue(
+			"cred_hub.webhooks.send_webhook",
+			queue="short",
+			webhook_name=webhook_name,
+			event_name=event_name,
+			payload_data=payload_data,
+			reference_doctype=reference_doctype,
+			reference_name=reference_name,
+			attempt=attempt + 1,
+		)
+
+
+@frappe.whitelist(methods=["POST"])
+def send_test_ping(webhook_name: str) -> dict:
+	"""Envia um evento de teste (webhook.ping) imediato para validar a URL e a assinatura HMAC."""
+	frappe.only_for("System Manager")
+	send_webhook(
+		webhook_name=webhook_name,
+		event_name="webhook.ping",
+		payload_data={"message": "HubTech CRM Webhook Ping Test", "webhook": webhook_name},
+		reference_doctype=WEBHOOK_DOCTYPE,
+		reference_name=webhook_name,
+		attempt=1,
+	)
+	doc = frappe.get_doc(WEBHOOK_DOCTYPE, webhook_name)
+	return {
+		"status": doc.last_delivery_status,
+		"status_code": doc.last_delivery_code,
+		"last_delivery_on": doc.last_delivery_on,
+	}
+
+
+@frappe.whitelist(methods=["POST"])
+def replay_webhook_log(log_name: str) -> dict:
+	"""Reenvia (Replay) uma entrega anterior a partir do registro em Cred Hub Webhook Log."""
+	frappe.only_for("System Manager")
+	log_doc = frappe.get_doc(LOG_DOCTYPE, log_name)
+	raw_payload = frappe.parse_json(log_doc.request_payload or "{}")
+	data = raw_payload.get("data") if isinstance(raw_payload, dict) else {}
+	send_webhook(
+		webhook_name=log_doc.webhook,
+		event_name=log_doc.event,
+		payload_data=data or {},
+		reference_doctype=log_doc.reference_doctype or "",
+		reference_name=log_doc.reference_name or "",
+		attempt=1,
+	)
+	return {"replayed": True, "webhook": log_doc.webhook, "event": log_doc.event}

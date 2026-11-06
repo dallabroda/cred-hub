@@ -51,6 +51,24 @@ def enrich_doc(doctype, name, cnpj):
 	sector = ensure_industry(sector_for_cnae(data.get("main_cnae")))
 	if sector:
 		doc.industry = sector
+	# Estima imediatamente a faixa de funcionários pelo Porte + CNAE + Capital Social da Receita
+	# para nunca deixar empresa de porte Demais/EPP com o default "1-10"
+	if doc.get("no_of_employees") in (None, "", "1-10"):
+		from cred_hub.company.discover import sebrae_crm_bucket, sebrae_range
+		from cred_hub.company.enrich import RECEITA_SIZE
+		porte_receita = RECEITA_SIZE.get(doc.get("company_size") or "", "")
+		cnae_code = (doc.get("main_cnae") or "").split(" ")[0]
+		faixa_sebrae = sebrae_range(porte_receita, cnae_code, doc.get("is_mei") in ("Yes", "Sim"))
+		bucket = sebrae_crm_bucket(
+			faixa_sebrae,
+			capital_social=float(doc.get("share_capital") or 0.0),
+			natureza_juridica=doc.get("legal_nature") or "",
+			name=doc.get("legal_name") or doc.name,
+		)
+		if bucket:
+			doc.no_of_employees = bucket
+			doc.employee_range = faixa_sebrae
+			doc.employee_source = "SEBRAE/CNPJ"
 	if doctype == "CRM Lead" and not doc.get("organization"):
 		doc.organization = data.get("trade_name") or data.get("legal_name")
 	if doctype == "CRM Organization":
@@ -66,6 +84,10 @@ def enrich_doc(doctype, name, cnpj):
 	doc.add_comment("Comment", resumo)
 	if doctype == "CRM Organization":
 		use_legal_name(doc, data.get("legal_name"))
+		final_name = (data.get("legal_name") or "").strip()
+		if final_name and frappe.db.exists("CRM Organization", final_name):
+			from cred_hub.company.events import enqueue as enqueue_company
+			enqueue_company("CRM Organization", final_name)
 
 
 def use_legal_name(doc, legal_name: str | None):

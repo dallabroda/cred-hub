@@ -3,12 +3,6 @@
  "creation": "2026-10-30 16:30:00.000000",
  "doctype": "DocType",
  "engine": "InnoDB",
- "links": [],
- "modified": "2026-10-30 16:30:00.000000",
- "modified_by": "Administrator",
- "module": "Cred Hub",
- "owner": "Administrator",
- "states": [],
  "field_order": [
   "label",
   "webhook_url",
@@ -23,6 +17,8 @@
   "column_break_events",
   "contact_created",
   "contact_updated",
+  "checklist_item_rejected",
+  "credit_limit_decided",
   "pipelines_section",
   "pipelines",
   "audit_section",
@@ -111,6 +107,18 @@
    "label": "contact.updated (Contato alterado)"
   },
   {
+   "default": "1",
+   "fieldname": "checklist_item_rejected",
+   "fieldtype": "Check",
+   "label": "checklist.item_rejected (Documento recusado na Pasta Digital)"
+  },
+  {
+   "default": "1",
+   "fieldname": "credit_limit_decided",
+   "fieldtype": "Check",
+   "label": "credit.limit_decided (Limite aprovado/reprovado na Mesa de Comitê)"
+  },
+  {
    "fieldname": "pipelines_section",
    "fieldtype": "Section Break",
    "label": "Pipelines Filter (Vazio = Todos os Funis)"
@@ -145,7 +153,12 @@
    "read_only": 1
   }
  ],
+ "links": [],
+ "modified": "2026-11-05 16:30:00.000000",
+ "modified_by": "Administrator",
+ "module": "Cred Hub",
  "name": "Cred Hub Webhook",
+ "owner": "Administrator",
  "permissions": [
   {
    "create": 1,
@@ -159,5 +172,6 @@
    "share": 1,
    "write": 1
   }
- ]
+ ],
+ "states": []
 }

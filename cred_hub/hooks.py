@@ -56,6 +56,7 @@ doc_events = {
 	# Card criado de um lead com CNPJ: o CNPJ vai para a Organização do card (épico #66)
 	# Mudança de etapa do funil dispara esteira progressiva de crédito se configurado (credtech#260)
 	"CRM Deal": {
+		"validate": "cred_hub.credit_check.onboarding.validate_deal_stage_gate",
 		"after_insert": [
 			"cred_hub.cnpj.card.after_insert",
 			"cred_hub.webhooks.on_deal_insert",

@@ -247,6 +247,20 @@ def upsert_contact(org, partner, person, protocol) -> dict:
 			known_emails.add(address)
 			stats["emails"] += 1
 
+	if person:
+		best_addr = next(iter(addresses(person)), None)
+		if best_addr:
+			for attr, key in (
+				("cenprot_zip", "zip"),
+				("cenprot_street", "street"),
+				("cenprot_number", "number"),
+				("cenprot_complement", "complement"),
+				("cenprot_neighborhood", "neighborhood"),
+				("cenprot_city", "city"),
+				("cenprot_state", "state"),
+			):
+				if not contact.get(attr) and best_addr.get(key):
+					contact.set(attr, best_addr[key])
 	contact.last_enriched_at = now_datetime()
 	contact.assertiva_protocol = (protocol or "")[:60]
 	contact.flags.ignore_mandatory = True

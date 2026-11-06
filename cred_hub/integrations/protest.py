@@ -173,6 +173,19 @@ def collection_funnel_status() -> dict:
 	}
 
 
+@frappe.whitelist()
+def install_collection_template() -> dict:
+	"""Instala o funil "Debt Collection" (Cobrança) com as 6 etapas e campos de protesto.
+	Só administradores e gerentes. Pode ser instalado mesmo antes de configurar a CENPROT."""
+	frappe.only_for(["System Manager", "Sales Manager"])
+	settings = get_settings()
+	pipeline = settings.collection_pipeline
+	if not pipeline or not frappe.db.exists("CRM Pipeline", pipeline):
+		create_collection_pipeline(settings)
+		settings.save(ignore_permissions=True)
+	return collection_funnel_status()
+
+
 # Título ------------------------------------------------------------------------------------------------------
 
 
@@ -216,6 +229,27 @@ def _contact_address(contact_name: str):
 	return frappe.get_doc("Address", name) if name else None
 
 
+def _contact_party(contact) -> dict:
+	"""Monta o endereço CENPROT do Contato lendo primeiro os campos diretos da seção Localize (Assertiva)
+	(`cenprot_*`) e usando o Address vinculado como fallback para qualquer campo em branco."""
+	address = None
+	try:
+		address = _contact_address(contact.name)
+	except Exception:
+		address = None
+	base = _address_party(address)
+	direct = {
+		"endereco": (contact.get("cenprot_street") or "").strip(),
+		"numero": (contact.get("cenprot_number") or "").strip(),
+		"complemento": (contact.get("cenprot_complement") or "").strip(),
+		"bairro": (contact.get("cenprot_neighborhood") or "").strip(),
+		"municipio": (contact.get("cenprot_city") or "").strip(),
+		"uf": (contact.get("cenprot_state") or "").strip(),
+		"cep": only_digits(contact.get("cenprot_zip") or ""),
+	}
+	return {k: direct.get(k) or base.get(k) or "" for k in ("endereco", "numero", "complemento", "bairro", "municipio", "uf", "cep")}
+
+
 def _primary_contact(deal) -> str | None:
 	rows = deal.get("contacts") or []
 	primary = next((row.contact for row in rows if row.get("is_primary")), None)
@@ -253,12 +287,7 @@ def debtor_of(deal) -> dict:
 		except frappe.DoesNotExistError:
 			contact = None
 		if contact and len(only_digits(contact.get("cpf"))) == 11:
-			address = None
-			try:
-				address = _contact_address(contact.name)
-			except Exception:
-				address = None
-			party = _address_party(address)
+			party = _contact_party(contact)
 			party.update(
 				documento=only_digits(contact.cpf),
 				nome=contact.full_name,
@@ -823,7 +852,10 @@ def codebtor_candidates(deal) -> list[dict]:
 	contacts = frappe.get_all(
 		"Contact",
 		filters={"company_name": organization},
-		fields=["name", "full_name", "cpf", "designation", "share_percentage", "mobile_no", "phone", "email_id"],
+		fields=[
+			"name", "full_name", "cpf", "designation", "share_percentage", "mobile_no", "phone", "email_id",
+			"cenprot_zip", "cenprot_street", "cenprot_number", "cenprot_complement", "cenprot_neighborhood", "cenprot_city", "cenprot_state",
+		],
 		order_by="share_percentage desc, full_name asc",
 	)
 	address_labels = address_labels_()
@@ -835,7 +867,7 @@ def codebtor_candidates(deal) -> list[dict]:
 	company_has_address = bool(company) and not _missing(company, address_labels)
 	found = []
 	for contact in contacts:
-		party = _address_party(_contact_address(contact.name))
+		party = _contact_party(contact)
 		party.update(
 			documento=only_digits(contact.cpf) if is_valid_cpf(contact.cpf) else "",
 			nome=contact.full_name,

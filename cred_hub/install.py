@@ -31,7 +31,7 @@ CONTACT_HIDDEN_FIELDS = ("salutation", "last_name", "gender")
 # sem saudação e gênero. O "Nome da Empresa" do contato fica: é a organização dele (as telas mostram
 # "Organização"), e passa a se chamar assim em toda parte
 REMOVED_FIELDS = {
-	"CRM Organization": ("territory", "legal_name", "trade_name", "employee_count", "employee_range"),
+	"CRM Organization": ("territory", "legal_name", "trade_name", "employee_count", "employee_range", "cnpj_checked_on"),
 	"Contact": ("salutation", "gender", "middle_name", "last_name"),
 }
 
@@ -117,6 +117,7 @@ def after_install():
 	add_side_panel_section(
 		"Contact", name="cred_hub_localize_section", label="Localize (Assertiva)", fields=CONTACT_PANEL_FIELDS
 	)
+	backfill_contact_cenprot_addresses()
 	# Conexão do Cred Chat feita antes do painel na conversa (credtech#45): instala em segundo plano
 	try:
 		install_chat_panel()
@@ -346,3 +347,28 @@ def install_credit_check_fields():
 		},
 		update=True,
 	)
+
+
+def backfill_contact_cenprot_addresses():
+	"""Preenche os campos cenprot_* nos Contatos que já tinham um Address vinculado mas ainda estão com cenprot_street vazio."""
+	try:
+		from cred_hub.integrations.protest import _address_party, _contact_address
+		contacts = frappe.get_all("Contact", filters={"cenprot_street": ("in", ["", None])}, pluck="name")
+		for cname in contacts:
+			addr = _contact_address(cname)
+			if not addr:
+				continue
+			parts = _address_party(addr)
+			updates = {
+				"cenprot_street": parts.get("endereco") or "",
+				"cenprot_number": parts.get("numero") or "",
+				"cenprot_complement": parts.get("complemento") or "",
+				"cenprot_neighborhood": parts.get("bairro") or "",
+				"cenprot_city": parts.get("municipio") or "",
+				"cenprot_state": parts.get("uf") or "",
+				"cenprot_zip": parts.get("cep") or "",
+			}
+			if any(updates.values()):
+				frappe.db.set_value("Contact", cname, updates, update_modified=False)
+	except Exception:
+		pass

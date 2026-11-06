@@ -12,17 +12,37 @@ DECLARATIONS = ("D", "C", "A", "G", "I")
 CONTACT_FIELDS = [
 	{"fieldname": "localize_section", "fieldtype": "Section Break", "label": "Localize (Assertiva)", "collapsible": 1},
 	{"fieldname": "cpf", "fieldtype": "Data", "label": "CPF", "length": 14, "search_index": 1},
+	{"fieldname": "share_percentage", "fieldtype": "Percent", "label": "Share of the capital"},
 	{"fieldname": "has_whatsapp", "fieldtype": "Check", "label": "Has WhatsApp", "read_only": 1},
 	{"fieldname": "phone_assertiveness", "fieldtype": "Int", "label": "Phone assertiveness", "read_only": 1},
 	{"fieldname": "phone_carrier", "fieldtype": "Data", "label": "Phone carrier", "length": 40, "read_only": 1},
 	{"fieldname": "localize_column", "fieldtype": "Column Break"},
-	{"fieldname": "share_percentage", "fieldtype": "Percent", "label": "Share of the capital"},
+	{"fieldname": "cenprot_zip", "fieldtype": "Data", "label": "ZIP code (CEP)", "length": 10},
+	{"fieldname": "cenprot_street", "fieldtype": "Data", "label": "Street (Logradouro)", "length": 140},
+	{"fieldname": "cenprot_number", "fieldtype": "Data", "label": "Street number", "length": 20},
+	{"fieldname": "cenprot_complement", "fieldtype": "Data", "label": "Complement", "length": 80},
+	{"fieldname": "cenprot_neighborhood", "fieldtype": "Data", "label": "Neighborhood (Bairro)", "length": 80},
+	{"fieldname": "cenprot_city", "fieldtype": "Data", "label": "City (Município)", "length": 80},
+	{"fieldname": "cenprot_state", "fieldtype": "Data", "label": "State (UF)", "length": 2},
 	{"fieldname": "last_enriched_at", "fieldtype": "Datetime", "label": "Localize query on", "read_only": 1},
 	{"fieldname": "assertiva_protocol", "fieldtype": "Data", "label": "Assertiva protocol", "length": 60, "read_only": 1},
 ]
-# Painel lateral do Contato. "address" é o campo nativo do Contact (Link > Address): a CENPROT exige o
-# endereço completo do codevedor para o protesto, e o operador precisa dele visível e editável aqui (credtech#315).
-CONTACT_PANEL_FIELDS = ["cpf", "has_whatsapp", "phone_assertiveness", "phone_carrier", "share_percentage", "last_enriched_at", "address"]
+# Painel lateral do Contato: traz exatamente os campos da Assertiva + o endereço estruturado exigido pela CENPROT
+# (CEP, Logradouro, Número, Complemento, Bairro, Município, UF) direto no painel, sem modal intermediário.
+CONTACT_PANEL_FIELDS = [
+	"cpf",
+	"share_percentage",
+	"has_whatsapp",
+	"phone_assertiveness",
+	"phone_carrier",
+	"cenprot_zip",
+	"cenprot_street",
+	"cenprot_number",
+	"cenprot_complement",
+	"cenprot_neighborhood",
+	"cenprot_city",
+	"cenprot_state",
+]
 
 DEAL_FIELDS = [
 	{"fieldname": "protest_section", "fieldtype": "Tab Break", "label": "Protest (CENPROT)"},

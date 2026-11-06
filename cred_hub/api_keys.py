@@ -9,19 +9,29 @@ Autenticação: `Authorization: Bearer hub_<key_id>_<segredo>`. O Frappe deixa p
 OAuth e roda os auth_hooks, que é onde `authenticate` entra. Só o hash do segredo é gravado.
 
 Cada chamada é conferida contra uma lista PERMITIDA de rotas por escopo: rota fora da lista recebe 403, então uma
-rota nova do CRM fica fechada até ser liberada aqui. As escritas ficam no log (Cred Hub API Log).
+rota nova do CRM fica fechada até ser liberada aqui. As chamadas ficam auditadas em `Cred Hub API Log` com `request_id`
+e `duration_ms`, e toda resposta inclui headers `X-Request-Id` e `X-RateLimit-*`.
 """
 
+import base64
 import hashlib
 import hmac
 import ipaddress
+import json
 import secrets
+import time
 from datetime import timedelta
 from urllib.parse import unquote
 
 import frappe
 from frappe import _
 from frappe.utils import add_days, cint, getdate, now_datetime, nowdate
+
+from cred_hub.cnpj.mapping import format_cnpj, only_digits
+
+
+def _format_cpf(digits: str) -> str:
+	return f"{digits[:3]}.{digits[3:6]}.{digits[6:9]}-{digits[9:]}" if len(digits) == 11 else digits
 
 KEY = "Cred Hub API Key"
 LOG = "Cred Hub API Log"
@@ -57,6 +67,8 @@ SCOPES = {
 	"tasks_read": "Tasks: read",
 	"tasks_write": "Tasks: create and edit",
 	"sync_deletes": "Incremental sync: read deleted records log",
+	"credit_read": "Credit & Digital Folder: read",
+	"credit_write": "Credit & Digital Folder: write",
 }
 
 # /api/resource/<doctype> e /api/v2/document/<doctype>: escopo de leitura e de escrita
@@ -70,12 +82,20 @@ RESOURCES = {
 	"File": ("files_read", "files_write"),
 	"FCRM Note": ("notes_read", "notes_write"),
 	"CRM Task": ("tasks_read", "tasks_write"),
+	"Cred Hub Checklist Item": ("credit_read", "credit_write"),
+	"Cred Hub Visit Report": ("credit_read", "credit_write"),
+	"Cred Hub Credit Report": ("credit_read", None),
 }
 
 # Doctypes protegidos que nunca podem ser excluídos via API Key mesmo com allow_delete.
-# CRM Lead entra aqui: hoje não existe "lead" separado de "card" para quem usa a API — leads_write
-# só serve para criar o contato que entra no funil (card), nunca para excluir.
-PROTECTED_AGAINST_DELETE = {"CRM Pipeline", "CRM Deal Status", "Cred Hub API Key", "User", "CRM Lead"}
+PROTECTED_AGAINST_DELETE = {
+	"CRM Pipeline",
+	"CRM Deal Status",
+	"Cred Hub API Key",
+	"User",
+	"CRM Lead",
+	"Cred Hub Credit Report",
+}
 
 # /api/method/<rota>: escopo exigido. Escrita é decidida pela rota, não pelo verbo HTTP.
 METHODS = {
@@ -86,8 +106,7 @@ METHODS = {
 	"crm.api.pipeline.get_field_catalog": "cards_read",
 	"crm.api.pipeline.move_card": "cards_write",
 	"crm.api.pipeline.change_pipeline": "cards_write",
-	# Campos e regras por etapa dos funis da chave (o usuário técnico é Dono deles). Criar, renomear e desativar
-	# campos do catálogo exige admin no crm (_assert_admin), então fica fora da chave por enquanto.
+	# Campos e regras por etapa dos funis da chave (o usuário técnico é Dono deles).
 	"crm.api.pipeline.save_pipeline": "fields_admin",
 	# Formulários dinâmicos (dev 3): o schema vai com a leitura de cada recurso
 	"crm.api.forms.get_form_schema": "cards_read",
@@ -104,10 +123,38 @@ METHODS = {
 	"cred_hub.sync.get_deleted_records": "sync_deletes",
 	# Operações em lote (Batch API)
 	"cred_hub.bulk.bulk_upsert": "cards_write",
+	# Busca unificada por CPF/CNPJ e especificação OpenAPI 3.1
+	"cred_hub.api_keys.lookup_by_document": "organizations_read",
+	"cred_hub.api_keys.get_openapi_spec": "pipelines_read",
+	# Domínio de Crédito PJ & Pasta Digital
+	"cred_hub.credit_check.api.get_credit_onboarding": "credit_read",
+	"cred_hub.credit_check.api.get_credit_committee": "credit_read",
+	"cred_hub.credit_check.api.get_report_details": "credit_read",
+	"cred_hub.credit_check.api.get_whatsapp_onboarding_reminder": "credit_read",
+	"cred_hub.credit_check.api.create_onboarding_portal_link": "credit_write",
+	"cred_hub.credit_check.api.generate_portal_link": "credit_write",
+	"cred_hub.credit_check.api.revoke_portal_link": "credit_write",
+	"cred_hub.credit_check.api.update_credit_checklist_item": "credit_write",
+	"cred_hub.credit_check.api.update_checklist_item": "credit_write",
+	"cred_hub.credit_check.api.analyze_checklist_document": "credit_write",
+	"cred_hub.credit_check.api.save_credit_visit_report": "credit_write",
+	"cred_hub.credit_check.api.save_visit_report": "credit_write",
+	"cred_hub.credit_check.api.save_committee_proposal": "credit_write",
+	"cred_hub.credit_check.api.cast_committee_vote": "credit_write",
+	"cred_hub.credit_check.api.check_deal": "credit_write",
+	"cred_hub.credit_check.api.trigger_check": "credit_write",
 }
-WRITE_METHODS = {name for name, scope in METHODS.items() if scope.endswith("_write") or scope == "fields_admin"}
-# frappe.client.* só para leitura, com o doctype conferido contra RESOURCES
-CLIENT_READS = ("frappe.client.get_list", "frappe.client.get", "frappe.client.get_count", "frappe.client.get_value")
+WRITE_METHODS = {
+	name for name, scope in METHODS.items() if scope.endswith("_write") or scope == "fields_admin"
+}
+# frappe.client.* e list_records_cursor só para leitura, com o doctype conferido contra RESOURCES
+CLIENT_READS = (
+	"frappe.client.get_list",
+	"frappe.client.get",
+	"frappe.client.get_count",
+	"frappe.client.get_value",
+	"cred_hub.api_keys.list_records_cursor",
+)
 
 
 class KeyNotAllowed(frappe.PermissionError):
@@ -146,6 +193,8 @@ def authenticate():
 		return
 	if scheme.lower() != "bearer" or not token.startswith(PREFIX):
 		return
+	start_time = time.time()
+	request_id = f"req_{secrets.token_hex(8)}"
 	key_id, secret = _split_token(token.strip())
 	key = frappe.db.get_value(
 		KEY,
@@ -167,12 +216,26 @@ def authenticate():
 	if not _ip_allowed(key.allowed_ips, frappe.local.request_ip):
 		raise frappe.AuthenticationError
 	write = _check_route(key.name)
-	_rate_limit(key.name, write, key.custom_rate_limit)
+	rate_info = _rate_limit(key.name, write, key.custom_rate_limit)
 	# set_user zera o form_dict (os argumentos da chamada); o OAuth do Frappe faz o mesmo cuidado
 	form_dict = frappe.local.form_dict
 	frappe.set_user(key.technical_user)
 	frappe.local.form_dict = form_dict
-	frappe.local.credhub_api_key = {"name": key.name, "write": write}
+	frappe.local.credhub_api_key = {
+		"name": key.name,
+		"write": write,
+		"request_id": request_id,
+		"start_time": start_time,
+		"rate_limit": rate_info,
+	}
+	try:
+		if hasattr(frappe.local, "response_headers"):
+			frappe.local.response_headers.set("X-Request-Id", request_id)
+			frappe.local.response_headers.set("X-RateLimit-Limit", str(rate_info["limit"]))
+			frappe.local.response_headers.set("X-RateLimit-Remaining", str(rate_info["remaining"]))
+			frappe.local.response_headers.set("X-RateLimit-Reset", str(rate_info["reset"]))
+	except Exception:
+		pass
 
 
 # ---------- Chaves antigas (token api_key:api_secret de um usuário) ----------
@@ -226,8 +289,10 @@ def _ip_allowed(allowed: str | None, ip: str | None) -> bool:
 
 
 def _scopes(key_name: str) -> set:
-	values = frappe.db.get_value(KEY, key_name, list(SCOPES), as_dict=True) or {}
-	return {scope for scope in SCOPES if cint(values.get(scope))}
+	meta = frappe.get_meta(KEY)
+	available = [s for s in SCOPES if meta.has_field(s)]
+	values = frappe.db.get_value(KEY, key_name, available, as_dict=True) or {}
+	return {scope for scope in available if cint(values.get(scope))}
 
 
 def _deny():
@@ -249,7 +314,6 @@ def _route():
 	):
 		if path.startswith(prefix):
 			parts = path[len(prefix) :].strip("/").split("/")
-			# <doctype> ou <doctype>/<name>; mais que isso (métodos do documento etc.) não é rota da chave
 			if kind == "resource" and len(parts) > 2:
 				return "other", None, verb
 			return kind, parts[0], verb
@@ -278,7 +342,18 @@ def _check_route(key_name: str) -> bool:
 	if kind == "method":
 		if target in CLIENT_READS:
 			doctype = frappe.local.form_dict.get("doctype")
-			if RESOURCES.get(doctype, (None, None))[0] in scopes:
+			read_scope = RESOURCES.get(doctype, (None, None))[0]
+			if read_scope and read_scope in scopes:
+				return False
+			_deny()
+		if target == "cred_hub.api_keys.lookup_by_document":
+			if scopes & {"organizations_read", "contacts_read", "cards_read", "credit_read"}:
+				return False
+			_deny()
+		if target == "cred_hub.api_keys.get_openapi_spec":
+			return False
+		if target == "cred_hub.credit_check.api.get_credit_onboarding":
+			if scopes & {"credit_read", "cards_read", "organizations_read"}:
 				return False
 			_deny()
 		if target == "cred_hub.bulk.bulk_upsert":
@@ -326,12 +401,13 @@ def _custom_rate_limit(value) -> int | None:
 	return value
 
 
-def _rate_limit(key_name: str, write: bool, custom_limit: int | None = None):
+def _rate_limit(key_name: str, write: bool, custom_limit: int | None = None) -> dict:
 	now = now_datetime()
 	minute = now.strftime("%Y%m%d%H%M")
 	prev_minute = (now - timedelta(minutes=1)).strftime("%Y%m%d%H%M")
 	seconds_in_minute = now.second
 	weight_prev = max(0.0, (60.0 - seconds_in_minute) / 60.0)
+	reset_epoch = int(time.time()) + max(1, 60 - seconds_in_minute)
 
 	if custom_limit is None:
 		custom_limit = cint(frappe.db.get_value(KEY, key_name, "custom_rate_limit"))
@@ -339,6 +415,7 @@ def _rate_limit(key_name: str, write: bool, custom_limit: int | None = None):
 	total_limit = custom if custom > 0 else CALLS_PER_MINUTE
 	write_limit = max(1, min(WRITES_PER_MINUTE, custom // 5)) if custom > 0 else WRITES_PER_MINUTE
 	limits = [(total_limit, "all")] + ([(write_limit, "write")] if write else [])
+	remaining = total_limit
 	for limit, counter in limits:
 		cache_key_curr = frappe.cache.make_key(f"credhub_api:{key_name}:{counter}:{minute}")
 		cache_key_prev = frappe.cache.make_key(f"credhub_api:{key_name}:{counter}:{prev_minute}")
@@ -347,12 +424,19 @@ def _rate_limit(key_name: str, write: bool, custom_limit: int | None = None):
 			frappe.cache.expire(cache_key_curr, 180)
 		prev_count = cint(frappe.cache.get_value(cache_key_prev) or 0)
 		estimated_rate = (prev_count * weight_prev) + curr_count
+		if counter == "all":
+			remaining = max(0, int(limit - estimated_rate))
 		if estimated_rate > limit:
-			frappe.local.response_headers.set("Retry-After", str(max(1, 60 - seconds_in_minute)))
+			if hasattr(frappe.local, "response_headers"):
+				frappe.local.response_headers.set("Retry-After", str(max(1, 60 - seconds_in_minute)))
+				frappe.local.response_headers.set("X-RateLimit-Limit", str(total_limit))
+				frappe.local.response_headers.set("X-RateLimit-Remaining", "0")
+				frappe.local.response_headers.set("X-RateLimit-Reset", str(reset_epoch))
 			raise frappe.RateLimitExceededError(_("Too many requests for this API key. Wait a minute and try again."))
+	return {"limit": total_limit, "remaining": remaining, "reset": reset_epoch}
 
 
-# ---------- Depois da chamada (after_request): último uso e log das escritas ----------
+# ---------- Depois da chamada (after_request): headers, último uso e log de auditoria ----------
 
 
 def after_request(response=None, request=None):
@@ -360,20 +444,43 @@ def after_request(response=None, request=None):
 	if not info:
 		return
 	try:
-		frappe.db.set_value(KEY, info["name"], {"last_used_on": now_datetime(), "last_used_ip": frappe.local.request_ip}, update_modified=False)
-		if info["write"]:
-			kind, target, verb = _route()
-			frappe.get_doc(
-				{
-					"doctype": LOG,
-					"api_key": info["name"],
-					"route": f"{verb} {frappe.request.path}"[:240],
-					"reference_doctype": target if kind == "resource" else None,
-					"status_code": getattr(response, "status_code", None),
-					"ip_address": frappe.local.request_ip,
-					"called_on": now_datetime(),
-				}
-			).insert(ignore_permissions=True)
+		request_id = info.get("request_id") or f"req_{secrets.token_hex(8)}"
+		start_time = info.get("start_time") or time.time()
+		duration_ms = max(1, int((time.time() - start_time) * 1000))
+		rate_info = info.get("rate_limit") or {}
+		status_code = getattr(response, "status_code", None) or 200
+
+		# Garante os headers também no objeto response final do Werkzeug
+		if response is not None and hasattr(response, "headers"):
+			response.headers["X-Request-Id"] = request_id
+			if rate_info:
+				response.headers["X-RateLimit-Limit"] = str(rate_info.get("limit", CALLS_PER_MINUTE))
+				response.headers["X-RateLimit-Remaining"] = str(rate_info.get("remaining", 0))
+				response.headers["X-RateLimit-Reset"] = str(rate_info.get("reset", 0))
+
+		frappe.db.set_value(
+			KEY,
+			info["name"],
+			{"last_used_on": now_datetime(), "last_used_ip": frappe.local.request_ip},
+			update_modified=False,
+		)
+		# Registra chamadas na auditoria (escritas, erros 4xx/5xx e leituras de API)
+		kind, target, verb = _route()
+		log_meta = frappe.get_meta(LOG)
+		log_payload = {
+			"doctype": LOG,
+			"api_key": info["name"],
+			"route": f"{verb} {frappe.request.path}"[:240],
+			"reference_doctype": target if kind == "resource" else None,
+			"status_code": status_code,
+			"ip_address": frappe.local.request_ip,
+			"called_on": now_datetime(),
+		}
+		if log_meta.has_field("request_id"):
+			log_payload["request_id"] = request_id
+		if log_meta.has_field("duration_ms"):
+			log_payload["duration_ms"] = duration_ms
+		frappe.get_doc(log_payload).insert(ignore_permissions=True)
 		frappe.db.commit()
 	except Exception:
 		frappe.log_error(title="Cred Hub API: falha ao registrar o uso da chave")
@@ -381,6 +488,338 @@ def after_request(response=None, request=None):
 
 def delete_old_logs():
 	frappe.db.delete(LOG, {"called_on": ("<", add_days(now_datetime(), -LOG_DAYS))})
+
+
+# ---------- Endpoints Padrão Ouro (Cursor Pagination, Lookup CPF/CNPJ, OpenAPI 3.1, Logs UI) ----------
+
+
+def _encode_cursor(modified_val: str, name_val: str) -> str:
+	raw = json.dumps({"m": str(modified_val), "n": str(name_val)}, separators=(",", ":"))
+	return base64.urlsafe_b64encode(raw.encode("utf-8")).decode("ascii")
+
+
+def _decode_cursor(cursor: str) -> tuple[str, str]:
+	try:
+		padded = cursor + "=" * (-len(cursor) % 4)
+		data = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8"))
+		return str(data["m"]), str(data["n"])
+	except Exception:
+		frappe.throw(_("Invalid pagination cursor."))
+
+
+@frappe.whitelist()
+def list_records_cursor(
+	doctype: str,
+	fields=None,
+	filters=None,
+	updated_since: str | None = None,
+	limit: int = 50,
+	cursor: str | None = None,
+) -> dict:
+	"""Listagem determinística por cursor (modified, name) para sincronização de ERPs sem perda nem duplicidade."""
+	if doctype not in RESOURCES:
+		frappe.throw(_("Unsupported resource doctype: {0}").format(doctype), frappe.PermissionError)
+
+	limit = max(1, min(cint(limit or 50), 200))
+	if isinstance(fields, str):
+		try:
+			fields = frappe.parse_json(fields)
+		except Exception:
+			fields = [f.strip() for f in fields.split(",") if f.strip()]
+	if not isinstance(fields, list) or not fields:
+		fields = ["name", "modified", "creation"]
+	for required_field in ("name", "modified"):
+		if required_field not in fields:
+			fields.append(required_field)
+
+	if isinstance(filters, str):
+		filters = frappe.parse_json(filters)
+	base_filters = list(filters) if isinstance(filters, list) else []
+	if isinstance(filters, dict):
+		for k, v in filters.items():
+			base_filters.append([doctype, k, "=", v])
+
+	if updated_since:
+		base_filters.append([doctype, "modified", ">=", str(updated_since).strip()])
+
+	rows = frappe.get_list(
+		doctype,
+		fields=fields,
+		filters=base_filters,
+		order_by="modified asc, name asc",
+		limit_page_length=limit + 200 if cursor else limit + 1,
+	)
+
+	if cursor:
+		cursor_mod, cursor_name = _decode_cursor(cursor)
+		rows = [
+			r
+			for r in rows
+			if (str(r.get("modified")), str(r.get("name"))) > (cursor_mod, cursor_name)
+		]
+
+	has_more = len(rows) > limit
+	page = rows[:limit]
+	next_cursor = (
+		_encode_cursor(str(page[-1]["modified"]), str(page[-1]["name"]))
+		if has_more and page
+		else None
+	)
+	return {
+		"data": page,
+		"next_cursor": next_cursor,
+		"has_more": has_more,
+		"count": len(page),
+	}
+
+
+@frappe.whitelist()
+def lookup_by_document(document: str) -> dict:
+	"""Busca unificada por CNPJ ou CPF (com ou sem máscara) retornando Organização/Contato, Cards abertos, Pasta Digital e Crédito."""
+	digits = only_digits(document or "")
+	if len(digits) not in (11, 14):
+		frappe.throw(_("Provide a valid CPF (11 digits) or CNPJ (14 digits)."))
+
+	result: dict = {
+		"document_digits": digits,
+		"document_type": "CNPJ" if len(digits) == 14 else "CPF",
+		"organization": None,
+		"contact": None,
+		"cards": [],
+		"digital_folder_summary": None,
+	}
+
+	if len(digits) == 14:
+		formatted = format_cnpj(digits)
+		orgs = frappe.get_list(
+			"CRM Organization",
+			filters={"cnpj": ("in", [digits, formatted])},
+			fields=[
+				"name",
+				"organization_name",
+				"cnpj",
+				"email",
+				"website",
+				"industry",
+				"annual_revenue",
+				"credit_verdict",
+				"credit_report",
+				"modified",
+			],
+			limit_page_length=1,
+		)
+		if orgs:
+			org = orgs[0]
+			result["organization"] = org
+			result["cards"] = frappe.get_list(
+				"CRM Deal",
+				filters={"organization": org.name},
+				fields=[
+					"name",
+					"organization",
+					"organization_name",
+					"pipeline",
+					"status",
+					"annual_revenue",
+					"deal_owner",
+					"credit_verdict",
+					"credit_report",
+					"modified",
+				],
+				order_by="modified desc",
+				limit_page_length=25,
+			)
+			try:
+				from cred_hub.credit_check.onboarding import get_onboarding
+
+				ob = get_onboarding(org.name)
+				result["digital_folder_summary"] = {
+					**ob["summary"],
+					"portal_active": ob["portal"].get("active", False),
+					"portal_url": ob["portal"].get("url", ""),
+					"visit_status": ob["visit"].get("status", "not_done"),
+				}
+			except Exception:
+				pass
+	else:
+		formatted = _format_cpf(digits)
+		contacts = frappe.get_list(
+			"Contact",
+			filters={"cpf": ("in", [digits, formatted])},
+			fields=["name", "first_name", "full_name", "cpf", "email_id", "mobile_no", "phone", "company_name", "modified"],
+			limit_page_length=1,
+		)
+		if contacts:
+			contact = contacts[0]
+			result["contact"] = contact
+			if contact.get("company_name"):
+				result["cards"] = frappe.get_list(
+					"CRM Deal",
+					filters={"organization": contact.company_name},
+					fields=["name", "organization", "organization_name", "pipeline", "status", "annual_revenue", "deal_owner", "modified"],
+					order_by="modified desc",
+					limit_page_length=25,
+				)
+
+	return result
+
+
+@frappe.whitelist(allow_guest=True)
+def get_openapi_spec() -> dict:
+	"""Gera a especificação OpenAPI 3.1.0 viva da API do HubTech CRM."""
+	base_url = frappe.utils.get_url()
+	return {
+		"openapi": "3.1.0",
+		"info": {
+			"title": "HubTech CRM — API Padrão Ouro",
+			"version": "1.2.0",
+			"description": (
+				"API REST & RPC do HubTech CRM (CredTech Digital) para gestão de Funis, Cards, Organizações, "
+				"Contatos, Pasta Digital de Crédito PJ, Pareceres de Risco e Sincronização Incremental com ERPs."
+			),
+		},
+		"servers": [{"url": base_url, "description": "Servidor de Produção HubTech CRM"}],
+		"components": {
+			"securitySchemes": {
+				"BearerAuth": {
+					"type": "http",
+					"scheme": "bearer",
+					"bearerFormat": "hub_<key_id>_<secret>",
+					"description": "Chave de API gerada em Configurações > Integrações > API.",
+				}
+			}
+		},
+		"security": [{"BearerAuth": []}],
+		"paths": {
+			"/api/method/crm.api.pipeline.get_pipelines": {
+				"get": {
+					"summary": "Listar Funis e Etapas",
+					"tags": ["Funis & Catálogo"],
+					"responses": {"200": {"description": "Lista de funis ativos autorizados na chave."}},
+				}
+			},
+			"/api/method/crm.api.pipeline.get_field_catalog": {
+				"get": {
+					"summary": "Catálogo Dinâmico de Campos (Padrão + Customizados)",
+					"tags": ["Funis & Catálogo"],
+					"responses": {"200": {"description": "Catálogo de campos do Card, Organização e Contato."}},
+				}
+			},
+			"/api/method/cred_hub.api_keys.lookup_by_document": {
+				"get": {
+					"summary": "Busca Unificada 360° por CNPJ ou CPF",
+					"tags": ["Crédito PJ & Pasta Digital", "Cards & Organizações"],
+					"parameters": [
+						{
+							"name": "document",
+							"in": "query",
+							"required": True,
+							"schema": {"type": "string", "example": "12.345.678/0001-90"},
+							"description": "CNPJ (14 dígitos) ou CPF (11 dígitos), com ou sem pontuação.",
+						}
+					],
+					"responses": {
+						"200": {
+							"description": "Organização/Contato, Cards vinculados, resumo da Pasta Digital e veredito de crédito."
+						}
+					},
+				}
+			},
+			"/api/method/cred_hub.api_keys.list_records_cursor": {
+				"get": {
+					"summary": "Listagem Paginada por Cursor + Delta (updated_since)",
+					"tags": ["Sincronização ERP"],
+					"parameters": [
+						{"name": "doctype", "in": "query", "required": True, "schema": {"type": "string", "enum": ["CRM Deal", "CRM Organization", "Contact", "CRM Task", "FCRM Note"]}},
+						{"name": "limit", "in": "query", "schema": {"type": "integer", "default": 50}},
+						{"name": "cursor", "in": "query", "schema": {"type": "string"}},
+						{"name": "updated_since", "in": "query", "schema": {"type": "string", "example": "2026-11-01 00:00:00"}},
+					],
+					"responses": {"200": {"description": "Página de registros com next_cursor e has_more."}},
+				}
+			},
+			"/api/resource/CRM Deal": {
+				"get": {"summary": "Listar Cards", "tags": ["Cards & Organizações"], "responses": {"200": {"description": "OK"}}},
+				"post": {"summary": "Criar Card", "tags": ["Cards & Organizações"], "responses": {"200": {"description": "Card criado"}}},
+			},
+			"/api/method/crm.api.pipeline.move_card": {
+				"post": {
+					"summary": "Mover Card de Etapa (respeita Stage Gate e campos obrigatórios)",
+					"tags": ["Cards & Organizações"],
+					"responses": {"200": {"description": "Card atualizado"}},
+				}
+			},
+			"/api/method/cred_hub.bulk.bulk_upsert": {
+				"post": {
+					"summary": "Upsert em Lote (até 100 registros por chamada)",
+					"tags": ["Sincronização ERP"],
+					"responses": {"200": {"description": "Resumo de criados, atualizados e erros."}},
+				}
+			},
+			"/api/method/cred_hub.credit_check.api.get_credit_onboarding": {
+				"get": {
+					"summary": "Consultar Pasta Digital de Documentos e Relatório de Visita",
+					"tags": ["Crédito PJ & Pasta Digital"],
+					"parameters": [
+						{"name": "organization", "in": "query", "required": True, "schema": {"type": "string"}},
+						{"name": "deal", "in": "query", "schema": {"type": "string"}},
+					],
+					"responses": {"200": {"description": "Checklist completo, link externo blindado e visita."}},
+				}
+			},
+			"/api/method/cred_hub.credit_check.api.create_onboarding_portal_link": {
+				"post": {
+					"summary": "Gerar / Obter Link da Caixa de Correio Blindada (Pasta Digital)",
+					"tags": ["Crédito PJ & Pasta Digital"],
+					"responses": {"200": {"description": "URL do portal blindado protegida por CNPJ."}},
+				}
+			},
+		},
+	}
+
+
+@frappe.whitelist()
+def get_api_logs(api_key: str | None = None, limit: int = 50) -> dict:
+	"""Retorna os logs recentes de auditoria das chaves de API e métricas das últimas 24h para a tela /crm/settings/api."""
+	_only_admin()
+	limit = max(1, min(cint(limit or 50), 200))
+	filters = {}
+	if api_key:
+		filters["api_key"] = api_key
+
+	log_meta = frappe.get_meta(LOG)
+	fields = ["name", "api_key", "called_on", "route", "reference_doctype", "status_code", "ip_address"]
+	if log_meta.has_field("request_id"):
+		fields.append("request_id")
+	if log_meta.has_field("duration_ms"):
+		fields.append("duration_ms")
+
+	rows = frappe.get_all(
+		LOG,
+		filters=filters,
+		fields=fields,
+		order_by="called_on desc",
+		limit_page_length=limit,
+	)
+	key_labels = dict(frappe.get_all(KEY, fields=["name", "label"], as_list=True))
+	for r in rows:
+		r["key_label"] = key_labels.get(r.get("api_key")) or r.get("api_key") or "—"
+		r.setdefault("request_id", "—")
+		r.setdefault("duration_ms", None)
+
+	since_24h = add_days(now_datetime(), -1)
+	total_24h = frappe.db.count(LOG, {"called_on": (">=", since_24h), **(filters or {})})
+	errors_24h = frappe.db.count(
+		LOG,
+		{"called_on": (">=", since_24h), "status_code": (">=", 400), **(filters or {})},
+	)
+	return {
+		"logs": rows,
+		"metrics": {
+			"total_24h": total_24h,
+			"errors_24h": errors_24h,
+		},
+	}
 
 
 # ---------- Usuário técnico ----------
@@ -460,11 +899,12 @@ def _clean_scopes(scopes) -> dict:
 		frappe.throw(_("Unknown scope: {0}").format(frappe.bold(unknown[0])))
 	if not scopes:
 		frappe.throw(_("Choose at least one permission for the key."))
-	return {scope: int(scope in scopes) for scope in SCOPES}
+	meta = frappe.get_meta(KEY)
+	return {scope: int(scope in scopes) for scope in SCOPES if meta.has_field(scope)}
 
 
 def _check_card_pipelines(values: dict, pipelines: list[str]):
-	if (values["cards_read"] or values["cards_write"] or values["fields_admin"]) and not pipelines:
+	if (values.get("cards_read") or values.get("cards_write") or values.get("fields_admin")) and not pipelines:
 		frappe.throw(_("Choose at least one pipeline for the cards."))
 
 
@@ -495,7 +935,6 @@ def get_api_keys() -> dict:
 		"keys": [_key_info(frappe.get_doc(KEY, name)) for name in names],
 		"scopes": [{"value": k, "label": _(v)} for k, v in SCOPES.items()],
 		"limit": MAX_KEYS,
-		# Aviso aos admins: "as chaves antigas param em DD/MM" e quem ainda tem uma
 		"legacy_until": legacy_tokens_until(),
 		"legacy_users": legacy_key_users(),
 	}
@@ -622,16 +1061,13 @@ AUTOMATIC_ROLES = ("All", "Guest", "Desk User")
 
 
 def validate_user(doc, method=None):
-	"""doc_event User.validate: a marca de usuário técnico só muda pelo fluxo das chaves (senão um usuário humano
-	ficaria sem ocupar vaga, ou o técnico passaria a contar sem a checagem de vaga), e o técnico não ganha papéis."""
+	"""doc_event User.validate: a marca de usuário técnico só muda pelo fluxo das chaves."""
 	if not doc.meta.has_field("credhub_api_key"):
 		return
 	if (doc.is_new() or doc.has_value_changed("credhub_api_key")) and doc.credhub_api_key and not doc.flags.credhub_api_key_flow:
 		frappe.throw(_("Only an API key can create its technical user."))
 	if not doc.is_new() and doc.has_value_changed("credhub_api_key") and not doc.credhub_api_key:
 		frappe.throw(_("The technical user of an API key cannot become a regular user. Revoke the key instead."))
-	# Chave antiga nova (generate_keys em /app/user): nunca no usuário técnico; para os outros, só até a API nova
-	# entrar no ar (a config do prazo é posta no deploy). O Administrator do site segue podendo.
 	new_secret = bool(doc.api_secret) and set(doc.api_secret) != {"*"}
 	if new_secret and doc.name != "Administrator" and (doc.credhub_api_key or legacy_tokens_until()):
 		frappe.throw(_("Create API keys in Settings > Integrations > API."))
@@ -649,7 +1085,6 @@ def technical_users() -> list[str]:
 
 
 def is_api_user(user: str | None) -> bool:
-	# Antes do migrate o campo ainda não existe: ninguém é usuário técnico
 	if not user or not frappe.get_meta("User").has_field("credhub_api_key"):
 		return False
 	return bool(frappe.db.get_value("User", user, "credhub_api_key"))
@@ -683,3 +1118,9 @@ def install():
 	)
 	if not frappe.db.exists("Role", API_ROLE):
 		frappe.get_doc({"doctype": "Role", "role_name": API_ROLE, "desk_access": 0}).insert(ignore_permissions=True)
+	try:
+		from cred_hub.credit_check.onboarding import migrate_all_to_relational
+
+		migrate_all_to_relational()
+	except Exception:
+		pass

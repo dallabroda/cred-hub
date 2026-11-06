@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Documentação da API REST — HubTech CRM (Cred Hub)</title>
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --surface: #ffffff;
+      --text: #0f172a;
+      --muted: #475569;
+      --border: #e2e8f0;
+      --accent: #0284c7;
+      --code-bg: #0f172a;
+      --code-text: #f8fafc;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+    }
+    header {
+      background: #0f172a;
+      color: #fff;
+      padding: 2.5rem 1.5rem;
+      border-bottom: 1px solid #1e293b;
+    }
+    .container {
+      max-width: 1080px;
+      margin: 0 auto;
+    }
+    .badge {
+      display: inline-block;
+      padding: 0.2rem 0.6rem;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      background: rgba(56, 189, 248, 0.18);
+      color: #38bdf8;
+      margin-bottom: 0.5rem;
+    }
+    h1 { margin: 0 0 0.5rem; font-size: 1.85rem; }
+    h2 {
+      margin-top: 2.25rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--border);
+      font-size: 1.35rem;
+    }
+    h3 { margin-top: 1.25rem; font-size: 1.05rem; }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.25rem 1.5rem;
+      margin: 1rem 0;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 1rem;
+      margin-top: 1.25rem;
+    }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.85em;
+      background: #f1f5f9;
+      padding: 0.15rem 0.35rem;
+      border-radius: 4px;
+    }
+    pre {
+      background: var(--code-bg);
+      color: var(--code-text);
+      padding: 1rem 1.25rem;
+      border-radius: 8px;
+      overflow-x: auto;
+      font-size: 0.85rem;
+      line-height: 1.5;
+    }
+    pre code {
+      background: transparent;
+      color: inherit;
+      padding: 0;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1rem 0;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    th, td {
+      text-align: left;
+      padding: 0.65rem 0.9rem;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.9rem;
+    }
+    th { background: #f1f5f9; font-weight: 600; }
+    .method {
+      display: inline-block;
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+      font-weight: 700;
+      font-size: 0.75rem;
+      font-family: monospace;
+    }
+    .GET { background: #dbeafe; color: #1d4ed8; }
+    .POST { background: #dcfce7; color: #15803d; }
+    .PUT { background: #fef3c7; color: #b45309; }
+    .DELETE { background: #fee2e2; color: #b91c1c; }
+    .top-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+    .btn-back {
+      color: #38bdf8;
+      text-decoration: none;
+      font-size: 0.9rem;
+      font-weight: 500;
+    }
+    .btn-back:hover { text-decoration: underline; }
+    .btn-action {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.5rem 0.95rem;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      text-decoration: none;
+      cursor: pointer;
+      border: 1px solid #334155;
+      background: #1e293b;
+      color: #f8fafc;
+    }
+    .btn-action:hover { background: #334155; }
+    .play-input {
+      width: 100%;
+      padding: 0.55rem 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 0.9rem;
+      font-family: ui-monospace, monospace;
+    }
+    .play-btn {
+      padding: 0.55rem 1.1rem;
+      background: #0f172a;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .play-btn:hover { background: #1e293b; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container">
+      <div class="top-bar">
+        <span class="badge">HUBTECH CRM · REST API PADRÃO OURO v1.2</span>
+        <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
+          <a class="btn-action" href="/api/method/cred_hub.api_keys.get_openapi_spec" target="_blank" rel="noopener">
+            ⬇ Baixar OpenAPI 3.1 (JSON)
+          </a>
+          <a class="btn-back" href="/crm/settings/api">← Voltar para Configurações de API</a>
+        </div>
+      </div>
+      <h1>Documentação Oficial da API — HubTech CRM</h1>
+      <p style="color: #94a3b8; margin: 0;">
+        Integração padrão ouro para ERPs, motores de crédito, securitizadoras, FIDCs, portais web e data warehouses.
+      </p>
+    </div>
+  </header>
+
+  <main class="container" style="padding: 1.5rem 1.5rem 4rem;">
+    <div class="grid">
+      <div class="card">
+        <strong>URL Base da Instância</strong>
+        <p style="margin: 0.4rem 0 0;"><code>{{ base_url }}</code></p>
+      </div>
+      <div class="card">
+        <strong>Autenticação</strong>
+        <p style="margin: 0.4rem 0 0;"><code>Authorization: Bearer hub_&lt;id&gt;_&lt;segredo&gt;</code></p>
+      </div>
+      <div class="card">
+        <strong>Headers de Telemetria</strong>
+        <p style="margin: 0.4rem 0 0;"><code>X-Request-Id</code> · <code>X-RateLimit-Limit</code> · <code>X-RateLimit-Remaining</code></p>
+      </div>
+      <div class="card">
+        <strong>Especificação OpenAPI 3.1</strong>
+        <p style="margin: 0.4rem 0 0;"><a href="/api/method/cred_hub.api_keys.get_openapi_spec" target="_blank" style="color: var(--accent);">/api/method/cred_hub.api_keys.get_openapi_spec</a></p>
+      </div>
+    </div>
+
+    <!-- Playground Interativo -->
+    <h2>⚡ Playground Interativo (Try It Live)</h2>
+    <div class="card">
+      <p style="margin-top: 0;">Teste sua chave <code>hub_...</code> diretamente no navegador e inspecione os cabeçalhos <code>X-Request-Id</code> e <code>X-RateLimit-*</code> em tempo real:</p>
+      <div style="display: grid; grid-template-columns: 1fr 1fr auto; gap: 0.75rem; align-items: end; flex-wrap: wrap;">
+        <div>
+          <label style="display: block; font-size: 0.8rem; font-weight: 600; margin-bottom: 0.25rem;">Chave da API (Bearer)</label>
+          <input id="play-token" type="password" class="play-input" placeholder="hub_xxxx_yyyy..." />
+        </div>
+        <div>
+          <label style="display: block; font-size: 0.8rem; font-weight: 600; margin-bottom: 0.25rem;">Endpoint para testar</label>
+          <select id="play-endpoint" class="play-input">
+            <option value="/api/method/crm.api.pipeline.get_pipelines">GET /api/method/crm.api.pipeline.get_pipelines (Funis e Etapas)</option>
+            <option value="/api/method/crm.api.pipeline.get_field_catalog">GET /api/method/crm.api.pipeline.get_field_catalog (Catálogo de Campos)</option>
+            <option value="/api/method/cred_hub.api_keys.list_records_cursor?doctype=CRM%20Deal&limit=5">GET /api/method/cred_hub.api_keys.list_records_cursor (Cursor Pagination - Cards)</option>
+            <option value="/api/resource/CRM%20Organization?limit_page_length=5">GET /api/resource/CRM Organization (Listar Organizações)</option>
+            <option value="/api/method/cred_hub.api_keys.get_openapi_spec">GET /api/method/cred_hub.api_keys.get_openapi_spec (OpenAPI 3.1 JSON)</option>
+          </select>
+        </div>
+        <button type="button" id="play-run" class="play-btn">Executar Chamada →</button>
+      </div>
+      <div id="play-headers" style="margin-top: 0.75rem; font-size: 0.8rem; color: var(--muted); display: none;"></div>
+      <pre id="play-output" style="margin-top: 0.75rem; display: none; max-height: 320px;"><code></code></pre>
+    </div>
+
+    <h2>1. Escopos de Permissão e Governança</h2>
+    <p>Cada chave de API é criada em <strong>Configurações › Integrações › API</strong>, possui um usuário técnico dedicado que <strong>não ocupa vaga no plano</strong> e enxerga apenas os funis autorizados.</p>
+    <table>
+      <thead>
+        <tr><th>Escopo</th><th>Recurso / Finalidade</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>cards_read</code> / <code>cards_write</code></td><td>Ler, criar, atualizar e mover Cards (<code>CRM Deal</code>) nos funis autorizados da chave.</td></tr>
+        <tr><td><code>contacts_read</code> / <code>contacts_write</code></td><td>Ler, criar e atualizar Contatos (<code>Contact</code>).</td></tr>
+        <tr><td><code>organizations_read</code> / <code>organizations_write</code></td><td>Ler, criar e atualizar Empresas/Organizações (<code>CRM Organization</code>).</td></tr>
+        <tr><td><code>credit_read</code> / <code>credit_write</code></td><td>Ler e operar a <strong>Pasta Digital de Documentos</strong>, Link Blindado, Relatório de Visita e Esteira de Crédito PJ.</td></tr>
+        <tr><td><code>leads_write</code></td><td>Receber contatos de entrada (<code>CRM Lead</code>) com conversão automática em Card e distribuição de responsável.</td></tr>
+        <tr><td><code>pipelines_read</code></td><td>Consultar funis (<code>CRM Pipeline</code>) e etapas (<code>CRM Deal Status</code>).</td></tr>
+        <tr><td><code>files_read</code> / <code>files_write</code></td><td>Enviar e baixar documentos privados anexados a Cards, Contatos e Organizações (<code>File</code>).</td></tr>
+        <tr><td><code>notes_read</code> / <code>notes_write</code></td><td>Ler, criar e editar anotações ricas (<code>FCRM Note</code>).</td></tr>
+        <tr><td><code>comments_read</code> / <code>comments_write</code></td><td>Listar e registrar comentários na linha do tempo de Cards, Contatos e Organizações.</td></tr>
+        <tr><td><code>tasks_read</code> / <code>tasks_write</code></td><td>Ler, criar e concluir tarefas comerciais vinculadas aos Cards (<code>CRM Task</code>).</td></tr>
+        <tr><td><code>sync_deletes</code></td><td>Consultar log de registros excluídos para sincronização incremental com ERPs.</td></tr>
+        <tr><td><code>fields_admin</code></td><td>Alterar campos e regras de obrigatoriedade das etapas dos funis da chave.</td></tr>
+        <tr><td><code>allow_delete</code></td><td>Autorizar exclusão explícita (<code>DELETE</code>) de Cards, Contatos, Organizações, Arquivos, Notas e Tarefas.</td></tr>
+      </tbody>
+    </table>
+
+    <h2>2. Busca Unificada 360° por CNPJ ou CPF (<code>lookup_by_document</code>)</h2>
+    <div class="card">
+      <h3><span class="method GET">GET</span> <code>/api/method/cred_hub.api_keys.lookup_by_document?document=&lt;cnpj_ou_cpf&gt;</code></h3>
+      <p>Normaliza automaticamente qualquer CNPJ (14 dígitos) ou CPF (11 dígitos) com ou sem máscara e devolve em <strong>uma única chamada</strong>: a Organização (ou Contato), todos os Cards nos funis autorizados, o resumo da Pasta Digital (com link ativo) e o último veredito de crédito.</p>
+<pre><code>curl "{{ base_url }}/api/method/cred_hub.api_keys.lookup_by_document?document=12.345.678/0001-90" \
+  -H "Authorization: Bearer hub_&lt;id&gt;_&lt;segredo&gt;"</code></pre>
+    </div>
+
+    <h2>3. Sincronização ERP com Paginação por Cursor (<code>list_records_cursor</code>)</h2>
+    <div class="card">
+      <h3><span class="method GET">GET</span> <code>/api/method/cred_hub.api_keys.list_records_cursor</code></h3>
+      <p>Paginação determinística ordenada por <code>(modified ASC, name ASC)</code> com suporte a delta incremental (<code>updated_since</code>). Garante que nenhum registro seja pulado ou duplicado durante sincronizações em tempo real.</p>
+<pre><code># 1ª página (desde uma data de corte)
+curl "{{ base_url }}/api/method/cred_hub.api_keys.list_records_cursor?doctype=CRM%20Deal&amp;updated_since=2026-11-01%2000:00:00&amp;limit=100" \
+  -H "Authorization: Bearer hub_&lt;id&gt;_&lt;segredo&gt;"
+
+# Próxima página usando next_cursor retornado na chamada anterior
+curl "{{ base_url }}/api/method/cred_hub.api_keys.list_records_cursor?doctype=CRM%20Deal&amp;limit=100&amp;cursor=eyJtIjoiMjAyNi0xMS0wNSAxNTozMDowMCIsIm4iOiJDUk0tREVBTF8wMDAxIn0=" \
+  -H "Authorization: Bearer hub_&lt;id&gt;_&lt;segredo&gt;"</code></pre>
+    </div>
+
+    <h2>4. Domínio de Crédito PJ &amp; Pasta Digital</h2>
+    <div class="card">
+      <h3><span class="method GET">GET</span> <code>/api/method/cred_hub.credit_check.api.get_credit_onboarding</code></h3>
+      <p>Consulta os itens da Pasta Digital (Checklist), status de conferência, Link Externo Blindado e Relatório de Visita da Organização.</p>
+<pre><code>curl "{{ base_url }}/api/method/cred_hub.credit_check.api.get_credit_onboarding?organization=Acme%20Ltda" \
+  -H "Authorization: Bearer hub_&lt;id&gt;_&lt;segredo&gt;"</code></pre>
+      <h3><span class="method POST">POST</span> <code>/api/method/cred_hub.credit_check.api.create_onboarding_portal_link</code></h3>
+      <p>Gera (ou recupera) o link da Caixa de Correio Blindada protegido por CNPJ para envio ao cliente via WhatsApp/SmartChat ou ERP.</p>
+<pre><code>curl -X POST "{{ base_url }}/api/method/cred_hub.credit_check.api.create_onboarding_portal_link" \
+  -H "Authorization: Bearer hub_&lt;id&gt;_&lt;segredo&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{"organization": "Acme Ltda", "regenerate": false}'</code></pre>
+    </div>
+
+    <h2>5. Funis, Cards, Organizações e Contatos</h2>
+    <div class="card">
+      <h3><span class="method GET">GET</span> <code>/api/method/crm.api.pipeline.get_pipelines</code> &amp; <code>get_field_catalog</code></h3>
+<pre><code>curl "{{ base_url }}/api/method/crm.api.pipeline.get_pipelines" \
+  -H "Authorization: Bearer hub_&lt;id&gt;_&lt;segredo&gt;"
+
+curl "{{ base_url }}/api/method/crm.api.pipeline.get_field_catalog" \
+  -H "Authorization: Bearer hub_&lt;id&gt;_&lt;segredo&gt;"</code></pre>
+      <h3><span class="method POST">POST</span> <code>/api/resource/CRM Deal</code> &amp; <code>/api/method/crm.api.pipeline.move_card</code></h3>
+<pre><code># Criar Card
+curl -X POST "{{ base_url }}/api/resource/CRM%20Deal" \
+  -H "Authorization: Bearer hub_&lt;id&gt;_&lt;segredo&gt;" \
+  -H "Content-Type: application/json" \
+  -H "X-Idempotency-Key: op-2026-00091" \
+  -d '{"pipeline": "&lt;chave_do_funil&gt;", "organization": "Acme Ltda", "annual_revenue": 150000}'
+
+# Mover Card de Etapa (valida Stage Gate da Pasta Digital e campos obrigatórios)
+curl -X POST "{{ base_url }}/api/method/crm.api.pipeline.move_card" \
+  -H "Authorization: Bearer hub_&lt;id&gt;_&lt;segredo&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{"deal": "CRM-DEAL-2026-00001", "stage": "&lt;chave_da_etapa&gt;"}'</code></pre>
+    </div>
+
+    <h2>6. Operações em Lote (Batch API) e Webhooks HMAC com Auto-Retry</h2>
+    <div class="card">
+      <h3><span class="method POST">POST</span> <code>/api/method/cred_hub.bulk.bulk_upsert</code> — Upsert em Lote</h3>
+      <p>Processa cada item com <em>savepoint</em> isolado. Se um item falhar, os demais são gravados normalmente.</p>
+<pre><code>curl -X POST "{{ base_url }}/api/method/cred_hub.bulk.bulk_upsert" \
+  -H "Authorization: Bearer hub_&lt;id&gt;_&lt;segredo&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{"doctype": "CRM Deal", "records": [{"pipeline": "&lt;funil&gt;", "organization": "Acme Ltda"}]}'</code></pre>
+      <h3>Webhooks de Saída (Assinatura <code>X-HubTech-Signature: sha256=...</code>)</h3>
+      <p>Eventos suportados: <code>deal.created</code>, <code>deal.stage_changed</code>, <code>deal.won</code>, <code>deal.lost</code>, <code>deal.deleted</code>, <code>contact.created</code>, <code>contact.updated</code> e <code>checklist.item_rejected</code>. Possui <strong>auto-retry até 3 tentativas</strong> em caso de erro <code>5xx</code>/timeout.</p>
+    </div>
+
+    <h2>7. Códigos de Retorno e Cabeçalhos HTTP</h2>
+    <table>
+      <thead>
+        <tr><th>Status / Header</th><th>Tipo</th><th>Significado</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>200 OK</code></td><td>Sucesso</td><td>Operação concluída com sucesso.</td></tr>
+        <tr><td><code>401 Unauthorized</code></td><td><code>AuthenticationError</code></td><td>Chave inválida, revogada, expirada ou IP de origem fora da lista permitida.</td></tr>
+        <tr><td><code>403 Forbidden</code></td><td><code>PermissionError</code></td><td>A chave não possui o escopo exigido pela rota ou o Card pertence a outro funil.</td></tr>
+        <tr><td><code>417 Expectation Failed</code></td><td><code>ValidationError</code></td><td>Campo obrigatório ausente na etapa ou bloqueio de Stage Gate da Pasta Digital/Dossiê.</td></tr>
+        <tr><td><code>429 Too Many Requests</code></td><td><code>RateLimitExceededError</code></td><td>Limite por minuto atingido; aguarde os segundos informados em <code>Retry-After</code>.</td></tr>
+        <tr><td><code>X-Request-Id</code></td><td>Header de Auditoria</td><td>Identificador único da chamada (ex.: <code>req_a8f19c02d41e3b10</code>) registrado nos logs.</td></tr>
+        <tr><td><code>X-RateLimit-*</code></td><td>Headers de Cota</td><td><code>X-RateLimit-Limit</code>, <code>X-RateLimit-Remaining</code> e <code>X-RateLimit-Reset</code> (epoch).</td></tr>
+      </tbody>
+    </table>
+  </main>
+
+  <script>
+    (() => {
+      const btn = document.getElementById("play-run");
+      const tokenEl = document.getElementById("play-token");
+      const endpointEl = document.getElementById("play-endpoint");
+      const headersEl = document.getElementById("play-headers");
+      const outEl = document.getElementById("play-output");
+      if (!btn) return;
+
+      btn.addEventListener("click", async () => {
+        const token = tokenEl.value.trim();
+        const url = endpointEl.value;
+        btn.disabled = true;
+        btn.textContent = "Executando...";
+        headersEl.style.display = "block";
+        outEl.style.display = "block";
+        headersEl.textContent = "Aguardando resposta...";
+        outEl.querySelector("code").textContent = "";
+        try {
+          const headers = { "Accept": "application/json" };
+          if (token) headers["Authorization"] = `Bearer ${token}`;
+          const t0 = performance.now();
+          const res = await fetch(url, { headers });
+          const ms = Math.round(performance.now() - t0);
+          const reqId = res.headers.get("X-Request-Id") || "—";
+          const rlLim = res.headers.get("X-RateLimit-Limit") || "—";
+          const rlRem = res.headers.get("X-RateLimit-Remaining") || "—";
+          headersEl.innerHTML = `<strong>HTTP ${res.status}</strong> (${ms} ms) · <code>X-Request-Id: ${reqId}</code> · <code>X-RateLimit-Limit: ${rlLim}</code> · <code>X-RateLimit-Remaining: ${rlRem}</code>`;
+          const json = await res.json();
+          outEl.querySelector("code").textContent = JSON.stringify(json, null, 2);
+        } catch (err) {
+          headersEl.textContent = "Erro ao executar chamada.";
+          outEl.querySelector("code").textContent = String(err);
+        } finally {
+          btn.disabled = false;
+          btn.textContent = "Executar Chamada →";
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

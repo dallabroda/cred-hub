@@ -1,16 +1,10 @@
 {
  "actions": [],
+ "autoname": "hash",
  "creation": "2026-10-27 22:00:00.000000",
+ "description": "API key of the HubTech, created by the admin. Only the hash of the secret is stored (credtech#175).",
  "doctype": "DocType",
  "engine": "InnoDB",
- "links": [],
- "modified": "2026-10-27 22:00:00.000000",
- "modified_by": "Administrator",
- "module": "Cred Hub",
- "owner": "Administrator",
- "states": [],
- "autoname": "hash",
- "description": "API key of the HubTech, created by the admin. Only the hash of the secret is stored (credtech#175).",
  "field_order": [
   "label",
   "status",
@@ -38,6 +32,8 @@
   "tasks_read",
   "tasks_write",
   "sync_deletes",
+  "credit_read",
+  "credit_write",
   "pipelines",
   "security_section",
   "allowed_ips",
@@ -50,17 +46,17 @@
   {
    "fieldname": "label",
    "fieldtype": "Data",
+   "in_list_view": 1,
    "label": "Name",
-   "reqd": 1,
-   "in_list_view": 1
+   "reqd": 1
   },
   {
+   "default": "Active",
    "fieldname": "status",
    "fieldtype": "Select",
+   "in_list_view": 1,
    "label": "Status",
    "options": "Active\nRevoked",
-   "default": "Active",
-   "in_list_view": 1,
    "read_only": 1
   },
   {
@@ -73,9 +69,9 @@
   {
    "fieldname": "secret_hash",
    "fieldtype": "Data",
+   "hidden": 1,
    "label": "Secret Hash",
-   "read_only": 1,
-   "hidden": 1
+   "read_only": 1
   },
   {
    "fieldname": "secret_hint",
@@ -191,6 +187,18 @@
    "label": "Incremental sync: read deleted records log"
   },
   {
+   "default": "0",
+   "fieldname": "credit_read",
+   "fieldtype": "Check",
+   "label": "Credit & Digital Folder: read"
+  },
+  {
+   "default": "0",
+   "fieldname": "credit_write",
+   "fieldtype": "Check",
+   "label": "Credit & Digital Folder: write"
+  },
+  {
    "fieldname": "pipelines",
    "fieldtype": "Table",
    "label": "Pipelines",
@@ -202,10 +210,10 @@
    "label": "Security"
   },
   {
+   "description": "Optional: one IP address or range per line (e.g. 203.0.113.10 or 203.0.113.0/24).",
    "fieldname": "allowed_ips",
    "fieldtype": "Small Text",
-   "label": "Allowed IPs",
-   "description": "Optional: one IP address or range per line (e.g. 203.0.113.10 or 203.0.113.0/24)."
+   "label": "Allowed IPs"
   },
   {
    "fieldname": "expires_on",
@@ -213,10 +221,10 @@
    "label": "Expires On"
   },
   {
+   "description": "Optional: custom calls/min limit. Leave empty for default (300/min).",
    "fieldname": "custom_rate_limit",
    "fieldtype": "Int",
-   "label": "Custom Rate Limit (calls/min)",
-   "description": "Optional: custom calls/min limit. Leave empty for default (300/min)."
+   "label": "Custom Rate Limit (calls/min)"
   },
   {
    "fieldname": "last_used_on",
@@ -231,8 +239,12 @@
    "read_only": 1
   }
  ],
+ "links": [],
+ "modified": "2026-11-05 16:40:00.000000",
+ "modified_by": "Administrator",
+ "module": "Cred Hub",
  "name": "Cred Hub API Key",
- "track_changes": 1,
+ "owner": "Administrator",
  "permissions": [
   {
    "read": 1,
@@ -241,5 +253,7 @@
  ],
  "sort_field": "creation",
  "sort_order": "DESC",
- "title_field": "label"
-}
+ "states": [],
+ "title_field": "label",
+ "track_changes": 1
+}

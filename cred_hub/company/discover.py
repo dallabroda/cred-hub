@@ -151,8 +151,58 @@ def sebrae_range(porte: str, cnae: str, opcao_mei: bool = False) -> str:
 	return ""
 
 
-# Faixas SEBRAE que cabem sem ambiguidade numa opção do CRM
-SEBRAE_TO_CRM = {"1 (MEI)": "1-10", "1-9": "1-10", "10-49": "11-50"}
+# Faixas SEBRAE mapeadas para as opções do CRM
+SEBRAE_TO_CRM = {
+	"1 (MEI)": "1-10",
+	"1-9": "1-10",
+	"1-19": "11-50",
+	"10-49": "11-50",
+	"20-99": "51-200",
+	"50+": "51-200",
+	"100+": "201-500",
+}
+
+_CORP_NOISE = {
+	"ltda", "sa", "s", "a", "me", "epp", "eireli", "cia", "companhia", "sociedade", "empresaria",
+	"limitada", "anonima", "comercio", "industria", "servicos", "participacoes", "holding",
+	"grupo", "brasil", "do", "da", "de", "dos", "das", "e", "em", "para", "artigos", "esportivos",
+	"produtos", "distribuidora", "atacadista", "varejista", "importacao", "exportacao",
+	"sp", "rj", "mg", "rs", "pr", "sc", "ba", "pe", "ce", "df", "go", "es", "mt", "ms",
+}
+
+
+def core_brand_name(name: str, trade_name: str = "") -> str:
+	"""Extrai o nome-núcleo/marca da razão social para buscas no Wikidata e na Web
+	(ex.: 'VULCABRAS SP COMERCIO DE ARTIGOS ESPORTIVOS LTDA' -> 'VULCABRAS')."""
+	if trade_name and len(trade_name.strip()) >= 3:
+		return trade_name.strip()
+	clean = re.sub(r"[^\w\s]", " ", (name or "")).split()
+	core = [w for w in clean if w.lower() not in _CORP_NOISE and len(w) >= 3]
+	if not core:
+		return (name or "").strip()
+	return " ".join(core[:2])
+
+
+def sebrae_crm_bucket(faixa: str, capital_social: float = 0.0, natureza_juridica: str = "", name: str = "") -> str:
+	"""Converte a faixa SEBRAE + Capital Social + Natureza Jurídica na opção mais fiel do CRM."""
+	if not faixa:
+		return ""
+	cap = float(capital_social or 0.0)
+	nat_upper = _ascii(natureza_juridica or "").upper()
+	is_sa = "ANONIMA" in nat_upper or bool(re.search(r"\bS\.?A\.?\b", (name or "").upper()))
+	if faixa in ("50+", "100+"):
+		if cap >= 80_000_000:
+			return "1000+"
+		if cap >= 15_000_000:
+			return "501-1000"
+		if cap >= 2_000_000 or is_sa or faixa == "100+":
+			return "201-500"
+		return "51-200"
+	if faixa == "20-99":
+		return "51-200" if cap >= 500_000 else "11-50"
+	if faixa == "1-19":
+		return "11-50" if cap >= 150_000 else "1-10"
+	return SEBRAE_TO_CRM.get(faixa, "")
 
 
 # --- busca --------------------------------------------------------------------------------------
@@ -322,21 +372,33 @@ def _safe(fn, default, *args):
 		return default
 
 
-def discover(name: str, porte: str = "", cnae: str = "", opcao_mei: bool = False, searcher: Searcher | None = None) -> dict:
+def discover(
+	name: str,
+	porte: str = "",
+	cnae: str = "",
+	opcao_mei: bool = False,
+	searcher: Searcher | None = None,
+	capital_social: float = 0.0,
+	trade_name: str = "",
+	natureza_juridica: str = "",
+) -> dict:
 	"""Devolve {site, linkedin, funcionarios (int|0), faixa (texto), crm_bucket, fonte}. Campos vazios se não achou.
 	Nunca levanta exceção: o que falhar fica em branco.
 
-	`porte`/`cnae` (da Receita) alimentam o piso SEBRAE quando nenhuma fonte dá o número."""
+	`porte`/`cnae`/`capital_social` (da Receita) alimentam o piso SEBRAE quando nenhuma fonte dá o número."""
 	s = searcher or Searcher()
 	out = {"site": "", "linkedin": "", "funcionarios": 0, "faixa": "", "crm_bucket": "", "fonte": ""}
+	brand = core_brand_name(name, trade_name)
 	wd = _safe(wikidata, {}, s.http, name)
-	out["site"] = wd.get("site") or _safe(find_site, "", s, name)
+	if not wd and brand and brand.lower() != (name or "").strip().lower():
+		wd = _safe(wikidata, {}, s.http, brand)
+	out["site"] = wd.get("site") or _safe(find_site, "", s, name) or (_safe(find_site, "", s, brand) if brand != name else "")
 	out["linkedin"] = wd.get("linkedin") or (_safe(linkedin_from_site, "", s.http, out["site"]) if out["site"] else "")
 
-	# Só o endereço do perfil (vem da busca na web, sem acessar o LinkedIn). Funcionários pelo LinkedIn ficam
-	# desligados por decisão do dono (24/10/2026): a página deles bloqueia acesso automático e os termos de uso não
-	# permitem. Para religar: USE_LINKEDIN_EMPLOYEES = True.
+	# Só o endereço do perfil (vem da busca na web, sem acessar o LinkedIn).
 	url, faixa_snippet = _safe(linkedin_search, ("", ""), s, name, out["linkedin"])
+	if not url and brand and brand.lower() != (name or "").strip().lower():
+		url, faixa_snippet = _safe(linkedin_search, ("", ""), s, brand, out["linkedin"])
 	out["linkedin"] = out["linkedin"] or url
 	if USE_LINKEDIN_EMPLOYEES:
 		n = _safe(linkedin_page_employees, 0, s.http, out["linkedin"]) if out["linkedin"] else 0
@@ -351,12 +413,20 @@ def discover(name: str, porte: str = "", cnae: str = "", opcao_mei: bool = False
 		if wd.get("funcionarios"):
 			return _with_count(out, wd["funcionarios"], "Wikidata")
 		n = _safe(web_headcount, 0, s, name)
+		if not n and brand and brand.lower() != (name or "").strip().lower():
+			n = _safe(web_headcount, 0, s, brand)
 		if n:
 			return _with_count(out, n, "Web")
+		if faixa_snippet:
+			bucket = range_to_crm_bucket(faixa_snippet)
+			if bucket:
+				out.update(faixa=faixa_snippet, crm_bucket=bucket, fonte="Web")
+				return out
 
 	faixa = sebrae_range(porte, cnae, opcao_mei)
 	if faixa:
-		out.update(faixa=faixa, crm_bucket=SEBRAE_TO_CRM.get(faixa, ""), fonte="SEBRAE/CNPJ")
+		bucket = sebrae_crm_bucket(faixa, capital_social=capital_social, natureza_juridica=natureza_juridica, name=name)
+		out.update(faixa=faixa, crm_bucket=bucket, fonte="SEBRAE/CNPJ")
 	return out
 
 
