@@ -1,14 +1,20 @@
-"""Mesa de Comitê de Crédito, Motor de Rating/Sizing de Limite, Grupo Econômico, IA Leitora da Pasta Digital e Ciclo de Renovação."""
+"""Motor de Inteligência de Crédito:
+1. Extração Inteligente (OCR/Parser) de Documentos da Pasta Digital
+2. Detecção Automática de Grupo Econômico e Risco Cruzado (QSA / Sócios)
+3. Rating Interno Configurável (AA–E) e Calculadora de Limite Sugerido (5 Cs do Crédito)
+4. Mesa de Comitê de Crédito com Alçadas, Quórum, Condicionantes, Votos Auditáveis e Vigência
+5. Lembrete Automático de Cobrança de Documentos via WhatsApp (SmartChat / wa.me)
+"""
 
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import os
 import re
-from html import escape
-from typing import Any
 import urllib.parse
+from typing import Any
 
 import frappe
 from frappe import _
@@ -16,116 +22,194 @@ from frappe.utils import add_days, cint, date_diff, flt, getdate, now_datetime, 
 
 from cred_hub.cnpj.mapping import format_cnpj, only_digits
 
-COMMITTEE_DOCTYPE = "Cred Hub Credit Committee"
 ONBOARDING_STORE = "Cred Hub Onboarding Store"
+SETTINGS_DOCTYPE = "Cred Hub Credit Settings"
+COMMITTEE_DOCTYPE = "Cred Hub Credit Committee"
 COMMITTEE_PREFIX = "committee::"
+RATING_POLICY_FIELD = "credit_rating_policy_json"
 
-COVENANT_OPTIONS = [
+DEFAULT_RATING_POLICY: dict[str, Any] = {
+	"aa_min_score": 820,
+	"aa_revenue_pct": 30.0,
+	"aa_sacado_pct": 25.0,
+	"a_min_score": 700,
+	"a_revenue_pct": 22.0,
+	"a_sacado_pct": 25.0,
+	"b_min_score": 560,
+	"b_revenue_pct": 15.0,
+	"b_sacado_pct": 20.0,
+	"c_min_score": 420,
+	"c_revenue_pct": 8.0,
+	"c_sacado_pct": 15.0,
+	"d_min_score": 280,
+	"d_revenue_pct": 3.0,
+	"d_sacado_pct": 10.0,
+	"max_global_limit": 2000000.0,
+	"tier_1_max_limit": 100000.0,
+	"tier_2_max_limit": 500000.0,
+	"default_validity_days": 180,
+	"hard_stop_ceis_cnep": True,
+	"hard_stop_rj_falencia": True,
+}
+
+COVENANT_OPTIONS: list[dict[str, str]] = [
 	{"key": "aval_socios", "label": "Aval solidário dos sócios administradores"},
-	{"key": "confirmacao_lastro", "label": "Confirmação obrigatória de 100% dos títulos / NF-e"},
+	{"key": "duplicata_performada", "label": "Operar apenas duplicatas performadas (mercadoria entregue)"},
+	{"key": "confirmacao_lastro", "label": "Confirmação obrigatória de lastro / NF-e acima de R$ 10 mil"},
 	{"key": "trava_domicilio", "label": "Trava de domicílio bancário / conta vinculada (escrow)"},
-	{"key": "alienacao_fiduciaria", "label": "Garantia real / alienação fiduciária de bem"},
-	{"key": "limite_escalonado", "label": "Liberação escalonada (50% nas primeiras 3 operações)"},
+	{"key": "garantia_real", "label": "Garantia real / alienação fiduciária complementar"},
+	{"key": "notificacao_sacado", "label": "Notificação prévia obrigatória ao sacado"},
 ]
 
-PERIODIC_DOCUMENT_KEYS = {"faturamento_12m", "balanco_dre", "endividamento_extratos", "curva_abc_sacados"}
 
-
-def _kv_get(field: str) -> str:
+def _kv_get(field: str, doctype: str = ONBOARDING_STORE) -> str:
 	rows = frappe.db.sql(
 		"SELECT `value` FROM `tabSingles` WHERE `doctype` = %s AND `field` = %s LIMIT 1",
-		(ONBOARDING_STORE, field),
+		(doctype, field),
 	)
 	return str(rows[0][0] or "") if rows and rows[0] else ""
 
 
-def _kv_set(field: str, value: str) -> None:
+def _kv_set(field: str, value: str, doctype: str = ONBOARDING_STORE) -> None:
 	exists = frappe.db.sql(
 		"SELECT 1 FROM `tabSingles` WHERE `doctype` = %s AND `field` = %s LIMIT 1",
-		(ONBOARDING_STORE, field),
+		(doctype, field),
 	)
 	if exists:
 		frappe.db.sql(
 			"UPDATE `tabSingles` SET `value` = %s WHERE `doctype` = %s AND `field` = %s",
-			(value, ONBOARDING_STORE, field),
+			(value, doctype, field),
 		)
 	else:
 		frappe.db.sql(
 			"INSERT INTO `tabSingles` (`doctype`, `field`, `value`) VALUES (%s, %s, %s)",
-			(ONBOARDING_STORE, field, value),
+			(doctype, field, value),
 		)
 
 
-# --- 1. IA Leitora da Pasta Digital (Extração de PDF / Texto) -------------------------------------------------
+def get_rating_policy() -> dict[str, Any]:
+	"""Retorna a metodologia/política do Rating Interno (AA–E) e Calculadora de Limite Sugerido (com fallback para o Padrão)."""
+	raw = _kv_get(RATING_POLICY_FIELD, doctype=SETTINGS_DOCTYPE)
+	saved: dict[str, Any] = {}
+	if raw:
+		try:
+			parsed = json.loads(raw)
+			if isinstance(parsed, dict):
+				saved = parsed
+		except Exception:
+			saved = {}
+
+	policy = dict(DEFAULT_RATING_POLICY)
+	for k, default_val in DEFAULT_RATING_POLICY.items():
+		if k in saved and saved[k] is not None:
+			if isinstance(default_val, bool):
+				policy[k] = bool(cint(saved[k])) if isinstance(saved[k], (int, str)) else bool(saved[k])
+			elif isinstance(default_val, int):
+				policy[k] = max(0, cint(saved[k]))
+			else:
+				policy[k] = max(0.0, flt(saved[k]))
+	policy["is_default"] = not bool(saved)
+	return policy
 
 
-def _read_file_text(file_url: str) -> str:
-	"""Lê texto de um arquivo anexado no Frappe (PDF, TXT, CSV ou extração de strings legíveis)."""
+def save_rating_policy(policy_data: dict[str, Any] | str | None = None, reset_default: bool = False) -> dict[str, Any]:
+	"""Salva (ou restaura para o padrão) os parâmetros do Rating Interno (AA–E) e Calculadora de Limite."""
+	if reset_default:
+		_kv_set(RATING_POLICY_FIELD, "", doctype=SETTINGS_DOCTYPE)
+		return get_rating_policy()
+
+	if isinstance(policy_data, str):
+		policy_data = frappe.parse_json(policy_data)
+	if not isinstance(policy_data, dict):
+		frappe.throw(_("Invalid rating policy format."))
+
+	cleaned: dict[str, Any] = {}
+	for k, default_val in DEFAULT_RATING_POLICY.items():
+		val = policy_data.get(k, default_val)
+		if isinstance(default_val, bool):
+			cleaned[k] = bool(cint(val)) if isinstance(val, (int, str)) else bool(val)
+		elif isinstance(default_val, int):
+			cleaned[k] = max(0, cint(val))
+		else:
+			cleaned[k] = max(0.0, flt(val))
+
+	_kv_set(RATING_POLICY_FIELD, json.dumps(cleaned, ensure_ascii=False), doctype=SETTINGS_DOCTYPE)
+	return get_rating_policy()
+
+
+# --- 1. Leitura Inteligente (OCR/Parser) de Documentos da Pasta Digital ---------------------------------------
+
+
+def _resolve_file_path(file_url: str) -> str | None:
 	if not file_url:
-		return ""
-	rel_path = file_url.lstrip("/")
-	site_path = frappe.get_site_path(rel_path)
-	if not os.path.exists(site_path):
-		# Tenta localizar pelo registro File no banco
-		file_doc_path = frappe.db.get_value("File", {"file_url": file_url}, "file_url")
-		if file_doc_path:
-			site_path = frappe.get_site_path(str(file_doc_path).lstrip("/"))
-	if not os.path.exists(site_path) or not os.path.isfile(site_path):
-		return ""
+		return None
+	site_path = frappe.get_site_path()
+	rel = file_url.lstrip("/")
+	if rel.startswith("private/files/") or rel.startswith("public/files/"):
+		candidate = os.path.join(site_path, rel)
+		if os.path.isfile(candidate):
+			return candidate
+	elif rel.startswith("files/"):
+		candidate = os.path.join(site_path, "public", rel)
+		if os.path.isfile(candidate):
+			return candidate
+	return None
 
-	ext = os.path.splitext(site_path)[1].lower()
+
+def _extract_raw_text(file_path: str) -> str:
+	if not file_path or not os.path.isfile(file_path):
+		return ""
+	ext = os.path.splitext(file_path)[1].lower()
 	try:
-		if ext in (".txt", ".csv", ".json", ".md", ".html", ".xml"):
-			with open(site_path, "r", encoding="utf-8", errors="ignore") as f:
-				return f.read(200_000)
-
+		if ext in (".csv", ".txt"):
+			with open(file_path, "rb") as f:
+				raw = f.read(512 * 1024)
+			return raw.decode("utf-8", errors="ignore")
 		if ext == ".pdf":
-			# 1. Tenta pypdf / PyPDF2 se instalados no ambiente
 			for mod_name in ("pypdf", "PyPDF2"):
 				try:
-					mod = __import__(mod_name)
-					reader = mod.PdfReader(site_path)
-					pages_text = []
-					for page in reader.pages[:25]:
-						pages_text.append(page.extract_text() or "")
-					joined = "\n".join(pages_text).strip()
-					if joined:
-						return joined[:200_000]
+					pdf_mod = __import__(mod_name)
+					with open(file_path, "rb") as f:
+						reader = pdf_mod.PdfReader(io.BytesIO(f.read()))
+						pages_text = []
+						for p in reader.pages[:15]:
+							pages_text.append(p.extract_text() or "")
+						return "\n".join(pages_text)
 				except Exception:
-					pass
+					continue
+			with open(file_path, "rb") as f:
+				raw = f.read(512 * 1024)
+			ascii_chunks = re.findall(rb"[\x20-\x7E\xC0-\xFF]{4,}", raw)
+			return "\n".join(c.decode("latin-1", errors="ignore") for c in ascii_chunks[:2000])
+		if ext == ".xlsx":
+			try:
+				import openpyxl
 
-			# 2. Fallback: extrai blocos de texto legíveis do binário PDF (streams descompactadas ou literais PDF)
-			import zlib
-
-			with open(site_path, "rb") as f:
-				raw_bytes = f.read(5 * 1024 * 1024)
-			chunks: list[str] = []
-			for match in re.finditer(rb"stream[\r\n]+(.*?)[\r\n]+endstream", raw_bytes, re.DOTALL):
-				stream_data = match.group(1)
-				try:
-					decompressed = zlib.decompress(stream_data)
-					chunks.append(decompressed.decode("latin-1", errors="ignore"))
-				except Exception:
-					chunks.append(stream_data.decode("latin-1", errors="ignore"))
-			chunks.append(raw_bytes.decode("latin-1", errors="ignore"))
-			raw_str = "\n".join(chunks)
-			literals = re.findall(r"\(([^()]{2,200})\)", raw_str)
-			ascii_runs = re.findall(r"[A-Za-zÀ-ÿ0-9R\$\.,/\-:; ]{4,120}", raw_str)
-			return "\n".join(literals + ascii_runs)[:200_000]
+				wb = openpyxl.load_workbook(file_path, data_only=True, read_only=True)
+				lines = []
+				for sheet in wb.worksheets[:3]:
+					for row in sheet.iter_rows(max_row=200, values_only=True):
+						vals = [str(cell) for cell in row if cell is not None]
+						if vals:
+							lines.append(" | ".join(vals))
+				return "\n".join(lines)
+			except Exception:
+				return ""
 	except Exception:
 		return ""
 	return ""
 
 
 def _parse_brl_numbers(text: str) -> list[float]:
-	"""Extrai valores monetários em formato brasileiro (ex: R$ 125.400,00 ou 125.400,00) do texto."""
-	values: list[float] = []
+	if not text:
+		return []
 	pattern = re.compile(r"(?:R\$\s*)?(\d{1,3}(?:\.\d{3})+(?:,\d{2})|\d{4,9},\d{2})")
-	for match in pattern.finditer(text or ""):
-		raw_num = match.group(1).replace(".", "").replace(",", ".")
+	values: list[float] = []
+	for match in pattern.findall(text):
+		clean = match.replace(".", "").replace(",", ".")
 		try:
-			val = float(raw_num)
-			if 100.0 <= val <= 10_000_000_000.0:
+			val = float(clean)
+			if 100.0 <= val <= 5_000_000_000.0:
 				values.append(val)
 		except ValueError:
 			pass
@@ -135,43 +219,42 @@ def _parse_brl_numbers(text: str) -> list[float]:
 def extract_document_insights(
 	organization_name: str,
 	item_key: str,
-	label: str,
 	file_url: str,
 	file_name: str = "",
+	label: str = "",
 ) -> dict[str, Any]:
-	"""Analisa o documento anexado na Pasta Digital, valida CNPJ/titularidade e extrai indicadores chave."""
+	"""Extrai indicadores estruturados do arquivo anexado (Faturamento, Balanço, Contrato Social, Endividamento)."""
+	path = _resolve_file_path(file_url)
+	text = _extract_raw_text(path) if path else ""
 	org_cnpj = only_digits(frappe.db.get_value("CRM Organization", organization_name, "cnpj") or "")
-	text = _read_file_text(file_url)
-	combined_source = f"{file_name or ''}\n{text}"
 
-	# 1. Detecção de CNPJs no documento
-	cnpjs_found: list[str] = []
-	for match in re.finditer(r"\b\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2}\b", combined_source):
-		digits = only_digits(match.group(0))
-		if len(digits) == 14 and digits != digits[0] * 14 and digits not in cnpjs_found:
-			cnpjs_found.append(digits)
-
-	cnpj_match: bool | None = None
-	warnings: list[str] = []
-	highlights: list[str] = []
-
+	cnpjs_found = list(
+		dict.fromkeys(
+			only_digits(m)
+			for m in re.findall(r"\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2}", text)
+			if len(only_digits(m)) == 14
+		)
+	)
+	cnpj_match = None
 	if cnpjs_found and org_cnpj:
-		if org_cnpj in cnpjs_found:
-			cnpj_match = True
-			highlights.append(f"CNPJ {format_cnpj(org_cnpj)} confirmado no documento")
-		else:
-			cnpj_match = False
-			warnings.append(
-				f"CNPJ detectado no arquivo ({format_cnpj(cnpjs_found[0])}) diverge do CNPJ da organização ({format_cnpj(org_cnpj)})"
-			)
+		cnpj_match = org_cnpj in cnpjs_found
 
-	lower_text = combined_source.lower()
-	brl_values = _parse_brl_numbers(combined_source)
+	brl_values = _parse_brl_numbers(text)
+	lower_text = text.lower()
+	highlights: list[str] = []
+	warnings: list[str] = []
+
+	if cnpj_match is True:
+		highlights.append(f"CNPJ {format_cnpj(org_cnpj)} confirmado no documento")
+	elif cnpj_match is False and cnpjs_found:
+		warnings.append(
+			f"Atenção: CNPJ(s) lido(s) no arquivo ({', '.join(format_cnpj(c) for c in cnpjs_found[:2])}) diverge(m) do cadastro ({format_cnpj(org_cnpj)})"
+		)
+
 	estimated_monthly_revenue: float | None = None
 	signing_rule = ""
 	capital_social_detected: float | None = None
 
-	# 2. Regras específicas por tipo de documento
 	if "contrato" in item_key or "societ" in label.lower():
 		if "isoladamente" in lower_text or "individualmente" in lower_text:
 			signing_rule = "Assinatura isolada permitida"
@@ -185,7 +268,6 @@ def extract_document_insights(
 
 	elif "faturamento" in item_key or "balanco" in item_key or "dre" in item_key or "faturamento" in label.lower():
 		if brl_values:
-			# Filtra o maior valor (geralmente Total 12M) se houver mais de 3 parcelas
 			sorted_vals = sorted(brl_values)
 			if len(sorted_vals) >= 4 and sorted_vals[-1] > sum(sorted_vals[:-1]) * 0.7:
 				monthly_vals = sorted_vals[:-1]
@@ -208,6 +290,7 @@ def extract_document_insights(
 		ext = os.path.splitext(file_name or file_url)[1].upper().lstrip(".") or "DOC"
 		highlights.append(f"Arquivo {ext} catalogado e vinculado ao dossiê ({len(text)} caracteres lidos)")
 
+	summary_parts = highlights + [f"⚠ {w}" for w in warnings]
 	return {
 		"analyzed_on": now_datetime().strftime("%Y-%m-%d %H:%M"),
 		"text_extracted": bool(text.strip()),
@@ -219,6 +302,7 @@ def extract_document_insights(
 		"capital_social_detected": capital_social_detected,
 		"highlights": highlights,
 		"warnings": warnings,
+		"summary_text": " · ".join(summary_parts),
 	}
 
 
@@ -228,7 +312,14 @@ def extract_document_insights(
 def get_economic_group(organization_name: str) -> dict[str, Any]:
 	"""Cruza os sócios (Contatos) da Organização com todas as outras Organizações e Cards da base HubTech."""
 	if not organization_name or not frappe.db.exists("CRM Organization", organization_name):
-		return {"has_group": False, "shared_partners": [], "related_organizations": [], "total_group_limit": 0.0}
+		return {
+			"has_group": False,
+			"linked_count": 0,
+			"related_count": 0,
+			"shared_partners": [],
+			"related_organizations": [],
+			"total_group_limit": 0.0,
+		}
 
 	my_contacts = frappe.get_all(
 		"Contact",
@@ -281,7 +372,6 @@ def get_economic_group(organization_name: str) -> dict[str, Any]:
 				if label not in entry["shared_partners"]:
 					entry["shared_partners"].append(label)
 
-	# Também verifica se a organização participa como 2ª organização em Cards de outros clientes (Cedente/Sacado)
 	if frappe.db.table_exists("CRM Deal Organization"):
 		linked_deals = frappe.get_all(
 			"CRM Deal Organization",
@@ -320,7 +410,11 @@ def get_economic_group(organization_name: str) -> dict[str, Any]:
 			or {}
 		)
 		other_comm = _load_committee_raw(other_org)
-		approved_lim = flt(other_comm.get("approved_limit") or 0.0) if other_comm.get("status") in ("Approved", "Approved with Reservations") else 0.0
+		approved_lim = (
+			flt(other_comm.get("approved_limit") or 0.0)
+			if str(other_comm.get("status") or "").lower() in ("approved", "approved with reservations", "approved_with_conditions")
+			else 0.0
+		)
 		total_group_limit += approved_lim
 
 		deals = frappe.get_all(
@@ -342,10 +436,15 @@ def get_economic_group(organization_name: str) -> dict[str, Any]:
 		)
 
 	own_comm = _load_committee_raw(organization_name)
-	own_limit = flt(own_comm.get("approved_limit") or 0.0) if own_comm.get("status") in ("Approved", "Approved with Reservations") else 0.0
+	own_limit = (
+		flt(own_comm.get("approved_limit") or 0.0)
+		if str(own_comm.get("status") or "").lower() in ("approved", "approved with reservations", "approved_with_conditions")
+		else 0.0
+	)
 
 	return {
 		"has_group": bool(related_list),
+		"linked_count": len(related_list),
 		"related_count": len(related_list),
 		"related_organizations": related_list,
 		"own_approved_limit": own_limit,
@@ -357,29 +456,49 @@ def get_economic_group(organization_name: str) -> dict[str, Any]:
 # --- 3. Motor de Rating Interno (AA–E) e Calculadora de Limite Sugerido ---------------------------------------
 
 
+def _add_factor(factors: list[dict[str, Any]], label: str, delta: int) -> None:
+	factors.append(
+		{
+			"factor": label,
+			"label": label,
+			"impact": delta,
+			"impact_str": f"+{delta}" if delta >= 0 else str(delta),
+			"tone": "positive" if delta > 0 else ("negative" if delta < 0 else "neutral"),
+		}
+	)
+
+
 def calculate_rating_and_limit(
 	organization_name: str,
 	deal_name: str | None = None,
 	onboarding_data: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-	"""Calcula o Score Interno (0-1000), o Rating (AA a E) e o Limite Sugerido pela Política."""
+	"""Calcula o Score Interno (0-1000), o Rating (AA a E) e o Limite Sugerido pela Política configurada."""
+	policy = get_rating_policy()
 	if not organization_name or not frappe.db.exists("CRM Organization", organization_name):
 		return {
 			"score": 0,
 			"rating": "C",
 			"rating_label": "Risco Moderado",
+			"multiplier_applied": 0.08,
+			"revenue_multiplier_percent": 8,
 			"suggested_limit": 0.0,
+			"suggested_max_concentration": 0.0,
 			"suggested_sacado_limit": 0.0,
 			"monthly_revenue_base": 0.0,
 			"revenue_source": "Não informado",
 			"factors": [],
+			"policy": policy,
 		}
 
 	org = frappe.get_doc("CRM Organization", organization_name)
 	score = 500  # Base neutra (0 a 1000)
 	factors: list[dict[str, Any]] = []
+	hard_stop_reason = ""
 
-	# Fator 1: Tempo de Atividade
+	_add_factor(factors, "Pontuação base inicial (Neutra)", 500)
+
+	# Pilar 1: Capital & Maturidade Societária (Receita Federal)
 	age_months = None
 	if org.get("activity_start_date"):
 		try:
@@ -391,92 +510,165 @@ def calculate_rating_and_limit(
 
 	if age_months is not None:
 		if age_months >= 60:
-			score += 120
-			factors.append({"label": f"Maturidade societária ({age_months // 12} anos)", "impact": "+120", "tone": "positive"})
+			score += 60
+			_add_factor(factors, f"Maturidade societária ({age_months // 12} anos de CNPJ)", 60)
 		elif age_months >= 24:
-			score += 70
-			factors.append({"label": f"Tempo de atividade ({age_months} meses)", "impact": "+70", "impact_num": 70, "tone": "positive"})
+			score += 30
+			_add_factor(factors, f"Tempo de atividade ({age_months} meses)", 30)
 		elif age_months < 12:
-			score -= 80
-			factors.append({"label": f"Empresa recém-constituída ({age_months} meses)", "impact": "-80", "tone": "negative"})
+			score -= 60
+			_add_factor(factors, f"Empresa recém-constituída ({age_months} meses)", -60)
 
-	# Fator 2: Triagem Jurídica & Fiscal (Cred Hub Credit Report)
+	share_cap = flt(org.get("share_capital") or 0.0)
+	if share_cap >= 500_000:
+		score += 40
+		_add_factor(factors, f"Capital social sólido (R$ {share_cap:,.0f})", 40)
+	elif share_cap >= 100_000:
+		score += 20
+		_add_factor(factors, f"Capital social integralizado (R$ {share_cap:,.0f})", 20)
+
+	# Pilar 2, 3 e 4: Caráter / Restritivos, Capacidade SCR Bacen & Bureau Score Externo
 	verdict = org.get("credit_verdict") or "Not Checked"
 	report_name = org.get("credit_report")
 	if report_name and frappe.db.exists("Cred Hub Credit Report", report_name):
 		rep = frappe.get_doc("Cred Hub Credit Report", report_name)
 		if rep.get("ceis_cnep_sanctioned"):
 			score -= 400
-			factors.append({"label": "Sanção pública ativa no CEIS/CNEP", "impact": "-400", "tone": "negative"})
+			_add_factor(factors, "Sanção pública ativa no CEIS/CNEP", -400)
+			if policy.get("hard_stop_ceis_cnep", True):
+				hard_stop_reason = "Sanção CEIS/CNEP ativa (Trava Eliminatória)"
 		elif rep.get("ceis_cnep_verified"):
-			score += 40
-			factors.append({"label": "Nada consta em Sanções CEIS/CNEP", "impact": "+40", "tone": "positive"})
+			score += 30
+			_add_factor(factors, "Nada consta em Sanções CEIS/CNEP", 30)
 
 		if rep.get("has_bankruptcy_recovery"):
 			score -= 350
-			factors.append({"label": "Recuperação Judicial / Falência detectada", "impact": "-350", "tone": "negative"})
+			_add_factor(factors, "Recuperação Judicial / Falência detectada", -350)
+			if policy.get("hard_stop_rj_falencia", True):
+				hard_stop_reason = "Recuperação Judicial / Falência ativa (Trava Eliminatória)"
 
 		protests = cint(rep.get("cenprot_protests_count") or 0)
+		protests_amt = flt(rep.get("cenprot_total_amount") or 0.0)
 		if rep.get("cenprot_has_protests") or protests > 0:
-			penalty = min(220, 60 + protests * 20)
-			score -= penalty
-			factors.append({"label": f"{protests} protesto(s) em cartório (CENPROT)", "impact": f"-{penalty}", "tone": "negative"})
+			if protests_amt > 50_000 or protests >= 10:
+				penalty = -160
+			elif protests_amt > 5_000 or protests >= 3:
+				penalty = -90
+			else:
+				penalty = -40
+			score += penalty
+			_add_factor(factors, f"{protests} protesto(s) em cartório (CENPROT)", penalty)
 		else:
-			score += 80
-			factors.append({"label": "Sem protestos em cartório (CENPROT)", "impact": "+80", "tone": "positive"})
+			score += 60
+			_add_factor(factors, "Sem protestos em cartório (CENPROT)", 60)
 
 		pgfn_debt = flt(rep.get("pgfn_total_debt") or 0.0)
 		if pgfn_debt > 0:
 			score -= 120
-			factors.append({"label": f"Dívida ativa na PGFN (R$ {pgfn_debt:,.2f})", "impact": "-120", "tone": "negative"})
+			_add_factor(factors, f"Dívida ativa na PGFN (R$ {pgfn_debt:,.0f})", -120)
 		elif rep.get("pgfn_status"):
-			score += 60
-			factors.append({"label": "Regularidade fiscal PGFN verificada", "impact": "+60", "tone": "positive"})
-	elif verdict == "Pre-Approved":
-		score += 120
-		factors.append({"label": "Pré-filtro aprovado", "impact": "+120", "tone": "positive"})
-	elif verdict == "Rejected":
-		score -= 250
-		factors.append({"label": "Reprovado na triagem inicial", "impact": "-250", "tone": "negative"})
+			score += 40
+			_add_factor(factors, "Regularidade fiscal PGFN verificada", 40)
 
-	# Fator 3: Pasta Digital e Relatório de Visita
+		# SCR Bacen (se disponível no relatório)
+		scr_overdue = flt(rep.get("scr_overdue_amount") or 0.0)
+		scr_loss = flt(rep.get("scr_loss_amount") or 0.0)
+		scr_total = flt(rep.get("scr_total_exposure") or 0.0)
+		if scr_loss > 0:
+			score -= 220
+			_add_factor(factors, f"Prejuízo registrado no SCR Bacen (R$ {scr_loss:,.0f})", -220)
+		elif scr_overdue > 0:
+			ratio = (scr_overdue / scr_total) if scr_total > 0 else 0.05
+			pen = -180 if ratio > 0.10 else (-100 if ratio > 0.02 else -40)
+			score += pen
+			_add_factor(factors, f"Carteira vencida no SCR Bacen (R$ {scr_overdue:,.0f})", pen)
+		elif scr_total > 0:
+			score += 70
+			_add_factor(factors, "SCR Bacen 100% adimplente (zero vencido)", 70)
+
+		# Bureau Score Externo (DirectD / Quod / Boa Vista / Serasa)
+		ext_score = cint(rep.get("credit_score") or rep.get("quod_score") or rep.get("serasa_score") or 0)
+		if ext_score > 0:
+			if ext_score >= 750:
+				score += 90
+				_add_factor(factors, f"Score externo elevado ({ext_score}/1000)", 90)
+			elif ext_score >= 600:
+				score += 45
+				_add_factor(factors, f"Score externo positivo ({ext_score}/1000)", 45)
+			elif ext_score >= 400:
+				score -= 30
+				_add_factor(factors, f"Score externo moderado/baixo ({ext_score}/1000)", -30)
+			else:
+				score -= 100
+				_add_factor(factors, f"Score externo crítico ({ext_score}/1000)", -100)
+	elif verdict == "Pre-Approved":
+		score += 100
+		_add_factor(factors, "Pré-filtro automático aprovado", 100)
+	elif verdict == "Rejected":
+		score -= 220
+		_add_factor(factors, "Reprovado na triagem inicial", -220)
+
+	# Pilar 5: Governança Operacional — Pasta Digital e Visita Técnica
 	if onboarding_data:
 		summary = onboarding_data.get("summary") or {}
 		if summary.get("all_required_verified") and not summary.get("expired_count"):
-			score += 80
-			factors.append({"label": "Pasta Digital 100% conferida e em dia", "impact": "+80", "tone": "positive"})
+			score += 50
+			_add_factor(factors, "Pasta Digital 100% conferida e sem documento vencido", 50)
 		elif summary.get("expired_count"):
 			score -= 60
-			factors.append({"label": f"{summary.get('expired_count')} documento(s) vencido(s) na Pasta Digital", "impact": "-60", "tone": "negative"})
+			_add_factor(factors, f"{summary.get('expired_count')} documento(s) vencido(s) na Pasta Digital", -60)
 
 		visit = onboarding_data.get("visit") or {}
 		if visit.get("status") == "completed":
 			rec = visit.get("recommendation")
 			if rec == "favoravel":
-				score += 90
-				factors.append({"label": "Visita técnica realizada com parecer Favorável", "impact": "+90", "tone": "positive"})
+				score += 75
+				_add_factor(factors, "Visita técnica realizada com parecer Favorável", 75)
 			elif rec == "ressalvas":
-				score += 20
-				factors.append({"label": "Visita técnica com ressalvas", "impact": "+20", "tone": "neutral"})
+				score -= 30
+				_add_factor(factors, "Visita técnica com ressalvas", -30)
 			elif rec == "desfavoravel":
-				score -= 200
-				factors.append({"label": "Visita técnica com parecer Desfavorável", "impact": "-200", "tone": "negative"})
+				score -= 180
+				_add_factor(factors, "Visita técnica com parecer Desfavorável", -180)
 
 	score = max(0, min(1000, int(round(score))))
 
-	# Classificação em Rating AA .. E e Fator de Capacidade sobre Faturamento Mensal
-	if score >= 820:
-		rating, rating_label, rev_multiplier = "AA", "Risco Mínimo · Prime", 0.30
-	elif score >= 700:
-		rating, rating_label, rev_multiplier = "A", "Risco Baixo · Sólido", 0.22
-	elif score >= 560:
-		rating, rating_label, rev_multiplier = "B", "Risco Moderado · Padrão", 0.15
-	elif score >= 420:
-		rating, rating_label, rev_multiplier = "C", "Risco Médio-Alto · Exige Garantias", 0.08
-	elif score >= 280:
-		rating, rating_label, rev_multiplier = "D", "Risco Elevado · Restrito", 0.03
+	# Classificação em Rating AA .. E conforme Política configurada
+	if hard_stop_reason:
+		rating = "E"
+		rating_label = f"Risco Crítico · {hard_stop_reason}"
+		rev_multiplier = 0.0
+		sacado_pct = 0.0
+	elif score >= cint(policy["aa_min_score"]):
+		rating = "AA"
+		rating_label = "Risco Mínimo · Prime"
+		rev_multiplier = flt(policy["aa_revenue_pct"]) / 100.0
+		sacado_pct = flt(policy["aa_sacado_pct"]) / 100.0
+	elif score >= cint(policy["a_min_score"]):
+		rating = "A"
+		rating_label = "Risco Baixo · Sólido"
+		rev_multiplier = flt(policy["a_revenue_pct"]) / 100.0
+		sacado_pct = flt(policy["a_sacado_pct"]) / 100.0
+	elif score >= cint(policy["b_min_score"]):
+		rating = "B"
+		rating_label = "Risco Moderado · Padrão"
+		rev_multiplier = flt(policy["b_revenue_pct"]) / 100.0
+		sacado_pct = flt(policy["b_sacado_pct"]) / 100.0
+	elif score >= cint(policy["c_min_score"]):
+		rating = "C"
+		rating_label = "Risco Médio-Alto · Exige Garantias"
+		rev_multiplier = flt(policy["c_revenue_pct"]) / 100.0
+		sacado_pct = flt(policy["c_sacado_pct"]) / 100.0
+	elif score >= cint(policy["d_min_score"]):
+		rating = "D"
+		rating_label = "Risco Elevado · Restrito"
+		rev_multiplier = flt(policy["d_revenue_pct"]) / 100.0
+		sacado_pct = flt(policy["d_sacado_pct"]) / 100.0
 	else:
-		rating, rating_label, rev_multiplier = "E", "Risco Crítico · Impeditivo", 0.0
+		rating = "E"
+		rating_label = "Risco Crítico · Reprovação Recomendada"
+		rev_multiplier = 0.0
+		sacado_pct = 0.0
 
 	# Base de Faturamento Mensal (1º: extraído da Pasta Digital; 2º: Receita Anual / 12; 3º: Capital Social)
 	monthly_revenue = 0.0
@@ -484,7 +676,7 @@ def calculate_rating_and_limit(
 	if onboarding_data:
 		for item in onboarding_data.get("checklist") or []:
 			ext = item.get("extracted_data") or {}
-			if ext.get("estimated_monthly_revenue"):
+			if isinstance(ext, dict) and ext.get("estimated_monthly_revenue"):
 				monthly_revenue = flt(ext["estimated_monthly_revenue"])
 				revenue_source = f"Extraído de {item['label']}"
 				break
@@ -497,21 +689,28 @@ def calculate_rating_and_limit(
 		monthly_revenue = round(flt(org.share_capital) * 0.25, 2)
 		revenue_source = "Estimativa conservadora (25% do Capital Social)"
 
-	suggested_limit = round((monthly_revenue * rev_multiplier) / 1000.0) * 1000.0 if monthly_revenue > 0 else 0.0
-	if monthly_revenue > 0 and suggested_limit == 0.0 and rev_multiplier > 0:
-		suggested_limit = round(monthly_revenue * rev_multiplier, 2)
-	suggested_sacado_limit = round(suggested_limit * 0.25, 2) if suggested_limit > 0 else 0.0
+	raw_suggested = monthly_revenue * rev_multiplier if monthly_revenue > 0 else 0.0
+	max_cap = flt(policy.get("max_global_limit") or 0.0)
+	if max_cap > 0 and raw_suggested > max_cap:
+		raw_suggested = max_cap
+
+	suggested_limit = round(raw_suggested / 1000.0) * 1000.0 if raw_suggested >= 1000 else round(raw_suggested, 2)
+	suggested_sacado_limit = round(suggested_limit * sacado_pct, 2) if suggested_limit > 0 else 0.0
 
 	return {
 		"score": score,
 		"rating": rating,
 		"rating_label": rating_label,
-		"revenue_multiplier_percent": int(rev_multiplier * 100),
+		"multiplier_applied": rev_multiplier,
+		"revenue_multiplier_percent": round(rev_multiplier * 100, 1),
+		"sacado_concentration_percent": round(sacado_pct * 100, 1),
 		"monthly_revenue_base": monthly_revenue,
 		"revenue_source": revenue_source,
 		"suggested_limit": suggested_limit,
+		"suggested_max_concentration": suggested_sacado_limit,
 		"suggested_sacado_limit": suggested_sacado_limit,
 		"factors": factors,
+		"policy": policy,
 	}
 
 
@@ -519,13 +718,42 @@ def calculate_rating_and_limit(
 
 
 def _tier_for_limit(limit_brl: float) -> tuple[str, int]:
-	"""Retorna (nome da alçada, quantidade de votos exigidos) conforme o valor recomendado/solicitado."""
+	"""Retorna (nome da alçada, quantidade de votos exigidos) conforme a política configurada."""
+	policy = get_rating_policy()
+	t1 = flt(policy.get("tier_1_max_limit") or 100_000.0)
+	t2 = flt(policy.get("tier_2_max_limit") or 500_000.0)
 	val = flt(limit_brl)
-	if val <= 100_000:
+	if val <= t1:
 		return "Alçada 1 · Mesa Sênior (1 voto)", 1
-	if val <= 500_000:
+	if val <= t2:
 		return "Alçada 2 · Comitê Gerencial (2 votos)", 2
 	return "Alçada 3 · Comitê Diretoria / Pleno (2 votos)", 2
+
+
+def _normalize_status_ui(status_val: str) -> str:
+	s = str(status_val or "").strip().lower()
+	if s in ("approved", "approve"):
+		return "approved"
+	if s in ("approved with reservations", "approved_with_conditions", "approve_with_conditions"):
+		return "approved_with_conditions"
+	if s in ("rejected", "reject"):
+		return "rejected"
+	if s in ("in voting", "in_voting"):
+		return "in_voting"
+	return "pending"
+
+
+def _normalize_status_doc(status_val: str) -> str:
+	ui = _normalize_status_ui(status_val)
+	if ui == "approved":
+		return "Approved"
+	if ui == "approved_with_conditions":
+		return "Approved with Reservations"
+	if ui == "rejected":
+		return "Rejected"
+	if ui == "in_voting":
+		return "In Voting"
+	return "Draft"
 
 
 def _load_committee_raw(organization_name: str) -> dict[str, Any]:
@@ -594,7 +822,7 @@ def _save_committee_raw(organization_name: str, state: dict[str, Any], deal_name
 		values = {
 			"organization": organization_name,
 			"deal": deal_name or state.get("deal") or None,
-			"status": state.get("status") or "Draft",
+			"status": _normalize_status_doc(state.get("status") or "Draft"),
 			"internal_rating": state.get("internal_rating") or "",
 			"internal_score": cint(state.get("internal_score") or 0),
 			"requested_limit": flt(state.get("requested_limit") or 0),
@@ -631,6 +859,7 @@ def get_committee_state(
 	sizing = calculate_rating_and_limit(organization_name, deal_name=deal_name, onboarding_data=onboarding_data)
 	group = get_economic_group(organization_name)
 	raw = _load_committee_raw(organization_name)
+	policy = sizing.get("policy") or get_rating_policy()
 
 	deal_requested = 0.0
 	if deal_name and frappe.db.exists("CRM Deal", deal_name):
@@ -640,41 +869,64 @@ def get_committee_state(
 	recommended_limit = flt(raw.get("recommended_limit") or sizing["suggested_limit"])
 	approved_limit = flt(raw.get("approved_limit") or 0.0)
 	max_sacado = flt(raw.get("max_sacado_concentration") or sizing["suggested_sacado_limit"])
-	tier_label, req_votes = _tier_for_limit(recommended_limit or requested_limit)
+	tier_label, default_votes = _tier_for_limit(recommended_limit or requested_limit)
+	req_votes = cint(raw.get("required_votes") or default_votes or 1)
+	validity_days = cint(raw.get("validity_days") or policy.get("default_validity_days") or 180)
 
 	limit_valid_until = str(raw.get("limit_valid_until") or "")
 	limit_expired = False
+	expiring_soon = False
 	days_to_limit_expiry = None
 	if limit_valid_until:
 		try:
 			days_to_limit_expiry = date_diff(getdate(limit_valid_until), getdate(today()))
 			limit_expired = days_to_limit_expiry < 0
+			expiring_soon = 0 <= days_to_limit_expiry <= 15
 		except Exception:
 			pass
 
 	votes = raw.get("votes") if isinstance(raw.get("votes"), list) else []
+	approve_count = sum(
+		1
+		for v in votes
+		if isinstance(v, dict)
+		and str(v.get("vote") or v.get("decision") or "").lower()
+		in ("approve", "approved", "approve_with_conditions", "approve with reservations")
+	)
 	covenants = raw.get("covenants") if isinstance(raw.get("covenants"), list) else ["aval_socios", "confirmacao_lastro"]
+	notes = str(raw.get("committee_notes") or "")
 
 	return {
-		"status": raw.get("status") or "Draft",
+		"status": _normalize_status_ui(raw.get("status") or "Draft"),
+		"status_doc": _normalize_status_doc(raw.get("status") or "Draft"),
 		"requested_limit": requested_limit,
 		"suggested_limit": sizing["suggested_limit"],
 		"recommended_limit": recommended_limit,
+		"proposed_limit": recommended_limit,
 		"approved_limit": approved_limit,
 		"max_sacado_concentration": max_sacado,
+		"proposed_concentration": max_sacado,
 		"interest_rate_monthly": flt(raw.get("interest_rate_monthly") or 2.85),
 		"max_term_days": cint(raw.get("max_term_days") or 60),
-		"limit_valid_until": limit_valid_until or str(add_days(today(), 180)),
+		"validity_days": validity_days,
+		"limit_valid_until": limit_valid_until or str(add_days(today(), validity_days)),
+		"valid_until": limit_valid_until,
 		"limit_expired": limit_expired,
+		"is_expired": limit_expired,
+		"expiring_soon": expiring_soon,
 		"days_to_limit_expiry": days_to_limit_expiry,
 		"required_tier": tier_label,
 		"required_votes": req_votes,
+		"required_quorum": req_votes,
+		"approve_count": approve_count,
 		"covenants": covenants,
 		"covenant_options": COVENANT_OPTIONS,
-		"committee_notes": str(raw.get("committee_notes") or ""),
+		"committee_notes": notes,
+		"conditions_notes": notes,
 		"votes": votes,
 		"decided_on": str(raw.get("decided_on") or ""),
 		"decided_by": str(raw.get("decided_by") or ""),
+		"rating": sizing,
 		"sizing": sizing,
 		"economic_group": group,
 	}
@@ -682,15 +934,32 @@ def get_committee_state(
 
 def save_committee_proposal(
 	organization_name: str,
-	proposal_data: dict[str, Any] | str,
+	proposal_data: dict[str, Any] | str | None = None,
 	deal_name: str | None = None,
 	onboarding_data: dict[str, Any] | None = None,
+	proposed_limit: float | None = None,
+	proposed_concentration: float | None = None,
+	required_quorum: int | None = None,
+	validity_days: int | None = None,
+	conditions_notes: str | None = None,
 ) -> dict[str, Any]:
-	"""Salva/atualiza a Proposta de Limite e Condicionantes da Mesa de Comitê."""
+	"""Salva/atualiza a Proposta de Limite e Condicionantes da Mesa de Comitê (suporta dict ou kwargs diretos)."""
 	if isinstance(proposal_data, str):
 		proposal_data = frappe.parse_json(proposal_data)
 	if not isinstance(proposal_data, dict):
-		frappe.throw(_("Invalid committee proposal data."))
+		proposal_data = {}
+
+	if proposed_limit is not None:
+		proposal_data["recommended_limit"] = proposed_limit
+	if proposed_concentration is not None:
+		proposal_data["max_sacado_concentration"] = proposed_concentration
+	if required_quorum is not None:
+		proposal_data["required_votes"] = required_quorum
+	if validity_days is not None:
+		proposal_data["validity_days"] = validity_days
+		proposal_data["limit_valid_until"] = str(add_days(today(), max(1, cint(validity_days))))
+	if conditions_notes is not None:
+		proposal_data["committee_notes"] = conditions_notes
 
 	sizing = calculate_rating_and_limit(organization_name, deal_name=deal_name, onboarding_data=onboarding_data)
 	raw = _load_committee_raw(organization_name)
@@ -700,13 +969,15 @@ def save_committee_proposal(
 	max_sacado = flt(proposal_data.get("max_sacado_concentration", raw.get("max_sacado_concentration") or sizing["suggested_sacado_limit"]))
 	rate = flt(proposal_data.get("interest_rate_monthly", raw.get("interest_rate_monthly") or 2.85))
 	term = cint(proposal_data.get("max_term_days", raw.get("max_term_days") or 60))
-	valid_until = str(proposal_data.get("limit_valid_until") or raw.get("limit_valid_until") or add_days(today(), 180))
+	v_days = cint(proposal_data.get("validity_days", raw.get("validity_days") or 180))
+	valid_until = str(proposal_data.get("limit_valid_until") or raw.get("limit_valid_until") or add_days(today(), v_days))
 	covenants = proposal_data.get("covenants")
 	if not isinstance(covenants, list):
 		covenants = raw.get("covenants") or ["aval_socios"]
 	notes = str(proposal_data.get("committee_notes") if proposal_data.get("committee_notes") is not None else raw.get("committee_notes") or "").strip()[:500]
 
-	tier_label, req_votes = _tier_for_limit(recommended_limit or requested_limit)
+	tier_label, default_votes = _tier_for_limit(recommended_limit or requested_limit)
+	req_votes = max(1, cint(proposal_data.get("required_votes") or raw.get("required_votes") or default_votes))
 	status = raw.get("status") or "Draft"
 	if status == "Draft":
 		status = "In Voting"
@@ -723,6 +994,7 @@ def save_committee_proposal(
 		"max_sacado_concentration": max_sacado,
 		"interest_rate_monthly": rate,
 		"max_term_days": term,
+		"validity_days": v_days,
 		"limit_valid_until": valid_until,
 		"required_tier": tier_label,
 		"required_votes": req_votes,
@@ -735,16 +1007,26 @@ def save_committee_proposal(
 
 def cast_committee_vote(
 	organization_name: str,
-	decision: str,
+	decision: str | None = None,
 	approved_limit: float | None = None,
 	notes: str = "",
 	deal_name: str | None = None,
 	onboarding_data: dict[str, Any] | None = None,
+	vote: str | None = None,
+	voted_limit: float | None = None,
 ) -> dict[str, Any]:
 	"""Registra um voto auditável na Mesa de Comitê e, atingida a alçada, consolida a decisão e dispara o webhook."""
-	if decision not in ("Approve", "Approve with Reservations", "Reject"):
-		frappe.throw(_("Invalid committee vote decision."))
+	raw_vote = str(vote or decision or "approve").strip().lower()
+	if raw_vote in ("approve", "approved"):
+		norm_vote, doc_decision = "approve", "Approve"
+	elif raw_vote in ("approve_with_conditions", "approve with reservations", "approved with reservations"):
+		norm_vote, doc_decision = "approve_with_conditions", "Approve with Reservations"
+	elif raw_vote in ("reject", "rejected"):
+		norm_vote, doc_decision = "reject", "Reject"
+	else:
+		frappe.throw(_("Invalid committee vote decision: {0}").format(raw_vote))
 
+	eff_limit = voted_limit if voted_limit is not None else approved_limit
 	state = get_committee_state(organization_name, deal_name=deal_name, onboarding_data=onboarding_data)
 	raw = _load_committee_raw(organization_name)
 	votes: list[dict[str, Any]] = [v for v in (raw.get("votes") or []) if isinstance(v, dict)]
@@ -754,19 +1036,20 @@ def cast_committee_vote(
 	voted_on = now_datetime().strftime("%Y-%m-%d %H:%M:%S")
 	limit_val = (
 		0.0
-		if decision == "Reject"
-		else flt(approved_limit if approved_limit is not None else state["recommended_limit"] or state["suggested_limit"])
+		if norm_vote == "reject"
+		else flt(eff_limit if eff_limit is not None else state["recommended_limit"] or state["suggested_limit"])
 	)
-	raw_sig = f"{organization_name}|{user}|{decision}|{limit_val}|{voted_on}"
+	raw_sig = f"{organization_name}|{user}|{doc_decision}|{limit_val}|{voted_on}"
 	vote_hash = hashlib.sha256(raw_sig.encode("utf-8")).hexdigest()[:16]
 
-	# Substitui voto anterior do mesmo usuário se já tiver votado nesta rodada
 	votes = [v for v in votes if v.get("user") != user]
 	votes.append(
 		{
 			"user": user,
 			"full_name": full_name,
-			"decision": decision,
+			"vote": norm_vote,
+			"decision": doc_decision,
+			"voted_limit": limit_val,
 			"approved_limit": limit_val,
 			"notes": (notes or "").strip()[:300],
 			"voted_on": voted_on,
@@ -775,8 +1058,13 @@ def cast_committee_vote(
 	)
 
 	req_votes = cint(state.get("required_votes") or 1)
-	reject_votes = [v for v in votes if v["decision"] == "Reject"]
-	approve_votes = [v for v in votes if v["decision"] in ("Approve", "Approve with Reservations")]
+	reject_votes = [v for v in votes if v.get("vote") == "reject" or v.get("decision") == "Reject"]
+	approve_votes = [
+		v
+		for v in votes
+		if v.get("vote") in ("approve", "approve_with_conditions")
+		or v.get("decision") in ("Approve", "Approve with Reservations")
+	]
 
 	new_status = "In Voting"
 	final_limit = flt(raw.get("approved_limit") or 0.0)
@@ -789,16 +1077,17 @@ def cast_committee_vote(
 		decided_on = voted_on
 		decided_by = full_name
 	elif len(approve_votes) >= req_votes:
-		has_reservations = any(v["decision"] == "Approve with Reservations" for v in approve_votes)
-		new_status = "Approved with Reservations" if has_reservations else "Approve"
-		if new_status == "Approve":
-			new_status = "Approved"
-		# O limite aprovado pelo comitê é o menor entre os votos aprovadores (prudência de crédito)
-		final_limit = min(flt(v["approved_limit"]) for v in approve_votes)
+		has_reservations = any(
+			v.get("vote") == "approve_with_conditions" or v.get("decision") == "Approve with Reservations"
+			for v in approve_votes
+		)
+		new_status = "Approved with Reservations" if has_reservations else "Approved"
+		final_limit = min(flt(v.get("voted_limit") or v.get("approved_limit") or 0.0) for v in approve_votes)
 		decided_on = voted_on
 		decided_by = ", ".join(v["full_name"] for v in approve_votes)
 
-	valid_until = str(raw.get("limit_valid_until") or state["limit_valid_until"] or add_days(today(), 180))
+	v_days = cint(raw.get("validity_days") or state.get("validity_days") or 180)
+	valid_until = str(raw.get("limit_valid_until") or state["limit_valid_until"] or add_days(today(), v_days))
 	updated = {
 		**raw,
 		"deal": deal_name or raw.get("deal"),
@@ -812,6 +1101,7 @@ def cast_committee_vote(
 		"max_sacado_concentration": state["max_sacado_concentration"],
 		"interest_rate_monthly": state["interest_rate_monthly"],
 		"max_term_days": state["max_term_days"],
+		"validity_days": v_days,
 		"limit_valid_until": valid_until,
 		"required_tier": state["required_tier"],
 		"required_votes": req_votes,
@@ -823,7 +1113,6 @@ def cast_committee_vote(
 	}
 	_save_committee_raw(organization_name, updated, deal_name=deal_name)
 
-	# Dispara webhook se a decisão final foi atingida
 	if new_status in ("Approved", "Approved with Reservations", "Rejected"):
 		try:
 			from cred_hub.webhooks import trigger_credit_limit_decided
@@ -858,11 +1147,16 @@ def cast_committee_vote(
 
 def build_whatsapp_onboarding_reminder(
 	organization_name: str,
-	onboarding_data: dict[str, Any],
 	deal_name: str | None = None,
+	onboarding_data: dict[str, Any] | None = None,
 	phone: str | None = None,
 ) -> dict[str, Any]:
 	"""Monta a mensagem estruturada de cobrança da Pasta Digital + link wa.me / SmartChat."""
+	if onboarding_data is None:
+		from cred_hub.credit_check.onboarding import generate_portal_link
+
+		onboarding_data = generate_portal_link(organization_name, deal_name=deal_name, regenerate=False)
+
 	portal = onboarding_data.get("portal") or {}
 	portal_url = portal.get("url") or ""
 	checklist = onboarding_data.get("checklist") or []
@@ -894,7 +1188,6 @@ def build_whatsapp_onboarding_reminder(
 
 	message_text = "\n".join(lines)
 
-	# Resolve telefone da Organização ou Contato se não informado
 	resolved_phone = only_digits(phone or "")
 	if not resolved_phone and deal_name and frappe.db.exists("CRM Deal", deal_name):
 		resolved_phone = only_digits(frappe.db.get_value("CRM Deal", deal_name, "mobile_no") or "")
@@ -914,12 +1207,13 @@ def build_whatsapp_onboarding_reminder(
 		resolved_phone = f"55{resolved_phone}"
 
 	encoded_msg = urllib.parse.quote(message_text)
-	wa_url = f"https://wa.me/{resolved_phone}?text={encoded_msg}" if resolved_phone else f"https://wa.me/?text={encoded_msg}"
+	wa_url = f"https://wa.me/{resolved_phone}?text={encoded_msg}" if resolved_phone else ""
 
 	return {
 		"phone": resolved_phone,
 		"message": message_text,
-		"whatsapp_url": wa_url,
+		"whatsapp_url": wa_url or f"https://wa.me/?text={encoded_msg}",
+		"whatsapp_web_url": wa_url,
 		"pending_count": len(pending_req),
 		"rejected_count": len(rejected),
 		"expired_count": len(expired),

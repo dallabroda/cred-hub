@@ -8,7 +8,7 @@ from typing import Any
 
 import frappe
 from frappe import _
-from frappe.utils import now_datetime
+from frappe.utils import cint, flt, now_datetime
 from frappe.utils.background_jobs import is_job_enqueued
 
 from cred_hub.cnpj.mapping import only_digits
@@ -56,10 +56,40 @@ def _check_deal_and_org_permission(deal_name: str | None, organization_name: str
 
 
 @frappe.whitelist()
-def trigger_check(deal_name: str | None = None, organization_name: str | None = None, force: bool = False) -> dict[str, Any]:
+def trigger_check(
+	deal_name: str | None = None,
+	organization_name: str | None = None,
+	force: bool = False,
+	tier_1_only: bool = False,
+) -> dict[str, Any]:
 	"""Dispara a esteira manualmente a partir da interface do Card ou Organização."""
 	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
 	_check_deal_and_org_permission(deal_name, organization_name)
+
+	org_id = organization_name
+	if not org_id and deal_name and frappe.db.exists("CRM Deal", deal_name):
+		org_id = frappe.db.get_value("CRM Deal", deal_name, "organization")
+
+	if org_id and not _truthy(force) and not getattr(frappe.flags, "in_test", False):
+		from cred_hub.credit_check.enrich import find_valid_cached_report
+		cached_name = find_valid_cached_report(org_id)
+		if cached_name:
+			reuse_days = credit_package.config().get("reuse_days", 30)
+			rep = frappe.db.get_value("Cred Hub Credit Report", cached_name, ["checked_on", "valid_until"], as_dict=True) or {}
+			return {
+				"cached": True,
+				"report_name": cached_name,
+				"checked_on": str(rep.get("checked_on") or ""),
+				"valid_until": str(rep.get("valid_until") or ""),
+				"reuse_days": reuse_days,
+				"message": _(
+					"Esta empresa já possui triagem válida realizada em {0}. O prazo configurado para novas consultas é de {1} dias (válido até {2} — alterável em Configurações > Bureaus e Crédito). Nenhuma consulta duplicada foi cobrada."
+				).format(
+					frappe.utils.format_date(rep.get("checked_on")),
+					reuse_days,
+					frappe.utils.format_date(rep.get("valid_until")),
+				),
+			}
 
 	job = frappe.enqueue(
 		"cred_hub.credit_check.enrich.run_background_check",
@@ -70,6 +100,7 @@ def trigger_check(deal_name: str | None = None, organization_name: str | None = 
 		organization_name=organization_name,
 		force=bool(force),
 		user=frappe.session.user,
+		tier_1_only=_truthy(tier_1_only),
 	)
 	return {"message": _("Credit and compliance analysis queued in the background."), "job_id": str(job)}
 
@@ -170,6 +201,7 @@ def get_price_references() -> dict[str, Any]:
 		"directd_processos": enrich.DIRECTD_PROCESSOS_ESTIMATED_COST,
 		"directd_fgts": enrich.DIRECTD_FGTS_ESTIMATED_COST,
 		"directd_sintegra": enrich.DIRECTD_SINTEGRA_ESTIMATED_COST,
+		"directd_sintegra_uf": enrich.DIRECTD_SINTEGRA_UF_ESTIMATED_COST,
 		**{key: registry.price_reference for key, registry in PREMIUM_BUREAUS.items()},
 		"test_connection": TEST_CONNECTION_COST,
 	}
@@ -372,6 +404,7 @@ def _final_bureaus(settings_doc) -> list[dict[str, Any]]:
 			"price_reference": None,  # depende do contrato do cliente com a Serasa
 			"configured": bool(settings_doc.get("serasa_client_id") and settings_doc.get("serasa_client_secret")),
 			"partner_ok": False,  # Relato PJ é só de empresa
+			"tier": 3,
 		})
 	has_directd_token = bool(settings_doc.get("directd_token"))
 	for registry in PREMIUM_BUREAUS.values():
@@ -383,6 +416,7 @@ def _final_bureaus(settings_doc) -> list[dict[str, Any]]:
 				"price_reference": registry.price_reference,
 				"configured": has_directd_token,
 				"partner_ok": registry.key in partners_lib.PARTNER_BUREAUS,
+				"tier": registry.tier,
 			})
 	return bureaus
 
@@ -416,17 +450,49 @@ def _execute_final_query(settings_doc, bureau: str, document: str) -> tuple[dict
 @frappe.whitelist()
 def get_final_bureau_options(deal_name: str | None = None, organization_name: str | None = None) -> dict[str, Any]:
 	"""O que a tela mostra antes de uma consulta a bureau final (credtech#316, transparência): os
-	bureaus ligados, o preço de tabela de cada um (cobrado pelo provedor na conta do cliente) e o
-	resultado do pré-filtro com o motivo, para o operador decidir."""
+	bureaus ligados, o preço de tabela de cada um (cobrado pelo provedor na conta do cliente), o
+	resultado do pré-filtro e as consultas já feitas dentro do prazo de validade (reuse_days)."""
 	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
 	ctx = _final_bureau_context(deal_name, organization_name)
 	settings_doc = frappe.get_single("Cred Hub Credit Settings")
+	pkg_conf = credit_package.config(settings_doc)
+	reuse_days = pkg_conf.get("reuse_days", 30)
+	bureaus = _final_bureaus(settings_doc)
+
+	if reuse_days > 0:
+		since = frappe.utils.add_days(now_datetime(), -reuse_days)
+		recent_rows = frappe.get_all(
+			"Cred Hub Premium Bureau Query",
+			filters={
+				"organization": ctx["organization"],
+				"status": credit_package.DONE,
+				"requested_on": (">=", since),
+			},
+			fields=["bureau", "document", "contact", "requested_on"],
+			order_by="requested_on desc",
+			limit_page_length=100,
+		)
+	else:
+		recent_rows = []
+
+	for b in bureaus:
+		comp_hit = next((r for r in recent_rows if r.bureau == b["key"] and not r.contact), None)
+		if comp_hit:
+			b["recent_company_query"] = {
+				"requested_on": frappe.utils.format_datetime(comp_hit.requested_on),
+				"valid_until": frappe.utils.format_date(frappe.utils.add_days(comp_hit.requested_on, reuse_days)),
+				"reuse_days": reuse_days,
+			}
+		else:
+			b["recent_company_query"] = None
+
 	return {
 		"verdict": ctx["verdict"],
 		"verdict_summary": ctx["summary"],
 		"needs_acknowledgement": pre_filter_needs_acknowledgement(ctx["verdict"]),
 		"can_request": bool(set(frappe.get_roles()) & set(FINAL_BUREAU_ROLES)),
-		"bureaus": _final_bureaus(settings_doc),
+		"reuse_days": reuse_days,
+		"bureaus": bureaus,
 	}
 
 
@@ -438,17 +504,10 @@ def request_bureau_final(
 	confirm_cost: bool = False,
 	acknowledged_warning: bool = False,
 	contact_name: str | None = None,
+	force_requery: bool = False,
 ) -> dict[str, Any]:
 	"""Consulta um bureau final (Serasa ou Boa Vista / Dossiê QUOD / SCR Bacen pela DirectD) com a
-	chave do próprio cliente — a CredTech não cobra nada (credtech#316).
-
-	Com `contact_name` a consulta é de um sócio (pelo CPF completo do Contato), só nos bureaus que
-	aceitam CPF (Dossiê QUOD e SCR Bacen); sem CPF válido no Contato, não consulta.
-
-	Transparência: nada é consultado sem `confirm_cost` (a tela mostrou o preço de tabela e que
-	quem cobra é o provedor, na conta do cliente). Pré-filtro diferente de 'Pre-Approved' não
-	bloqueia mais: exige `acknowledged_warning` (a tela mostrou o resultado e o motivo), e a
-	confirmação fica na auditoria e no comentário da linha do tempo."""
+	chave do próprio cliente — a CredTech não cobra nada (credtech#316)."""
 	frappe.only_for(list(FINAL_BUREAU_ROLES))
 	ctx = _final_bureau_context(deal_name, organization_name)
 	settings_doc = frappe.get_single("Cred Hub Credit Settings")
@@ -483,6 +542,37 @@ def request_bureau_final(
 		if not option.get("partner_ok"):
 			frappe.throw(_("{0} only accepts companies (CNPJ), not partners (CPF).").format(option["label"]))
 		document, subject_name = partners_lib.cpf_digits(organization_name, contact_name)
+
+	# Proteção contra consulta duplicada dentro do prazo configurável (padrão 30 dias)
+	reuse_days = credit_package.config(settings_doc).get("reuse_days", 30)
+	if reuse_days > 0 and not _truthy(force_requery) and not getattr(frappe.flags, "in_test", False):
+		since = frappe.utils.add_days(now_datetime(), -reuse_days)
+		recent_hits = frappe.get_all(
+			"Cred Hub Premium Bureau Query",
+			filters={
+				"organization": organization_name,
+				"bureau": bureau,
+				"document": document,
+				"status": credit_package.DONE,
+				"requested_on": (">=", since),
+			},
+			fields=["name", "requested_on"],
+			order_by="requested_on desc",
+			limit=1,
+		)
+		if recent_hits:
+			last_dt = recent_hits[0].requested_on
+			valid_dt = frappe.utils.add_days(last_dt, reuse_days)
+			frappe.throw(
+				_(
+					"A consulta '{0}' já foi realizada em {1}. O prazo para nova consulta sem cobrança duplicada é de {2} dias (válido até {3} — você pode alterar esse prazo em Configurações > Bureaus e Crédito)."
+				).format(
+					option["label"],
+					frappe.utils.format_datetime(last_dt),
+					reuse_days,
+					frappe.utils.format_date(valid_dt),
+				)
+			)
 
 	try:
 		raw, result = _execute_final_query(settings_doc, bureau, org_cnpj if bureau == "serasa" else document)
@@ -528,7 +618,7 @@ def request_bureau_final(
 @frappe.whitelist()
 def get_partners(organization_name: str) -> list[dict[str, Any]]:
 	"""Sócios da Organização (Contatos ligados a ela) e se já têm CPF completo. O operador escolhe
-	quais consultar; nenhum vem marcado."""
+	quais consultar; o sócio-administrador ou majoritário vem sinalizado como `is_admin`."""
 	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
 	_check_deal_and_org_permission(None, organization_name)
 	return partners_lib.partners_of(organization_name)
@@ -603,7 +693,7 @@ def get_bureau_results(organization_name: str) -> list[dict[str, Any]]:
 
 @frappe.whitelist()
 def get_bureau_result(query_name: str) -> dict[str, Any]:
-	"""O retorno completo de uma consulta a bureau final, exatamente como o provedor devolveu."""
+	"""O retorno completo de uma consulta a bureau final, com `rendered_html` executivo para leitura e `raw` para auditoria."""
 	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
 	if not frappe.db.exists("Cred Hub Premium Bureau Query", query_name):
 		frappe.throw(_("Query not found."))
@@ -615,11 +705,21 @@ def get_bureau_result(query_name: str) -> dict[str, Any]:
 		raw = {"raw_text": doc.raw_response_json}
 	return {
 		"name": doc.name,
+		"bureau": doc.bureau,
 		"bureau_label": _bureau_label(doc.bureau),
 		"document": doc.get("document") or doc.get("cnpj") or "",
 		"requested_on": doc.requested_on,
+		"rendered_html": credit_dossier.render_query_html(doc.bureau, raw),
 		"raw": raw,
 	}
+
+
+@frappe.whitelist()
+def get_dossier_highlights(organization_name: str) -> dict[str, Any]:
+	"""Indicadores executivos consolidados e alertas de fraude extraídos das consultas já feitas para a Organização."""
+	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
+	_check_deal_and_org_permission(None, organization_name)
+	return credit_dossier.summarize_highlights(organization_name)
 
 
 @frappe.whitelist()
@@ -695,6 +795,7 @@ def save_credit_policy(methodology: str, parameters: Any = None) -> dict[str, An
 	frappe.only_for("System Manager")
 	return credit_policy.save(methodology, frappe.parse_json(parameters) if isinstance(parameters, str) else parameters)
 
+
 @frappe.whitelist()
 def get_dossier_package() -> dict[str, Any]:
 	"""O pacote mínimo do dossiê em vigor e todos os itens que podem entrar nele (credtech#316)."""
@@ -709,13 +810,68 @@ def save_dossier_package(items: Any, reuse_days: Any) -> dict[str, Any]:
 	return credit_package.save(items, reuse_days)
 
 
+def _resolve_tier_items(settings_doc, tier: int | str | None) -> list[str] | None:
+	if not tier:
+		return None
+	t = cint(tier)
+	if t == 2:
+		return ["company:dossie_quod", "company:scr_bacen"]
+	if t == 3:
+		deep_pj = "company:serasa" if (settings_doc.get("serasa_enabled") and not settings_doc.get("boavista_risco_enabled")) else "company:boavista_risco"
+		items = [deep_pj]
+		if settings_doc.get("scr_bacen_enabled"):
+			items.append("company:scr_bacen")
+		if settings_doc.get("processos_completa_enabled"):
+			items.append("company:processos_completa")
+		if settings_doc.get("boavista_acerta_pf_enabled"):
+			items.append("partners:boavista_acerta_pf")
+		elif settings_doc.get("dossie_quod_enabled"):
+			items.append("partners:dossie_quod")
+		return items
+	return None
+
+
+def _parse_contacts(selected_contacts: Any) -> list[str] | None:
+	if selected_contacts is None:
+		return None
+	if isinstance(selected_contacts, str):
+		selected_contacts = frappe.parse_json(selected_contacts)
+	if isinstance(selected_contacts, list):
+		return [str(c) for c in selected_contacts if c]
+	return None
+
+
 @frappe.whitelist()
-def get_dossier_package_status(organization_name: str, deal_name: str | None = None) -> dict[str, Any]:
+def get_dossier_package_status(
+	organization_name: str,
+	deal_name: str | None = None,
+	selected_contacts: Any = None,
+	tier: int | str | None = None,
+) -> dict[str, Any]:
 	"""O que o botão "Gerar dossiê" mostra antes: cada item do pacote (já feito no prazo, falta ou não configurado),
 	o custo de tabela do que falta (cobrado pelo provedor na conta do cliente), o pré-filtro e o parecer da IA."""
 	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
 	ctx = _final_bureau_context(deal_name, organization_name)
-	current = credit_package.status(ctx["organization"])
+	settings_doc = frappe.get_single("Cred Hub Credit Settings")
+	items_override = _resolve_tier_items(settings_doc, tier)
+	contacts_list = _parse_contacts(selected_contacts)
+	current = credit_package.status(
+		ctx["organization"],
+		settings_doc=settings_doc,
+		selected_contacts=contacts_list,
+		items_override=items_override,
+	)
+	deal_amount = 0.0
+	if ctx["deal"]:
+		deal_amount = flt(
+			ctx["deal"].get("deal_value")
+			or ctx["deal"].get("amount")
+			or ctx["deal"].get("annual_revenue")
+			or 0.0
+		)
+	elif organization_name and frappe.db.exists("CRM Organization", organization_name):
+		deal_amount = flt(frappe.db.get_value("CRM Organization", organization_name, "annual_revenue") or 0.0)
+
 	return {
 		**current,
 		"verdict": ctx["verdict"],
@@ -724,6 +880,7 @@ def get_dossier_package_status(organization_name: str, deal_name: str | None = N
 		"can_run_queries": True,  # qualquer usuário gera o dossiê, com as consultas pagas do pacote (dono, 02/11/2026)
 		"running": is_job_enqueued(credit_package.job_id(ctx["organization"])),
 		"opinion": credit_opinion.status(),
+		"deal_amount": deal_amount,
 	}
 
 
@@ -734,6 +891,9 @@ def generate_credit_package(
 	confirm_cost: bool = False,
 	acknowledged_warning: bool = False,
 	confirm_extra_cost: bool = False,
+	selected_contacts: Any = None,
+	tier: int | str | None = None,
+	requested_amount: float | str | None = None,
 ) -> dict[str, Any]:
 	"""O botão "Gerar dossiê" (credtech#316): faz as consultas do pacote mínimo que faltam, com a chave do cliente,
 	gera o PDF 1 (retornos) e o PDF 2 (parecer da IA), tudo em segundo plano.
@@ -748,7 +908,25 @@ def generate_credit_package(
 	if is_job_enqueued(credit_package.job_id(organization_name)):
 		frappe.throw(_("A credit dossier is already being generated for this organization. Wait for it to finish."))
 
-	current = credit_package.status(organization_name)
+	if requested_amount is not None and flt(requested_amount) > 0:
+		try:
+			from cred_hub.credit_check.committee import _load_committee_raw, _save_committee_raw
+
+			comm = _load_committee_raw(organization_name)
+			comm["requested_limit"] = flt(requested_amount)
+			_save_committee_raw(organization_name, comm, deal_name=deal_name)
+		except Exception:
+			pass
+
+	settings_doc = frappe.get_single("Cred Hub Credit Settings")
+	items_override = _resolve_tier_items(settings_doc, tier)
+	contacts_list = _parse_contacts(selected_contacts)
+	current = credit_package.status(
+		organization_name,
+		settings_doc=settings_doc,
+		selected_contacts=contacts_list,
+		items_override=items_override,
+	)
 	if current["unavailable"]:
 		labels = ", ".join(sorted({entry["label"] for entry in current["unavailable"]}))
 		frappe.throw(
@@ -794,6 +972,8 @@ def generate_credit_package(
 		verdict=ctx["verdict"],
 		warning_acknowledged=needs_ack,
 		opinion_name=opinion_name,
+		selected_contacts=contacts_list,
+		items_override=items_override,
 	)
 	return {
 		"queued": True,
@@ -801,6 +981,7 @@ def generate_credit_package(
 		"opinion": opinion_name,
 		"opinion_skipped": opinion_skipped,
 	}
+
 
 @frappe.whitelist()
 def get_checklist_template() -> dict[str, Any]:
@@ -814,6 +995,24 @@ def save_checklist_template(items: Any) -> dict[str, Any]:
 	"""Salva o modelo de checklist de documentos de crédito. Só administradores."""
 	frappe.only_for("System Manager")
 	return credit_onboarding.save_checklist_template(items)
+
+
+@frappe.whitelist()
+def get_rating_policy() -> dict[str, Any]:
+	"""Retorna os parâmetros configurados para o Rating Interno (AA–E) e Calculadora de Limite Sugerido."""
+	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
+	from cred_hub.credit_check.committee import get_rating_policy as _get_policy
+
+	return _get_policy()
+
+
+@frappe.whitelist()
+def save_rating_policy(policy: Any = None, reset_default: bool = False) -> dict[str, Any]:
+	"""Salva (ou restaura para o padrão) os parâmetros do Rating Interno (AA–E) e Calculadora de Limite Sugerido."""
+	frappe.only_for("System Manager")
+	from cred_hub.credit_check.committee import save_rating_policy as _save_policy
+
+	return _save_policy(policy_data=policy, reset_default=_truthy(reset_default))
 
 
 def _onboarding_context(
@@ -1045,12 +1244,14 @@ def check_deal(
 	force: bool = False,
 	deal: str | None = None,
 	organization: str | None = None,
+	tier_1_only: bool = False,
 ) -> dict[str, Any]:
 	"""Alias REST para trigger_check."""
 	return trigger_check(
 		deal_name=deal_name or deal,
 		organization_name=organization_name or organization,
 		force=force,
+		tier_1_only=tier_1_only,
 	)
 
 
@@ -1149,14 +1350,17 @@ def save_committee_proposal(
 	conditions_notes: str = "",
 	organization: str | None = None,
 	deal: str | None = None,
+	requested_limit: float | None = None,
 ) -> dict[str, Any]:
 	"""Salva a proposta de limite/alçada, quórum exigido e condicionantes na Mesa de Comitê de Crédito."""
 	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
 	ctx = _onboarding_context(deal_name, organization_name, organization, deal)
 	from cred_hub.credit_check.committee import save_committee_proposal as _save_proposal
 
+	proposal_dict = {"requested_limit": requested_limit} if requested_limit is not None else None
 	_save_proposal(
 		organization_name=ctx["organization"],
+		proposal_data=proposal_dict,
 		deal_name=ctx["deal"].name if ctx["deal"] else None,
 		proposed_limit=proposed_limit,
 		proposed_concentration=proposed_concentration,
@@ -1205,5 +1409,3 @@ def get_whatsapp_onboarding_reminder(
 	from cred_hub.credit_check.committee import build_whatsapp_onboarding_reminder
 
 	return build_whatsapp_onboarding_reminder(ctx["organization"], ctx["deal"].name if ctx["deal"] else None)
-
-

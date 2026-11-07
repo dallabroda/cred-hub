@@ -14,9 +14,20 @@ from frappe import _
 
 from cred_hub.cnpj.mapping import only_digits
 
-# Bureaus finais que aceitam CPF (DirectD: Dossiê QUOD e SCR Bacen aceitam CPF ou CNPJ). Boa Vista
-# Risco Positivo PJ e Serasa Relato PJ são só de empresa.
-PARTNER_BUREAUS = ("dossie_quod", "scr_bacen")
+# Bureaus finais que aceitam CPF (DirectD: Dossiê QUOD, SCR Bacen, Boa Vista Acerta PF, Processos
+# Completa e Nível Socioeconômico PF). Boa Vista Risco Positivo PJ e Serasa Relato PJ são só de empresa.
+PARTNER_BUREAUS = (
+	"dossie_quod",
+	"scr_bacen",
+	"boavista_acerta_pf",
+	"processos_completa",
+	"nivel_socioeconomico",
+)
+
+
+def _is_managing_role(designation: str) -> bool:
+	role = (designation or "").strip().lower()
+	return any(k in role for k in ("admin", "diretor", "presidente", "representante", "titular", "gerente"))
 
 
 def is_valid_cpf(value) -> bool:
@@ -44,17 +55,22 @@ def partners_of(organization_name: str) -> list[dict]:
 		fields=["name", "full_name", "designation", "share_percentage", "cpf"],
 		order_by="share_percentage desc, full_name asc",
 	)
-	return [
-		{
-			"contact": row.name,
-			"name": row.full_name or row.name,
-			"designation": row.designation or "",
-			"share": row.share_percentage,
-			"cpf": format_cpf(row.cpf) if is_valid_cpf(row.cpf) else "",
-			"has_cpf": is_valid_cpf(row.cpf),
-		}
-		for row in rows
-	]
+	has_explicit_admin = any(_is_managing_role(row.designation or "") for row in rows)
+	out = []
+	for idx, row in enumerate(rows):
+		is_admin = _is_managing_role(row.designation or "") if has_explicit_admin else (idx == 0)
+		out.append(
+			{
+				"contact": row.name,
+				"name": row.full_name or row.name,
+				"designation": row.designation or "",
+				"share": row.share_percentage,
+				"cpf": format_cpf(row.cpf) if is_valid_cpf(row.cpf) else "",
+				"has_cpf": is_valid_cpf(row.cpf),
+				"is_admin": is_admin,
+			}
+		)
+	return out
 
 
 def partner_contact(organization_name: str, contact_name: str):
