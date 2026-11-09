@@ -167,9 +167,25 @@ def _settings_allow_extra() -> bool:
 	return bool(cint(frappe.db.get_single_value(SETTINGS, "allow_paid_extra_opinions")))
 
 
+def _plan_included_opinions() -> int:
+	try:
+		from cred_hub.billing import _plan, _tier_spec, billing_enabled, in_trial, plan_tier_of
+
+		if not billing_enabled() or frappe.conf.get("credhub_unlimited_users"):
+			return INCLUDED_PER_MONTH
+		plan = _plan()
+		if in_trial(plan):
+			return INCLUDED_PER_MONTH
+		tier = plan_tier_of(plan)
+		return cint(_tier_spec(tier).get("included_opinions", INCLUDED_PER_MONTH))
+	except Exception:
+		return INCLUDED_PER_MONTH
+
+
 def config() -> tuple[int, float, str]:
 	"""(pareceres incluídos por mês, preço do extra em R$, modelo)."""
-	included = cint(frappe.conf.get("credhub_opinions_included_monthly") or INCLUDED_PER_MONTH)
+	conf_included = frappe.conf.get("credhub_opinions_included_monthly")
+	included = cint(conf_included) if conf_included is not None else _plan_included_opinions()
 	price = flt(frappe.conf.get("credhub_opinion_extra_price_brl") or EXTRA_PRICE_BRL)
 	model = frappe.conf.get("credhub_opinion_model") or DEFAULT_MODEL
 	return included, price, model
