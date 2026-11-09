@@ -25,6 +25,11 @@ from frappe import _
 from frappe.utils import add_days, today
 
 from cred_hub.cnpj.mapping import format_cnpj, is_valid_cnpj, only_digits
+from cred_hub.credit_check.clients.bigdatacorp import (
+	fetch_fiscal_bdc,
+	fetch_kyc_compliance_bdc,
+	fetch_lawsuits_bdc,
+)
 from cred_hub.credit_check.clients.cgu import CGUError, fetch_ceis_cnep, fetch_ceis_cnep_open_data
 from cred_hub.credit_check.clients.directd import (
 	fetch_fgts_regularidade,
@@ -116,6 +121,8 @@ def get_credit_settings() -> dict[str, Any]:
 		"min_directd_score": int(doc.get("min_directd_score") or 0),
 		"directd_fgts_enabled": bool(doc.get("directd_fgts_enabled")),
 		"directd_sintegra_enabled": bool(doc.get("directd_sintegra_enabled")),
+		"bigdatacorp_enabled": bool(doc.get("bigdatacorp_enabled")),
+		"bigdatacorp_token": doc.get_password("bigdatacorp_token") if doc.get("bigdatacorp_token") else "",
 		"auto_trigger_stage": doc.get("auto_trigger_stage") or "",
 		"check_second_organization": bool(doc.get("check_second_organization")),
 		"max_lawsuits_defendant": int(doc.get("max_lawsuits_defendant") or 0),
@@ -149,18 +156,20 @@ def _build_providers(
 			return fetch_sintegra_ccc(cnpj_digits, token, uf=uf_clean)
 		return fetch_sintegra_ccc(cnpj_digits, token)
 
-	directd_base = bool(settings.get("directd_enabled")) and not tier_1_only
-	score_on = (directd_base or bool(settings.get("directd_score_enabled"))) and not tier_1_only
-	protestos_on = (directd_base or bool(settings.get("directd_protestos_enabled"))) and not tier_1_only
-	processos_on = (directd_base or bool(settings.get("directd_processos_enabled"))) and not tier_1_only
-	fgts_on = bool(settings.get("directd_fgts_enabled"))
-	sintegra_on = bool(settings.get("directd_sintegra_enabled"))
+	bdc_on = bool(settings.get("bigdatacorp_enabled"))
+	directd_base = bool(settings.get("directd_enabled")) and not tier_1_only and not bdc_on
+	score_on = (directd_base or bool(settings.get("directd_score_enabled"))) and not tier_1_only and not bdc_on
+	# Protestos Nacional (IEPTB Básica, R$ 2,95) pode continuar ativo mesmo com BigDataCorp ligada
+	protestos_on = (bool(settings.get("directd_enabled")) or bool(settings.get("directd_protestos_enabled"))) and not tier_1_only
+	processos_on = (directd_base or bool(settings.get("directd_processos_enabled"))) and not tier_1_only and not bdc_on
+	fgts_on = bool(settings.get("directd_fgts_enabled")) and not bdc_on
+	sintegra_on = bool(settings.get("directd_sintegra_enabled")) and not bdc_on
 
 	return [
 		ProviderCheck(
 			key="escavador",
 			label="Escavador",
-			enabled=bool(settings.get("escavador_enabled")) and not tier_1_only,
+			enabled=bool(settings.get("escavador_enabled")) and not tier_1_only and not bdc_on,
 			token=settings.get("escavador_token") or "",
 			fetch=fetch_lawsuits,
 			empty_result=EMPTY_ESCAVADOR_DATA,
@@ -170,7 +179,7 @@ def _build_providers(
 		ProviderCheck(
 			key="infosimples",
 			label="Infosimples",
-			enabled=bool(settings.get("infosimples_enabled")),
+			enabled=bool(settings.get("infosimples_enabled")) and not bdc_on,
 			token=infosimples_token,
 			fetch=fetch_fiscal_and_protests,
 			empty_result=EMPTY_INFOSIMPLES_DATA,
@@ -228,6 +237,26 @@ def _build_providers(
 			estimated_cost=DIRECTD_SINTEGRA_UF_ESTIMATED_COST if has_uf else DIRECTD_SINTEGRA_ESTIMATED_COST,
 			data_slot="directd_sintegra",
 		),
+		ProviderCheck(
+			key="bigdatacorp_processos",
+			label="BigDataCorp Processos Judiciais",
+			enabled=bool(settings.get("bigdatacorp_enabled")) and not tier_1_only,
+			token=settings.get("bigdatacorp_token") or "",
+			fetch=fetch_lawsuits_bdc,
+			empty_result=EMPTY_ESCAVADOR_DATA,
+			estimated_cost=0.04,
+			data_slot="escavador",
+		),
+		ProviderCheck(
+			key="bigdatacorp_fiscal",
+			label="BigDataCorp Dívida Ativa PGFN/FGTS",
+			enabled=bool(settings.get("bigdatacorp_enabled")),
+			token=settings.get("bigdatacorp_token") or "",
+			fetch=fetch_fiscal_bdc,
+			empty_result=EMPTY_INFOSIMPLES_DATA,
+			estimated_cost=0.06,
+			data_slot="infosimples",
+		),
 	]
 
 
@@ -236,12 +265,12 @@ def find_valid_cached_report(org_name: str) -> str | None:
 	today_date = today()
 	reports = frappe.get_all(
 		"Cred Hub Credit Report",
-		filters={"organization": org_name, "valid_until": (">=", today_date)},
-		fields=["name", "verdict"],
-		order_by="checked_on DESC",
+		filters={"organization": org_name, "valid_until": (">=", today_date), "verdict": ("!=", "Error")},
+		fields=["name", "verdict", "creation"],
+		order_by="checked_on DESC, creation DESC",
 		limit=1,
 	)
-	if reports and reports[0].get("verdict") != "Error":
+	if reports:
 		return reports[0].name
 	return None
 
@@ -474,15 +503,21 @@ def _apply_report_to_deal_and_org(
 	if deal_doc:
 		deal_doc.db_set("credit_verdict", verdict, update_modified=False)
 		deal_doc.db_set("credit_report", report.name, update_modified=False)
+		if not getattr(frappe.flags, "in_test", False):
+			frappe.db.commit()  # nosemgrep — evita erro 1020 no add_comment após consultas HTTP longas
 
 		# Comentário na linha do tempo
-		if not is_cached and evaluation:
-			timeline_text = format_timeline_summary(evaluation, org_doc.cnpj)
-			deal_doc.add_comment("Comment", timeline_text)
-		elif is_cached:
-			deal_doc.add_comment(
-				"Comment",
-				_("Compliance report reused from cache (checked on {0}, valid until {1}): verdict {2}.").format(
-					report.checked_on, report.valid_until, verdict
-				),
-			)
+		try:
+			if not is_cached and evaluation:
+				timeline_text = format_timeline_summary(evaluation, org_doc.cnpj)
+				deal_doc.add_comment("Comment", timeline_text)
+			elif is_cached:
+				deal_doc.add_comment(
+					"Comment",
+					_("Compliance report reused from cache (checked on {0}, valid until {1}): verdict {2}.").format(
+						report.checked_on, report.valid_until, verdict
+					),
+				)
+		except Exception:
+			if not getattr(frappe.flags, "in_test", False):
+				frappe.db.rollback()

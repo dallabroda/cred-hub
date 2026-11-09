@@ -28,3 +28,21 @@ def _conf(key: str, label: str) -> str:
 def platform_cgu_api_key() -> str:
 	"""Chave do Portal da Transparência (CGU) da conta da CredTech — grátis, sem custo pro cliente."""
 	return _conf("credhub_cgu_platform_api_key", "Chave do Portal da Transparência da plataforma")
+
+
+def platform_bigdatacorp_token(allow_empty: bool = True) -> str:
+	"""Chave Master da BigDataCorp da conta de revendedor da CredTech (`AccessToken:TokenId`),
+	lida de `frappe.conf.credhub_bigdatacorp_platform_token` ou da variável de ambiente `BIGDATACORP_API_TOKEN`."""
+	import os
+
+	try:
+		import frappe
+		conf_val = (frappe.conf.get("credhub_bigdatacorp_platform_token") or "") if getattr(frappe, "conf", None) else ""
+	except Exception:
+		conf_val = ""
+	token = (conf_val or os.environ.get("BIGDATACORP_API_TOKEN") or "").strip()
+	if not token and not allow_empty:
+		raise PlatformCredentialNotConfigured(
+			"Credencial Master da BigDataCorp não configurada neste site (credhub_bigdatacorp_platform_token)."
+		)
+	return token

@@ -2,7 +2,10 @@
 cobrança). Credenciais da própria empresa em Cred Hub Provider Settings (só admins); toda consulta paga e toda
 operação no cartório ficam em Cred Hub Bureau Query (auditoria LGPD e cache para não pagar duas vezes)."""
 
-import frappe
+try:
+	import frappe
+except ImportError:  # pragma: no cover
+	frappe = None
 
 SETTINGS = "Cred Hub Provider Settings"
 
