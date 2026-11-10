@@ -78,6 +78,18 @@ Contratos da própria empresa, configurados em **Configurações › Integraçõ
 - **Assertiva Localize** (`assertiva.py`, `localize.py`): botão **Buscar contatos** na Organização. Consulta o CNPJ (`idFinalidade` das configurações, padrão 2) e cria ou atualiza um Contato por sócio pessoa física (`cpf`, cargo em `designation`, `share_percentage`); reaproveita o sócio que a Receita cadastrou só com o nome. Com "Também buscar telefones e e-mails de cada sócio" (desligado por padrão: o cliente paga e decide), consulta cada CPF: telefones em E.164 (celular com WhatsApp e maior assertividade como principal, salvo se o celular atual também veio), fixo como telefone, e-mails sem duplicar, e `has_whatsapp`/`phone_assertiveness`/`phone_carrier` do celular principal. Telefone e e-mail da empresa só preenchem os da Receita vazios. Token OAuth2 no Redis (renova no 401); 429 e 5xx repetem com espera; erro da Assertiva volta como mensagem (sem `frappe.throw`, para o histórico ficar gravado).
 - **CENPROT** (`cenprot.py`, `protest.py`): ligar a CENPROT cria o funil **Debt Collection** (Cobrança) com 8 etapas, os campos `protest_*` no formulário do funil e liga as etapas nas configurações. **Enviar a protesto** (botão do card ou entrar na etapa de envio, se o cliente ligou `auto_send_on_stage`, desligado por padrão): `EnviarTitulo` com o credor das configurações e o devedor da Organização do card (CNPJ, endereço da Receita) ou, sem ela, do contato principal com CPF; texto em ASCII maiúsculo cortado nos tamanhos do manual; `<token>` fora do `<titulo>`. Só título vencido e só com status vazio, INEXISTENTE ou DEVOLVIDO; número e "nosso número" vazios recebem os dígitos do código do card. **Consulta diária** (`daily_long`) e botão "Atualizar status": `ConsultarTitulo`; mudou o status, grava, move o card (CONFIRMADO → no cartório, PROTESTADO, PAGO, CANCELADO/RETIRADO → acordo), comenta e notifica o responsável. **Retirar** (botão ou etapa de acordo, se o cliente ligou `auto_withdraw_on_stage`, desligado por padrão): `OperacaoTitulo` REMOCAO, DESISTENCIA ou CANCELAMENTO conforme o status. Token da sessão no Redis; WS_ERR_002 autentica de novo uma vez. O cliente cadastra no IEPTB o IP de saída do servidor (`protest.server_ip`, padrão 2.31.80.97, `credhub_outbound_ip` no site_config troca), mostrado na tela.
 
+### ERPs de securitização: WBA e Smart Securities (`erp`, credtech#367)
+
+Base da integração nativa com os ERPs de retaguarda de securitizadoras, factorings e FIDCs. O cliente só informa as credenciais; o conector roda no próprio cred-hub. Configuração no Single `Cred Hub ERP Settings` (só System Manager, segredos em campos `Password`); cada chamada auditada fica em **Cred Hub Bureau Query** (providers `WBA` e `Smart Securities`). Feito a partir da documentação da WBA (jan/2026 + Postman/cURL) e das notas da API Smart (pasta `exemplos de chamadas api`), ainda sem teste com conta real.
+
+- **Clientes** (`wba.py`, `smart.py`, sem Frappe):
+  - **WBA:** login `password` grant com header `Tenant-ID`; token de 600 s renovado antes de vencer e no 401. Paginação a partir de 0. Cadastro (cedente/sacado) e borderôs → recebíveis.
+  - **Smart:** `client_credentials`, no máximo 20 chamadas/min (uma a cada 3,1 s). 429 por minuto espera 61 s e repete uma vez; 429 de "intervalo mínimo" não repete, porque repetir reinicia o relógio da Smart. "Em manutenção" interrompe. Paginação HAL a partir de 1. Cadastro de cedente sem update: 409/500 "existe" = já cadastrado. Títulos `emaberto`/`quitados` normalizados para um formato único (`normalize_title`; Quitado* = pago, Recomprado*/Repassado* = recompra).
+  - Token compartilhado entre workers pelo Redis (`settings.client`).
+- **De-para** (`mapper.py`): regras "campo do ERP ← origem no CRM" (`deal`, `organization`, `contact`, `address`, campos customizados inclusive; `a.x|b.y` = alternativa; `today`; `auto`), com transformação (dígitos, dinheiro BR, datas, DDD/número, rua/número, ASCII), valor padrão e obrigatório. Devolve o payload e a lista de obrigatórios vazios, que vão virar o alerta no card. Ao escolher o ERP, as configurações recebem o de-para sugerido daquele ERP (`DEFAULT_RULES`), editável; `reset_field_map` volta ao sugerido.
+- **Testar conexão** (`settings.test_connection`, POST, só admin): login + leitura mais barata, registrada no histórico.
+- Próximos PRs do épico: papel Cedente/Sacado na Organização, envio do cedente (gatilho + trava + preview), sync diário de inadimplentes para o funil de Cobrança, tela de configurações e régua de cobrança pelo bot de IA do SmartChat.
+
 ## Instalação
 
 ```sh
@@ -91,7 +103,7 @@ Requer Frappe 16 e Frappe CRM. Campos e layouts são criados na instalação e r
 
 ```sh
 # Regras puras (sem Frappe)
-python -m pytest cred_hub/tests/test_cnpj_mapping.py
+python -m pytest cred_hub/tests/test_cnpj_mapping.py cred_hub/tests/test_erp_clients.py cred_hub/tests/test_erp_mapper.py
 # Integração (num bench com o CRM instalado)
 bench --site <site> run-tests --app cred_hub
 ```

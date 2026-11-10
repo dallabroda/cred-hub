@@ -3086,3 +3086,118 @@ msgstr "Cursor de paginação inválido."
 msgid "Provide a valid CPF (11 digits) or CNPJ (14 digits)."
 msgstr "Informe um CPF (11 dígitos) ou CNPJ (14 dígitos) válido."
 
+
+# Integração com ERPs de securitização: WBA e Smart Securities (credtech#367)
+msgid "Cred Hub ERP Settings"
+msgstr "Integração com ERP"
+
+msgid "Cred Hub ERP Field Map"
+msgstr "De-para de campos do ERP"
+
+msgid "Enable ERP integration"
+msgstr "Ativar integração com o ERP"
+
+msgid "Your company's back-office ERP. CredTech only connects; the ERP contract stays between you and the vendor."
+msgstr "O ERP de retaguarda da sua empresa. A CredTech só faz a conexão; o contrato do ERP continua entre você e o fornecedor."
+
+msgid "WBA API URL"
+msgstr "URL da API WBA"
+
+msgid "WBA Tenant ID"
+msgstr "Tenant ID da WBA"
+
+msgid "WBA API User"
+msgstr "Usuário de API da WBA"
+
+msgid "A WBA user with the API_CADASTRO and API_CONSULTA_OPERACAO profiles (FINANCEIRO to read settlements)."
+msgstr "Usuário da WBA com os perfis API_CADASTRO e API_CONSULTA_OPERACAO (e FINANCEIRO para ler as liquidações)."
+
+msgid "WBA API Password"
+msgstr "Senha do usuário de API da WBA"
+
+msgid "Smart Securities API URL"
+msgstr "URL da API Smart Securities"
+
+msgid "Smart Securities Client ID"
+msgstr "Client ID da Smart Securities"
+
+msgid "Smart Securities Client Secret"
+msgstr "Client Secret da Smart Securities"
+
+msgid "Collection sync"
+msgstr "Sincronização da cobrança"
+
+msgid "Days after due date to start collection"
+msgstr "Dias após o vencimento para entrar na cobrança"
+
+msgid "A título enters the Collection funnel this many days after its due date (D+1 by default)."
+msgstr "O título entra no funil de Cobrança essa quantidade de dias após o vencimento (padrão D+1)."
+
+msgid "Settlement look-back (days)"
+msgstr "Folga na leitura de liquidações (dias)"
+
+msgid "Each run reads settlements since the last successful run minus these days, to catch back-dated entries."
+msgstr "Cada execução lê as liquidações desde a última execução bem-sucedida menos esses dias, para pegar baixas com data retroativa."
+
+msgid "Last open títulos sync"
+msgstr "Última leitura de títulos em aberto"
+
+msgid "Settlements read up to"
+msgstr "Liquidações lidas até"
+
+msgid "Moves forward only when a run finishes without errors."
+msgstr "Só avança quando a execução termina sem erros."
+
+msgid "Last sync result"
+msgstr "Resultado da última sincronização"
+
+msgid "Cedente field mapping"
+msgstr "De-para do cadastro de cedente"
+
+msgid "How CRM fields fill the ERP's cedente registration. Rows marked Required must be filled before sending."
+msgstr "Como os campos do CRM preenchem o cadastro de cedente no ERP. As linhas marcadas como Obrigatório precisam estar preenchidas antes do envio."
+
+msgid "Cedente Field Mapping"
+msgstr "De-para do cedente"
+
+msgid "ERP Field"
+msgstr "Campo do ERP"
+
+msgid "Path in the ERP payload, e.g. endereco.cep or telefones[0].ddd"
+msgstr "Caminho no payload do ERP, ex.: endereco.cep ou telefones[0].ddd"
+
+msgid "CRM Source"
+msgstr "Origem no CRM"
+
+msgid "entity.field (deal, organization, contact, address); a.x|b.y = fallback; today; auto"
+msgstr "entidade.campo (deal, organization, contact, address); a.x|b.y = alternativa; today = hoje; auto = preenchido pelo ERP"
+
+msgid "Transform"
+msgstr "Transformação"
+
+msgid "Default Value"
+msgstr "Valor padrão"
+
+msgid "Choose the ERP in the ERP integration settings."
+msgstr "Escolha o ERP nas configurações da integração."
+
+msgid "The ERP refused the login. Check the credentials and the user's API permissions."
+msgstr "O ERP recusou o login. Confira as credenciais e as permissões de API do usuário."
+
+msgid "Could not reach the ERP. Try again in a few minutes."
+msgstr "Não foi possível falar com o ERP. Tente de novo em alguns minutos."
+
+msgid "The ERP is under maintenance. Try again later."
+msgstr "O ERP está em manutenção. Tente de novo mais tarde."
+
+msgid "The ERP asked to wait before the next call. Try again in a few minutes."
+msgstr "O ERP pediu para aguardar antes da próxima chamada. Tente de novo em alguns minutos."
+
+msgid "The ERP answered with an error: {0}"
+msgstr "O ERP respondeu com erro: {0}"
+
+msgid "Choose the ERP and save the credentials first."
+msgstr "Escolha o ERP e salve as credenciais primeiro."
+
+msgid "Connected to {0}."
+msgstr "Conectado à {0}."

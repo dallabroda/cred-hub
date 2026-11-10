@@ -1,0 +1,188 @@
+{
+ "actions": [],
+ "creation": "2026-11-10 18:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "description": "Credentials, collection sync and field mapping of the WBA / Smart Securities ERP integration (credtech#367). Only admins.",
+ "field_order": [
+  "erp_section",
+  "erp_enabled",
+  "erp_provider",
+  "wba_section",
+  "wba_base_url",
+  "wba_tenant_id",
+  "wba_column",
+  "wba_username",
+  "wba_password",
+  "smart_section",
+  "smart_base_url",
+  "smart_column",
+  "smart_client_id",
+  "smart_client_secret",
+  "sync_section",
+  "overdue_days",
+  "paid_lookback_days",
+  "sync_column",
+  "last_open_sync",
+  "last_paid_sync",
+  "last_sync_message",
+  "mapping_section",
+  "cedente_field_map"
+ ],
+ "fields": [
+  {
+   "fieldname": "erp_section",
+   "fieldtype": "Section Break",
+   "label": "ERP"
+  },
+  {
+   "fieldname": "erp_enabled",
+   "fieldtype": "Check",
+   "label": "Enable ERP integration"
+  },
+  {
+   "fieldname": "erp_provider",
+   "fieldtype": "Select",
+   "label": "ERP",
+   "options": "\nWBA\nSmart Securities",
+   "mandatory_depends_on": "eval:doc.erp_enabled",
+   "description": "Your company's back-office ERP. CredTech only connects; the ERP contract stays between you and the vendor."
+  },
+  {
+   "fieldname": "wba_section",
+   "fieldtype": "Section Break",
+   "label": "WBA",
+   "depends_on": "eval:doc.erp_provider=='WBA'"
+  },
+  {
+   "fieldname": "wba_base_url",
+   "fieldtype": "Data",
+   "label": "WBA API URL",
+   "default": "https://new-api.wba.com.br"
+  },
+  {
+   "fieldname": "wba_tenant_id",
+   "fieldtype": "Data",
+   "label": "WBA Tenant ID",
+   "mandatory_depends_on": "eval:doc.erp_enabled && doc.erp_provider=='WBA'"
+  },
+  {
+   "fieldname": "wba_column",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "wba_username",
+   "fieldtype": "Data",
+   "label": "WBA API User",
+   "mandatory_depends_on": "eval:doc.erp_enabled && doc.erp_provider=='WBA'",
+   "description": "A WBA user with the API_CADASTRO and API_CONSULTA_OPERACAO profiles (FINANCEIRO to read settlements)."
+  },
+  {
+   "fieldname": "wba_password",
+   "fieldtype": "Password",
+   "label": "WBA API Password",
+   "mandatory_depends_on": "eval:doc.erp_enabled && doc.erp_provider=='WBA'"
+  },
+  {
+   "fieldname": "smart_section",
+   "fieldtype": "Section Break",
+   "label": "Smart Securities",
+   "depends_on": "eval:doc.erp_provider=='Smart Securities'"
+  },
+  {
+   "fieldname": "smart_base_url",
+   "fieldtype": "Data",
+   "label": "Smart Securities API URL",
+   "default": "https://api.smartsecurities.com.br"
+  },
+  {
+   "fieldname": "smart_column",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "smart_client_id",
+   "fieldtype": "Data",
+   "label": "Smart Securities Client ID",
+   "mandatory_depends_on": "eval:doc.erp_enabled && doc.erp_provider=='Smart Securities'"
+  },
+  {
+   "fieldname": "smart_client_secret",
+   "fieldtype": "Password",
+   "label": "Smart Securities Client Secret",
+   "mandatory_depends_on": "eval:doc.erp_enabled && doc.erp_provider=='Smart Securities'"
+  },
+  {
+   "fieldname": "sync_section",
+   "fieldtype": "Section Break",
+   "label": "Collection sync"
+  },
+  {
+   "fieldname": "overdue_days",
+   "fieldtype": "Int",
+   "label": "Days after due date to start collection",
+   "default": "1",
+   "description": "A título enters the Collection funnel this many days after its due date (D+1 by default)."
+  },
+  {
+   "fieldname": "paid_lookback_days",
+   "fieldtype": "Int",
+   "label": "Settlement look-back (days)",
+   "default": "7",
+   "description": "Each run reads settlements since the last successful run minus these days, to catch back-dated entries."
+  },
+  {
+   "fieldname": "sync_column",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "last_open_sync",
+   "fieldtype": "Datetime",
+   "label": "Last open títulos sync",
+   "read_only": 1
+  },
+  {
+   "fieldname": "last_paid_sync",
+   "fieldtype": "Date",
+   "label": "Settlements read up to",
+   "read_only": 1,
+   "description": "Moves forward only when a run finishes without errors."
+  },
+  {
+   "fieldname": "last_sync_message",
+   "fieldtype": "Small Text",
+   "label": "Last sync result",
+   "read_only": 1
+  },
+  {
+   "fieldname": "mapping_section",
+   "fieldtype": "Section Break",
+   "label": "Cedente field mapping",
+   "description": "How CRM fields fill the ERP's cedente registration. Rows marked Required must be filled before sending."
+  },
+  {
+   "fieldname": "cedente_field_map",
+   "fieldtype": "Table",
+   "label": "Cedente Field Mapping",
+   "options": "Cred Hub ERP Field Map"
+  }
+ ],
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-11-10 18:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Cred Hub",
+ "name": "Cred Hub ERP Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "read": 1,
+   "write": 1,
+   "role": "System Manager"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}
