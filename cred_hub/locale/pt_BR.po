@@ -3254,8 +3254,8 @@ msgstr "Recomprado pelo cedente"
 msgid "Extended"
 msgstr "Prorrogado"
 
-msgid "How the spreadsheet import and the ERP sync group the títulos in cards. The cedente and the sacado are kept on each título either way. Changing it only affects new títulos."
-msgstr "Como a importação de planilha e o sync do ERP agrupam os títulos em cards. O cedente e o sacado ficam em cada título de qualquer jeito. Trocar a opção só vale para títulos novos."
+msgid "How the spreadsheet import and the ERP sync group the títulos in cards. The cedente is kept on each título either way. Changing it only affects new títulos."
+msgstr "Como a importação de planilha e o sync do ERP agrupam os títulos em cards. O cedente fica em cada título de qualquer jeito. Trocar a opção só vale para títulos novos."
 
 msgid "Turn the ERP integration on and save the credentials first."
 msgstr "Ative a integração com o ERP e salve as credenciais primeiro."
@@ -3266,9 +3266,6 @@ msgstr "Sincronização na fila. O resultado aparece nas configurações quando 
 msgid "The collection sync for {0} comes in the next version."
 msgstr "O sync de cobrança da {0} vem na próxima versão."
 
-msgid "{0} overdue títulos read: {1} new, {2} updated, {3} new cards. {4} settlements read: {5} títulos closed, {6} cards won. {7} partial payments. {8} títulos skipped, {9} with errors."
-msgstr "{0} títulos vencidos lidos: {1} novos, {2} atualizados, {3} cards novos. {4} liquidações lidas: {5} títulos fechados, {6} cards ganhos. {7} pagamentos parciais. {8} títulos ignorados, {9} com erro."
-
 msgid "Partial payment reported by {0}."
 msgstr "Pagamento parcial informado pela {0}."
 
@@ -3277,3 +3274,40 @@ msgstr "{0} na {1} em {2} ({3}); valor recebido: {4}."
 
 msgid "Título {0}: {1}"
 msgstr "Título {0}: {1}"
+
+# Simulação da primeira execução do sync do ERP (credtech#367)
+msgid "Simulation mode (nothing is saved)"
+msgstr "Modo simulação (nada é gravado)"
+
+msgid "While on, each run only reports what it would create, update and close, and how long the ERP took; nothing is saved. Read the report below, then turn this off to run for real."
+msgstr "Enquanto ligado, cada execução só relata o que criaria, atualizaria e fecharia, e quanto tempo o ERP levou; nada é gravado. Leia o relatório abaixo e depois desligue para rodar de verdade."
+
+msgid "Last simulation report"
+msgstr "Último relatório da simulação"
+
+msgid "SIMULATION: nothing was saved."
+msgstr "SIMULAÇÃO: nada foi gravado."
+
+msgid "ERP read in {0} s: {1} overdue títulos and {2} settlements."
+msgstr "ERP lido em {0} s: {1} títulos vencidos e {2} liquidações."
+
+msgid "Settlements only appear after the first real run, when the títulos exist in the CRM."
+msgstr "As liquidações só aparecem depois da primeira execução de verdade, quando os títulos já existem no CRM."
+
+msgid "... (the list shows the first {0} lines)"
+msgstr "... (a lista mostra as primeiras {0} linhas)"
+
+msgid "SIMULATION (nothing was saved): {0}"
+msgstr "SIMULAÇÃO (nada foi gravado): {0}"
+
+msgid "due"
+msgstr "venc."
+
+msgid "partial payment"
+msgstr "pagamento parcial"
+
+msgid "The synchronization stopped because of an unexpected error. Support was notified."
+msgstr "A sincronização parou por um erro inesperado. O suporte foi avisado."
+
+msgid "{0} overdue títulos read: {1} new, {2} updated, {3} new cards. {4} settlements read: {5} títulos closed, {6} cards won. {7} partial payments. {8} títulos skipped, {9} with errors. {10} títulos are no longer overdue in the ERP (extended or written off) and stay open here."
+msgstr "{0} títulos vencidos lidos: {1} novos, {2} atualizados, {3} cards novos. {4} liquidações lidas: {5} títulos fechados, {6} cards ganhos. {7} pagamentos parciais. {8} títulos ignorados, {9} com erro. {10} títulos não estão mais vencidos no ERP (prorrogados ou baixados) e seguem abertos aqui."

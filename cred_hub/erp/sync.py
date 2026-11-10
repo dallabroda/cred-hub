@@ -10,6 +10,10 @@ Every morning, after the ERP settles the day's payments:
    card is closed, the card is marked Won (owner decision 10/11/2026: the ERP is the source of truth).
 3. The watermark (`last_paid_sync`) only moves when the whole run succeeded, so an outage never loses a settlement.
 
+Simulation (credtech#367, owner decision): while `sync_dry_run` is on, the run executes the same code inside the
+transaction, measures it and reports what it would create, update and close; then everything is rolled back, so the
+simulation can never differ from the real run. The owner (and the client) read the report before turning it off.
+
 Owner decisions applied: nobody is assigned to the cards (the client assigns), the species is never guessed,
 a partial payment keeps the título open with its balance.
 Smart Securities only in this version; WBA has no overdue filter nor settlement data (next PR).
@@ -35,8 +39,8 @@ from .smart import OPEN, OPEN_RANGE_START, normalize_title
 from .smart import PAID as SETTLED
 
 DEAL, TITLE_ROW = "CRM Deal", "CRM Deal Title"
-LOCK = "cred_hub_erp_sync_running"
 LOCK_SECONDS = 3 * 3600
+PLAN_LINES = 300
 # Smart: asking the same report again within 10 minutes restarts its cooldown, so never reopen it sooner
 REPORT_COOLDOWN = 11 * 60
 CENT = 0.005
@@ -66,33 +70,112 @@ def sync_now() -> dict:
 	return {"ok": True, "message": _("Synchronization queued. The result appears in the settings when it ends.")}
 
 
-def run(session=None) -> dict:
-	"""One full run. Returns the counters (also saved in the settings and the history)."""
-	if frappe.cache.get_value(LOCK):
+def _lock_name() -> str:
+	return f"cred_hub_erp_sync:{frappe.conf.db_name}"[:64]
+
+
+def _acquire_lock() -> bool:
+	"""One run per site, atomic (MariaDB named lock): it is released by itself if the worker dies."""
+	return bool(frappe.db.sql("select get_lock(%s, 0)", (_lock_name(),))[0][0])
+
+
+def _release_lock():
+	frappe.db.sql("select release_lock(%s)", (_lock_name(),))
+
+
+def _commit():
+	"""Commits between phases, except in a simulation (which is rolled back at the end)."""
+	if not frappe.flags.get("cred_hub_erp_dry_run"):
+		frappe.db.commit()
+
+
+def _plan(stats: dict, line: str):
+	"""Line of the simulation report (only collected in a simulation, capped)."""
+	if frappe.flags.get("cred_hub_erp_dry_run") and len(stats["plan"]) < PLAN_LINES:
+		stats["plan"].append(line)
+
+
+def _money(value) -> str:
+	return frappe.utils.fmt_money(flt(value, 2), currency="BRL")
+
+
+def _report(stats: dict) -> str:
+	head = [
+		_("SIMULATION: nothing was saved."),
+		_("ERP read in {0} s: {1} overdue títulos and {2} settlements.").format(
+			stats.get("seconds"), stats["overdue_read"], stats["settled_read"]
+		),
+		_summary(stats),
+		"",
+	]
+	if stats["titles_new"] and not stats["titles_closed"]:
+		head.insert(
+			3,
+			_("Settlements only appear after the first real run, when the títulos exist in the CRM."),
+		)
+	lines = stats["plan"]
+	if len(lines) >= PLAN_LINES:
+		lines = [*lines, _("... (the list shows the first {0} lines)").format(PLAN_LINES)]
+	return "\n".join(head + lines)
+
+
+def run(session=None, dry_run: bool | None = None) -> dict:
+	"""One full run. Returns the counters (also saved in the settings and the history). `dry_run=None` follows the
+	"Simulation mode" switch of the settings."""
+	if not _acquire_lock():
 		return {"skipped": "running"}
-	frappe.cache.set_value(LOCK, 1, expires_in_sec=LOCK_SECONDS)
 	settings = get_settings()
+	dry = bool(settings.sync_dry_run) if dry_run is None else bool(dry_run)
+	frappe.flags.cred_hub_erp_dry_run = dry
+	started = time.time()
 	stats = _new_stats()
+	stats["dry_run"] = dry
 	try:
 		if settings.erp_provider != SMART:
 			stats["message"] = _("The collection sync for {0} comes in the next version.").format(settings.erp_provider)
 			return stats
 		erp = client(settings, session=session)
 		_sync_smart(erp, settings, stats)
-		frappe.db.set_single_value(
-			"Cred Hub ERP Settings",
-			{"last_open_sync": now_datetime(), "last_paid_sync": today(), "last_sync_message": _summary(stats)},
-		)
-		log(settings.erp_provider, "Collection sync", SUCCESS, response=stats)
+		stats["seconds"] = round(time.time() - started, 1)
+		if dry:
+			# Throw away everything the run wrote, keep only the report
+			frappe.db.rollback()
+			frappe.db.set_single_value(
+				"Cred Hub ERP Settings",
+				{
+					"last_sync_message": _("SIMULATION (nothing was saved): {0}").format(_summary(stats)),
+					"last_sync_report": _report(stats),
+				},
+			)
+			log(settings.erp_provider, "Collection sync (simulation)", SUCCESS, response=_loggable(stats))
+		else:
+			frappe.db.set_single_value(
+				"Cred Hub ERP Settings",
+				{"last_open_sync": now_datetime(), "last_paid_sync": today(), "last_sync_message": _summary(stats)},
+			)
+			log(settings.erp_provider, "Collection sync", SUCCESS, response=_loggable(stats))
 	except ErpError as e:
 		frappe.db.rollback()
 		stats["error"] = user_message(e)
 		frappe.db.set_single_value("Cred Hub ERP Settings", "last_sync_message", stats["error"])
 		log(settings.erp_provider, "Collection sync", ERROR, http_status=e.http_status, error=str(e))
+	except Exception as e:
+		# Not an ERP failure (a bug or an unexpected answer): leave a trace for the admin, then fail loudly
+		frappe.db.rollback()
+		message = _("The synchronization stopped because of an unexpected error. Support was notified.")
+		frappe.db.set_single_value("Cred Hub ERP Settings", "last_sync_message", message)
+		log(settings.erp_provider, "Collection sync", ERROR, error=f"{type(e).__name__}: {e}")
+		frappe.log_error(title="Cred Hub: ERP collection sync")
+		raise
 	finally:
+		frappe.flags.cred_hub_erp_dry_run = False
 		frappe.db.commit()
-		frappe.cache.delete_value(LOCK)
+		_release_lock()
 	return stats
+
+
+def _loggable(stats: dict) -> dict:
+	return {key: value for key, value in stats.items() if key != "plan"}
 
 
 # Smart Securities -----------------------------------------------------------------------------------------------
@@ -108,7 +191,8 @@ def _sync_smart(erp, settings, stats):
 	]
 	stats["overdue_read"] = len(overdue)
 	upsert_overdue(pipeline, overdue, stats)
-	frappe.db.commit()
+	stats["left_overdue"] = count_left_overdue(SMART, {t["erp_id"] for t in overdue})
+	_commit()
 
 	lookback = max(int(settings.paid_lookback_days or 7), 1)
 	since = add_days(settings.last_paid_sync or today(), -lookback)
@@ -136,17 +220,19 @@ def _new_stats() -> dict:
 	return {
 		"overdue_read": 0, "settled_read": 0, "titles_new": 0, "titles_update": 0, "titles_locked": 0,
 		"cards_new": 0, "cards_update": 0, "partial_payments": 0, "titles_closed": 0, "cards_won": 0,
-		"skipped": 0, "failed": 0,
+		"left_overdue": 0, "skipped": 0, "failed": 0, "plan": [],
 	}
 
 
 def _summary(stats) -> str:
 	return _(
 		"{0} overdue títulos read: {1} new, {2} updated, {3} new cards. {4} settlements read: {5} títulos closed, "
-		"{6} cards won. {7} partial payments. {8} títulos skipped, {9} with errors."
+		"{6} cards won. {7} partial payments. {8} títulos skipped, {9} with errors. {10} títulos are no longer "
+		"overdue in the ERP (extended or written off) and stay open here."
 	).format(
 		stats["overdue_read"], stats["titles_new"], stats["titles_update"], stats["cards_new"], stats["settled_read"],
 		stats["titles_closed"], stats["cards_won"], stats["partial_payments"], stats["skipped"], stats["failed"],
+		stats["left_overdue"],
 	)
 
 
@@ -191,6 +277,17 @@ def to_import_title(title: dict) -> dict | None:
 	}
 
 
+def count_left_overdue(source: str, seen: set) -> int:
+	"""Open títulos linked to the ERP that are no longer in today's overdue list: the due date was extended or the
+	título was written off without a settlement. They stay open here (closing them is a decision for the client)."""
+	rows = frappe.get_all(
+		TITLE_ROW,
+		{"parenttype": DEAL, "erp_source": source, "erp_title_id": ("is", "set"), "closed_reason": ("is", "not set")},
+		pluck="erp_title_id",
+	)
+	return sum(1 for erp_id in rows if erp_id not in seen)
+
+
 def find_row(source: str, erp_id: str):
 	"""(card name, row name) of the título already linked to this ERP id, or None."""
 	if not erp_id:
@@ -218,6 +315,11 @@ def upsert_overdue(pipeline: str, titles: list[dict], stats: dict):
 			stats["skipped"] += 1
 			continue
 		new_titles.append(converted)
+		_plan(
+			stats,
+			f"+ {converted['title_number']} | {converted['debtor_name'] or converted['debtor_document']} | "
+			f"{_money(converted['original_amount'])} | {_('due')} {converted['due_date']}",
+		)
 	groups = {}
 	for title in new_titles:
 		groups.setdefault(importer._group_key(title, grouping), []).append(title)
@@ -243,14 +345,16 @@ def update_open_row(found, title: dict, stats: dict):
 	if row is None or row.get("closed_reason"):
 		return
 	amount = flt(title.get("amount"), 2)
-	previous = flt(row.get("erp_amount"))
-	if previous and amount and amount < previous - CENT:
-		# The ERP open amount dropped: partial payment (owner decision: keep collecting the balance)
+	# Settle the balance to what the ERP says (not the difference between two ERP readings), so a payment the
+	# operator already registered on the card is never counted twice
+	owed = _balance(row)
+	if amount and owed - amount > CENT:
 		register_payment(
-			deal, row, flt(previous - amount, 2), getdate(today()),
+			deal, row, flt(owed - amount, 2), getdate(today()),
 			_("Partial payment reported by {0}.").format(title["erp"]),
 		)
 		stats["partial_payments"] += 1
+		_plan(stats, f"~ {row.title_number} | {_('partial payment')}: {_money(owed)} -> {_money(amount)}")
 	row.erp_situation = title.get("situation") or row.erp_situation
 	row.erp_amount = amount or row.erp_amount
 	if title.get("digitable_line") and not row.digitable_line:
@@ -322,11 +426,16 @@ def close_titles(card: str, items: list, stats: dict):
 		# The ERP closed the título: the whole open balance is settled in one entry (interest, discount and
 		# repurchase included); the amount the ERP received stays in the note
 		register_payment(deal, row, _balance(row), paid_on, note)
+		# The agreement of a settled título has nothing left to collect
+		for slot in deal.get("installments") or []:
+			if slot.title == row.name and not slot.paid_on:
+				slot.paid_on = paid_on
 		row.closed_reason = reason
 		row.closed_on = paid_on
 		row.erp_situation = title.get("situation") or row.erp_situation
 		notes.append(_("Título {0}: {1}").format(row.title_number, note))
 		stats["titles_closed"] += 1
+		_plan(stats, f"v {row.title_number} | {_(reason)} | {frappe.utils.formatdate(paid_on)}")
 	if not notes:
 		return
 	won = _close_card_if_done(deal)

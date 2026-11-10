@@ -268,9 +268,9 @@
    "fieldname": "collection_grouping",
    "fieldtype": "Select",
    "label": "Group the cards by",
-   "options": "Debtor and cedente\nDebtor\nCedente\nTitle",
+   "options": "Debtor and cedente\nDebtor",
    "default": "Debtor and cedente",
-   "description": "How the spreadsheet import and the ERP sync group the títulos in cards. The cedente and the sacado are kept on each título either way. Changing it only affects new títulos."
+   "description": "How the spreadsheet import and the ERP sync group the títulos in cards. The cedente is kept on each título either way. Changing it only affects new títulos."
   },
   {
    "fieldname": "auto_send_on_stage",

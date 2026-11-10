@@ -6,8 +6,8 @@ operador no fim.
 
 Regras (dono, 02/11/2026):
 - CPF vira Contato e CNPJ vira Organização, sempre reaproveitando quem já tem o documento (cred_hub.party);
-- o cliente escolhe como agrupar os cards (Configurações › Bureaus): por sacado + cedente (padrão), só por
-  sacado, só por cedente ou um card por título; o cedente e o sacado ficam em cada título;
+- o cliente escolhe como agrupar os cards (Configurações › Bureaus): por sacado + cedente (padrão) ou só por
+  sacado; o cedente fica em cada título;
 - a espécie nunca tem padrão: só entra quando a planilha traz um código que o cartório aceita, senão o título
   entra sem espécie e o operador escolhe antes de protestar;
 - título repetido (mesmo número, nosso número e vencimento no card) atualiza o que existe; título que já foi à
@@ -35,9 +35,6 @@ DEAL, TITLE_ROW, ORG, CONTACT = "CRM Deal", "CRM Deal Title", "CRM Organization"
 ERP_FIELDS = ("erp_source", "erp_title_id", "erp_operation", "erp_situation", "erp_amount")
 MAX_ROWS = 20000
 BY_DEBTOR, BY_PAIR = "Debtor", "Debtor and cedente"
-# credtech#367 (dono, 10/11/2026): também um card por título e um card por cedente
-BY_TITLE, BY_CEDENTE = "Title", "Cedente"
-GROUPINGS = (BY_PAIR, BY_DEBTOR, BY_CEDENTE, BY_TITLE)
 EXTENSIONS = ("xlsx", "csv")
 
 # Campo de destino -> (rótulo, obrigatório, cabeçalhos reconhecidos sozinhos; já normalizados)
@@ -253,14 +250,10 @@ def first_stage(pipeline) -> str:
 	return stages[0]
 
 
-def card_party(debtor, cedente_org, grouping):
-	"""Quem é a Organização (ou o Contato) do card: o cedente no agrupamento por cedente, senão o devedor."""
-	if grouping == BY_CEDENTE and cedente_org:
-		return (ORG, cedente_org)
-	return debtor
-
-
-def _open_card_filters(pipeline):
+def find_card(pipeline, debtor, cedente_org, grouping) -> str | None:
+	"""Card em aberto do devedor (e do cedente, no agrupamento por par) no funil de Cobrança."""
+	if not debtor:
+		return None
 	stages = _open_stages(pipeline)
 	if not stages:
 		return None
@@ -268,41 +261,9 @@ def _open_card_filters(pipeline):
 	# Card ganho ou perdido está fechado (status do card, credtech#315): título novo abre outro card
 	if frappe.get_meta(DEAL).has_field("outcome"):
 		filters["outcome"] = "In progress"
-	return filters
-
-
-def _card_with_title(pipeline, title) -> str | None:
-	"""Um card por título: o card em aberto que já tem esse título (mesmo número, nosso número e vencimento)."""
-	filters = _open_card_filters(pipeline)
-	if not filters or not title:
-		return None
-	key = _title_key(title)
-	rows = frappe.get_all(
-		TITLE_ROW,
-		{"parenttype": DEAL, "title_number": title.get("title_number"), "due_date": title.get("due_date")},
-		["parent", "title_number", "our_number", "due_date"],
-	)
-	parents = [row.parent for row in rows if _title_key(row) == key]
-	if not parents:
-		return None
-	found = frappe.get_all(DEAL, {**filters, "name": ("in", parents)}, pluck="name", order_by="creation asc", limit=1)
-	return found[0] if found else None
-
-
-def find_card(pipeline, debtor, cedente_org, grouping, title=None) -> str | None:
-	"""Card em aberto do grupo no funil de Cobrança: do devedor (e do cedente, no agrupamento por par), do cedente
-	(agrupamento por cedente) ou do próprio título (um card por título)."""
-	if grouping == BY_TITLE:
-		return _card_with_title(pipeline, title)
-	party = card_party(debtor, cedente_org, grouping)
-	if not party:
-		return None
-	filters = _open_card_filters(pipeline)
-	if not filters:
-		return None
 	if grouping == BY_PAIR:
 		filters["second_organization"] = cedente_org or ("is", "not set")
-	doctype, name = party
+	doctype, name = debtor
 	if doctype == ORG:
 		filters["organization"] = name
 		found = frappe.get_all(DEAL, filters, pluck="name", order_by="creation asc", limit=1)
@@ -328,13 +289,6 @@ def _title_key(values) -> tuple:
 def _group_key(title, grouping) -> tuple:
 	if grouping == BY_DEBTOR:
 		return (title["debtor_document"],)
-	if grouping == BY_CEDENTE:
-		# Título sem cedente não tem com quem agrupar: fica no card do devedor
-		if title["cedente_document"]:
-			return ("cedente", title["cedente_document"])
-		return ("debtor", title["debtor_document"])
-	if grouping == BY_TITLE:
-		return (title["debtor_document"], title["cedente_document"], *_title_key(title))
 	return (title["debtor_document"], title["cedente_document"])
 
 
@@ -418,9 +372,10 @@ def preview(file_url: str, mapping) -> dict:
 		for title in titles:
 			if title["cedente_document"] and not _existing_org(title["cedente_document"]):
 				companies_new.add(title["cedente_document"])
-		cedente_org = _existing_org(first["cedente_document"]) if grouping in (BY_PAIR, BY_CEDENTE) else None
-		unknown_cedente = grouping in (BY_PAIR, BY_CEDENTE) and first["cedente_document"] and not cedente_org
-		card = None if unknown_cedente else find_card(pipeline, debtor, cedente_org, grouping, first)
+		cedente_org = _existing_org(first["cedente_document"]) if grouping == BY_PAIR else None
+		card = None if (grouping == BY_PAIR and first["cedente_document"] and not cedente_org) else find_card(
+			pipeline, debtor, cedente_org, grouping
+		)
 		existing = {}
 		if card:
 			summary["cards_update"] += 1
@@ -496,7 +451,7 @@ def _row_values(title, cedente, debtor=None) -> dict:
 		values["species"] = title["species"]
 	if title["digitable_line"]:
 		values["digitable_line"] = title["digitable_line"]
-	# Sacado de cada título (credtech#367): no card por cedente cada título tem um devedor diferente
+	# Sacado de cada título (credtech#367): o protesto usa o sacado do próprio título
 	if debtor and frappe.get_meta(TITLE_ROW).has_field("sacado"):
 		values["sacado"] = debtor[1] if debtor[0] == ORG else None
 		values["sacado_contact"] = debtor[1] if debtor[0] == CONTACT else None
@@ -507,14 +462,11 @@ def _row_values(title, cedente, debtor=None) -> dict:
 	return values
 
 
-def _card_name(debtor, cedente, grouping, title=None) -> str:
-	party = card_party(debtor, cedente, grouping)
-	label = frappe.db.get_value(party[0], party[1], "organization_name" if party[0] == ORG else "full_name")
-	name = label or party[1]
+def _card_name(debtor, cedente, grouping) -> str:
+	debtor_label = frappe.db.get_value(debtor[0], debtor[1], "organization_name" if debtor[0] == ORG else "full_name")
+	name = debtor_label or debtor[1]
 	if grouping == BY_PAIR and cedente and cedente != debtor[1]:
 		name = f"{name} - {frappe.db.get_value(ORG, cedente, 'organization_name') or cedente}"
-	if grouping == BY_TITLE and title:
-		name = f"{name} - {title['title_number']}"
 	return name[:140]
 
 
@@ -522,18 +474,10 @@ def import_group(pipeline, titles, grouping, stats):
 	first = titles[0]
 	debtor = _debtor_for(first)
 	cedentes = {title["cedente_document"]: _cedente_for(title) for title in titles}
-	# Papel das organizações (credtech#367): quem deve é sacado, quem vendeu o título é cedente
-	if debtor[0] == ORG:
-		add_role(debtor[1], DEBTOR)
-	for cedente in filter(None, cedentes.values()):
-		# A company listed as cedente of its own debt is treated as having no cedente, so it stays a sacado only
-		if cedente != debtor[1]:
-			add_role(cedente, CEDENTE)
-	card_cedente = cedentes.get(first["cedente_document"]) if grouping in (BY_PAIR, BY_CEDENTE) else None
+	card_cedente = cedentes.get(first["cedente_document"]) if grouping == BY_PAIR else None
 	if card_cedente == debtor[1]:
 		card_cedente = None
-	name = find_card(pipeline, debtor, card_cedente, grouping, first)
-	party = card_party(debtor, card_cedente, grouping)
+	name = find_card(pipeline, debtor, card_cedente, grouping)
 	if name:
 		deal = frappe.get_doc(DEAL, name)
 		stats["cards_update"] += 1
@@ -543,20 +487,25 @@ def import_group(pipeline, titles, grouping, stats):
 			{
 				"pipeline": pipeline,
 				"status": first_stage(pipeline),
-				"deal_name": _card_name(debtor, card_cedente, grouping, first),
-				"organization": party[1] if party[0] == ORG else None,
-				"second_organization": card_cedente if grouping == BY_PAIR else None,
+				"deal_name": _card_name(debtor, card_cedente, grouping),
+				"organization": debtor[1] if debtor[0] == ORG else None,
+				"second_organization": card_cedente,
 			}
 		)
-		if party[0] == CONTACT:
-			deal.append("contacts", {"contact": party[1], "is_primary": 1})
+		if debtor[0] == CONTACT:
+			deal.append("contacts", {"contact": debtor[1], "is_primary": 1})
 		stats["cards_new"] += 1
 	existing = {_title_key(row): row for row in deal.get("titles") or []}
 	for title in titles:
 		title_debtor = debtor if title is first else _debtor_for(title)
-		if title_debtor[0] == ORG and title_debtor is not debtor:
+		# Papel das organizações (credtech#367), título a título: quem deve é sacado, quem vendeu é cedente. Empresa
+		# que consta como cedente da própria dívida fica só sacado.
+		if title_debtor[0] == ORG:
 			add_role(title_debtor[1], DEBTOR)
-		values = _row_values(title, cedentes.get(title["cedente_document"]), title_debtor)
+		title_cedente = cedentes.get(title["cedente_document"])
+		if title_cedente and title_cedente != title_debtor[1]:
+			add_role(title_cedente, CEDENTE)
+		values = _row_values(title, title_cedente, title_debtor)
 		row = existing.get(_title_key(values))
 		if not row:
 			row = deal.append("titles", values)
