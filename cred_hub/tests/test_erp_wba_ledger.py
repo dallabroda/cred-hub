@@ -227,3 +227,42 @@ class TestLedgerClient(unittest.TestCase):
 		self.assertTrue(row["reverted"])
 		self.assertEqual(row["amount"], Decimal("1234.56"))
 		self.assertEqual(row["date"], date(2026, 11, 5))
+
+
+class TestReviewFixes(unittest.TestCase):
+	"""Findings of the cross-review of cred-hub#93."""
+
+	def test_blocked_as_text_false_does_not_hide_a_settlement(self):
+		for value in ("false", "N", "0", "", None, False):
+			self.assertFalse(entry("1", bloqueado=value)["blocked"], value)
+		for value in ("true", "S", "1", True):
+			self.assertTrue(entry("1", bloqueado=value)["blocked"], value)
+		result = classify([receivable("1")], [entry("1", bloqueado="false")], ACCOUNTS, TODAY)
+		self.assertEqual(len(result.settled), 1)
+
+	def test_titles_without_bordero_number_are_reported_and_nothing_matching_is_flagged(self):
+		title = {**receivable("1"), "bordero_number": None}
+		result = classify([title], [entry("1")], ACCOUNTS, TODAY)
+		self.assertEqual(result.untracked, [title])
+		self.assertEqual(result.settled, [])
+		self.assertEqual(len(result.unmatched), 1)
+		self.assertTrue(result.looks_wrong)
+		# One match is enough to trust the rule
+		ok = classify([receivable("1"), receivable("2")], [entry("1"), entry("9")], ACCOUNTS, TODAY)
+		self.assertFalse(ok.looks_wrong)
+
+	def test_empty_account_choice_matches_nothing(self):
+		accounts = Accounts(paid={"", None, " "}, repurchased=set())
+		self.assertTrue(accounts.empty())
+		no_account = entry("1", account="")
+		self.assertEqual(classify([receivable("1")], [no_account], accounts, TODAY).settled, [])
+
+	def test_full_debtor_payment_wins_over_a_repurchase_entry(self):
+		entries = [entry("1", "acc-liq", 1000), entry("1", "acc-rec", 1000)]
+		settled = classify([receivable("1")], entries, ACCOUNTS, TODAY).settled[0]
+		self.assertEqual((settled["outcome"], settled["paid_amount"]), (PAID, Decimal(1000)))
+
+	def test_partial_then_repurchase_keeps_the_debtor_money(self):
+		entries = [entry("1", "acc-abat", 300), entry("1", "acc-rec", 700)]
+		settled = classify([receivable("1")], entries, ACCOUNTS, TODAY).settled[0]
+		self.assertEqual((settled["outcome"], settled["paid_amount"]), (REPURCHASED, Decimal(300)))

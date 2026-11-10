@@ -33,9 +33,15 @@ class Accounts:
 	repurchased: set = field(default_factory=set)
 	partial: set = field(default_factory=set)
 
+	def __post_init__(self):
+		# An empty choice ("" or None) would match every entry that has no account
+		for name in ("paid", "repurchased", "partial"):
+			setattr(self, name, {str(v).strip() for v in getattr(self, name) or () if v and str(v).strip()})
+
 	def meaning(self, entry: dict) -> str | None:
+		keys = {k for k in (entry.get("account_id"), entry.get("account")) if k}
 		for kind, chosen in ((REPURCHASED, self.repurchased), (PAID, self.paid), (PARTIAL, self.partial)):
-			if entry.get("account_id") in chosen or (entry.get("account") and entry["account"] in chosen):
+			if keys & chosen:
 				return kind
 		return None
 
@@ -49,9 +55,17 @@ class Result:
 	settled: list = field(default_factory=list)  # closed by the ledger: common shape with outcome/paid_*
 	partial: list = field(default_factory=list)  # still open, with partial payments in the ledger
 	unmatched: list = field(default_factory=list)  # settlement entries that point to no known título
-	ambiguous: list = field(
-		default_factory=list
-	)  # entries without sacado whose borderô + document is not unique
+	# entries without sacado whose borderô + document is not unique
+	ambiguous: list = field(default_factory=list)
+	# títulos without a borderô number: the ledger can never point to them
+	untracked: list = field(default_factory=list)
+	matched: int = 0  # settlement entries tied to a título
+
+	@property
+	def looks_wrong(self) -> bool:
+		"""Settlement entries exist but none matched a título: the matching rule is broken for this client (e.g. the
+		ledger's document is not the título number). The caller must stop and warn, never close nothing silently."""
+		return not self.matched and bool(self.unmatched or self.ambiguous)
 
 
 def _number(value) -> str:
@@ -81,9 +95,12 @@ def active_entries(entries: list[dict]) -> list[dict]:
 	]
 
 
-def _index(receivables: list[dict]):
+def _index(receivables: list[dict], result: Result):
 	by_full, by_loose = {}, {}
 	for title in receivables:
+		if not title.get("bordero_number"):
+			result.untracked.append(title)
+			continue
 		by_full[full_key(title.get("bordero_number"), title.get("number"), title.get("sacado_document"))] = (
 			title
 		)
@@ -107,8 +124,8 @@ def _find(entry, by_full, by_loose):
 def classify(receivables: list[dict], entries: list[dict], accounts: Accounts, overdue_until: date) -> Result:
 	"""Split the receivables into settled / overdue / partially paid, from the ledger entries."""
 	result = Result()
-	by_full, by_loose = _index(receivables)
-	paid = {}  # erp_id -> {"kinds": set, "amount": Decimal, "partial": Decimal, "date": date}
+	by_full, by_loose = _index(receivables, result)
+	paid = {}  # erp_id -> {"kinds": set, "debtor": Decimal, "partial": Decimal, "date": date}
 	for entry in active_entries(entries):
 		kind = accounts.meaning(entry)
 		if not kind:
@@ -117,15 +134,16 @@ def classify(receivables: list[dict], entries: list[dict], accounts: Accounts, o
 		if problem:
 			getattr(result, problem).append(entry)
 			continue
+		result.matched += 1
 		state = paid.setdefault(
-			title["erp_id"], {"kinds": set(), "amount": Decimal(0), "partial": Decimal(0), "date": None}
+			title["erp_id"], {"kinds": set(), "debtor": Decimal(0), "partial": Decimal(0), "date": None}
 		)
 		state["kinds"].add(kind)
 		amount = entry.get("amount") or Decimal(0)
 		if kind == PARTIAL:
 			state["partial"] += amount
-		else:
-			state["amount"] += amount
+		elif kind == PAID:
+			state["debtor"] += amount
 		if entry.get("date") and (state["date"] is None or entry["date"] > state["date"]):
 			state["date"] = entry["date"]
 
@@ -133,22 +151,24 @@ def classify(receivables: list[dict], entries: list[dict], accounts: Accounts, o
 		state = paid.get(title["erp_id"])
 		closing = state and state["kinds"] & {PAID, REPURCHASED}
 		if closing:
-			outcome = REPURCHASED if REPURCHASED in state["kinds"] else PAID
+			# Money from the debtor (settlement + partials) is never dropped. The título counts as repurchased only
+			# when the cedente bought back what the debtor did not pay (a full debtor payment wins)
+			debtor = state["debtor"] + state["partial"]
+			face = title.get("amount") or Decimal(0)
+			repurchased = REPURCHASED in state["kinds"] and not (PAID in state["kinds"] and debtor >= face - CENT)
+			outcome = REPURCHASED if repurchased else PAID
 			result.settled.append(
 				{
 					**title,
 					"outcome": outcome,
 					"situation": "Recomprado" if outcome == REPURCHASED else "Liquidado",
 					"paid_date": state["date"],
-					# What came from the debtor (partials included); a repurchase is not a debtor payment
-					"paid_amount": state["partial"] + (state["amount"] if outcome == PAID else Decimal(0)),
+					"paid_amount": debtor,
 				}
 			)
 			continue
 		if state and state["partial"] > CENT:
-			result.partial.append(
-				{**title, "partial_amount": state["partial"], "partial_date": state["date"]}
-			)
+			result.partial.append({**title, "partial_amount": state["partial"], "partial_date": state["date"]})
 		due = title.get("due_date")
 		if due and due <= overdue_until:
 			result.overdue.append({**title, "outcome": "open"})

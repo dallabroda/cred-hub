@@ -220,6 +220,12 @@ def _int(value) -> int | None:
 	return int(text) if text else None
 
 
+def _truthy(value) -> bool:
+	if isinstance(value, bool):
+		return value
+	return str(value or "").strip().lower() in ("true", "1", "s", "sim", "y", "yes")
+
+
 def normalize_entry(item: dict) -> dict:
 	"""WBA ledger entry -> the fields the settlement matching needs."""
 	return {
@@ -237,6 +243,7 @@ def normalize_entry(item: dict) -> dict:
 		"account": item.get("contaEvento") or "",
 		"group": item.get("grupoConta") or "",
 		"reverted": (item.get("situacao") or "").upper() == REVERTED,
-		"blocked": bool(item.get("bloqueado")),
+		# Only a real "true" blocks: "false", "N" or "0" as text must not hide a settlement
+		"blocked": _truthy(item.get("bloqueado")),
 		"note": item.get("observacao") or "",
 	}
