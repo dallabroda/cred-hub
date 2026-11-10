@@ -33,6 +33,8 @@ from cred_hub.party.roles import CEDENTE, DEBTOR, add_role
 DEAL, TITLE_ROW, ORG, CONTACT = "CRM Deal", "CRM Deal Title", "CRM Organization", "Contact"
 # Campos do título preenchidos pelo sync do ERP (cred_hub.erp.fields)
 ERP_FIELDS = ("erp_source", "erp_title_id", "erp_operation", "erp_situation", "erp_amount", "erp_run_id")
+# Monetary fields of a título: the ERP owns them once the título has an ERP id
+MONEY_FIELDS = ("original_amount", "updated_amount", "paid_amount")
 MAX_ROWS = 20000
 BY_DEBTOR, BY_PAIR = "Debtor", "Debtor and cedente"
 EXTENSIONS = ("xlsx", "csv")
@@ -551,8 +553,14 @@ def import_group(pipeline, titles, grouping, stats):
 				plain[key] = row
 			stats["titles_new"] += 1
 		elif row_status(row) in SENDABLE:
-			# só o que veio preenchido: a planilha nova nunca apaga o que o operador já completou (ex.: espécie)
-			row.update({k: v for k, v in values.items() if v not in (None, "")})
+			if row.get("erp_title_id"):
+				# The ERP owns the money of its títulos (credtech#367): neither a spreadsheet nor the ERP identity
+				# of an adopted row rewrites original/updated/paid amounts (that would reopen a paid balance or
+				# break the read-only balance); only empty, non-monetary fields are completed
+				row.update({k: v for k, v in values.items() if v not in (None, "") and k not in MONEY_FIELDS and not row.get(k)})
+			else:
+				# só o que veio preenchido: a planilha nova nunca apaga o que o operador já completou (ex.: espécie)
+				row.update({k: v for k, v in values.items() if v not in (None, "")})
 			stats["titles_update"] += 1
 		else:
 			stats["titles_locked"] += 1

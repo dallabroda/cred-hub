@@ -483,3 +483,27 @@ class TestErpSync(IntegrationTestCase):
 		stats = self._import(self._plain(1, number="NF-9"))
 		self.assertEqual((stats["titles_new"], stats["titles_update"]), (1, 0), stats)
 		self.assertEqual(len(self.title_row(1021)[0].titles), 3)
+
+	def _last_deal(self):
+		return frappe.get_doc("CRM Deal", frappe.get_all("CRM Deal", pluck="name", order_by="creation desc", limit=1)[0])
+
+	def test_a_spreadsheet_never_rewrites_the_money_of_an_erp_title(self):
+		self.run_sync(FakeSmart([open_row(1031, "NF-5", DEBTOR_A, CEDENTE_A, value="1.000,00")]))
+		spreadsheet = {**self._plain(1, number="NF-5"), "original_amount": 5000, "updated_amount": 5000, "species": "DMI"}
+		stats = self._import(spreadsheet)
+		self.assertEqual((stats["titles_new"], stats["titles_update"]), (0, 1), stats)
+		_deal, row = self.title_row(1031)
+		# the balance of an ERP título stays what the ERP says; only an empty, non-monetary field is completed
+		self.assertEqual((row.original_amount, row.updated_amount, row.paid_amount), (1000, 1000, 0))
+		self.assertEqual(row.species, "DMI")
+
+	def test_adopting_a_spreadsheet_row_keeps_its_payments(self):
+		self._import(self._plain(1, number="NF-6"))
+		deal = self._last_deal()
+		row = deal.titles[0]
+		sync.register_payment(deal, row, 300, getdate(today()), "registered before the ERP")
+		deal.save(ignore_permissions=True)
+		self.run_sync(FakeSmart([open_row(1041, "NF-6", DEBTOR_A, CEDENTE_A, value="1.000,00")]))
+		_deal, adopted = self.title_row(1041)
+		self.assertEqual((adopted.updated_amount, adopted.paid_amount, len(_deal.payments)), (700, 300, 1))
+
