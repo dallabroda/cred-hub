@@ -422,3 +422,18 @@ class TestErpSync(IntegrationTestCase):
 		self.assertIn(active, notified)
 		self.assertNotIn(disabled, notified)
 		self.assertNotIn(technical, notified)
+
+	def test_two_erp_titles_with_the_same_number_and_due_date_stay_two_rows(self):
+		# same sacado, same cedente, same number and due date, different ERP ids (the real portfolio has these)
+		rows = [open_row(991, "NF-7", DEBTOR_A, CEDENTE_A, days=-10), open_row(992, "NF-7", DEBTOR_A, CEDENTE_A, days=-10)]
+		stats = self.run_sync(FakeSmart(rows))
+		self.assertEqual((stats["titles_new"], stats["titles_update"], stats["cards_new"]), (2, 0, 1), stats)
+		deal, first = self.title_row(991)
+		_deal, second = self.title_row(992)
+		self.assertEqual(deal.name, _deal.name)
+		self.assertNotEqual(first.name, second.name)
+		self.assertEqual(len(deal.titles), 2)
+		# and the second run recognises both by their ERP id
+		stats = self.run_sync(FakeSmart(rows))
+		self.assertEqual((stats["titles_new"], stats["titles_update"]), (0, 2), stats)
+		self.assertEqual(len(self.title_row(991)[0].titles), 2)

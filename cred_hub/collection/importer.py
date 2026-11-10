@@ -503,7 +503,11 @@ def import_group(pipeline, titles, grouping, stats):
 		if debtor[0] == CONTACT:
 			deal.append("contacts", {"contact": debtor[1], "is_primary": 1})
 		stats["cards_new"] += 1
-	existing = {_title_key(row): row for row in deal.get("titles") or []}
+	# Identity of a título inside the card: the ERP id when it has one (two distinct ERP títulos may share number, our
+	# number and due date), otherwise number + our number + due date. A título without an ERP id may adopt a row
+	# that has none (the same título coming from a spreadsheet).
+	by_erp = {(row.get("erp_source"), str(row.erp_title_id)): row for row in deal.get("titles") or [] if row.get("erp_title_id")}
+	by_key = {_title_key(row): row for row in deal.get("titles") or [] if not row.get("erp_title_id")}
 	for title in titles:
 		title_debtor = debtor if title is first else _debtor_for(title)
 		# Papel das organizações (credtech#367), título a título: quem deve é sacado, quem vendeu é cedente. Empresa
@@ -514,10 +518,14 @@ def import_group(pipeline, titles, grouping, stats):
 		if title_cedente and title_cedente != title_debtor[1]:
 			add_role(title_cedente, CEDENTE)
 		values = _row_values(title, title_cedente, title_debtor)
-		row = existing.get(_title_key(values))
+		erp_id = (values.get("erp_source"), str(values["erp_title_id"])) if values.get("erp_title_id") else None
+		row = (by_erp.get(erp_id) if erp_id else None) or by_key.get(_title_key(values))
 		if not row:
 			row = deal.append("titles", values)
-			existing[_title_key(values)] = row
+			if erp_id:
+				by_erp[erp_id] = row
+			else:
+				by_key[_title_key(values)] = row
 			stats["titles_new"] += 1
 		elif row_status(row) in SENDABLE:
 			# só o que veio preenchido: a planilha nova nunca apaga o que o operador já completou (ex.: espécie)
