@@ -28,6 +28,7 @@ from cred_hub.integrations import get_settings
 from cred_hub.integrations.protest import SENDABLE, row_status
 from cred_hub.party.document import CNPJ, CPF, document_kind, format_cpf
 from cred_hub.party.resolve import contact_for_cpf, organization_for_cnpj
+from cred_hub.party.roles import CEDENTE, DEBTOR, add_role
 
 DEAL, TITLE_ROW, ORG, CONTACT = "CRM Deal", "CRM Deal Title", "CRM Organization", "Contact"
 MAX_ROWS = 20000
@@ -463,6 +464,11 @@ def import_group(pipeline, titles, grouping, stats):
 	first = titles[0]
 	debtor = _debtor_for(first)
 	cedentes = {title["cedente_document"]: _cedente_for(title) for title in titles}
+	# Papel das organizações (credtech#367): quem deve é sacado, quem vendeu o título é cedente
+	if debtor[0] == ORG:
+		add_role(debtor[1], DEBTOR)
+	for cedente in filter(None, cedentes.values()):
+		add_role(cedente, CEDENTE)
 	card_cedente = cedentes.get(first["cedente_document"]) if grouping == BY_PAIR else None
 	if card_cedente == debtor[1]:
 		card_cedente = None
