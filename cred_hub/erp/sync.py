@@ -227,11 +227,20 @@ def _new_stats() -> dict:
 	return {
 		"overdue_read": 0, "settled_read": 0, "titles_new": 0, "titles_update": 0, "titles_locked": 0,
 		"cards_new": 0, "cards_update": 0, "partial_payments": 0, "titles_closed": 0, "cards_won": 0,
-		"left_overdue": 0, "cards_to_review": 0, "skipped": 0, "failed": 0, "plan": [],
+		"left_overdue": 0, "cards_to_review": 0, "protests_to_withdraw": 0, "skipped": 0, "failed": 0, "plan": [],
 	}
 
 
 def _summary(stats) -> str:
+	text = _summary_base(stats)
+	if stats.get("protests_to_withdraw"):
+		text += " " + _(
+			"{0} títulos settled in the ERP still have a protest at the registry: withdraw or cancel it."
+		).format(stats["protests_to_withdraw"])
+	return text
+
+
+def _summary_base(stats) -> str:
 	return _(
 		"{0} overdue títulos read: {1} new, {2} updated, {3} new cards. {4} settlements read: {5} títulos closed, "
 		"{6} cards won, {11} to review. {7} partial payments. {8} títulos skipped, {9} with errors. {10} títulos are "
@@ -418,10 +427,15 @@ def close_titles(card: str, items: list, stats: dict):
 	deal = frappe.get_doc(DEAL, card)
 	by_name = {row.name: row for row in deal.titles}
 	notes = []
+	to_withdraw = []
 	for row_name, title, reason in items:
 		row = by_name.get(row_name)
 		if row is None or row.get("closed_reason"):
 			continue
+		if has_active_protest(row):
+			to_withdraw.append((row.title_number, title["erp"], protest.row_status(row)))
+			stats["protests_to_withdraw"] += 1
+			_plan(stats, f"! {row.title_number} | {_('protest still active at the registry: withdraw it')}")
 		closed_on = title.get("paid_date") or getdate(today())
 		if reason == REPURCHASED:
 			note = _settle_repurchased(deal, row, title, closed_on)
@@ -442,6 +456,45 @@ def close_titles(card: str, items: list, stats: dict):
 	deal.add_comment("Info", "<br>".join(frappe.utils.escape_html(n) for n in notes))
 	stats["cards_won"] += int(won)
 	stats["cards_to_review"] += int(review)
+	for number, erp, status in to_withdraw:
+		warn_protest_active(deal, number, erp, status)
+
+
+def has_active_protest(row) -> bool:
+	"""The título went to the registry and the registry did not close it yet: its protest is still alive."""
+	return bool(row.get("sent_at")) and protest.row_status(row) not in protest.FINAL
+
+
+def warn_protest_active(deal, number: str, erp: str, status: str):
+	"""The ERP settled a título that is still protested: the operator must withdraw or cancel it (owner decision:
+	the system warns, and never withdraws by itself). A simulation only counts it."""
+	if frappe.flags.get("cred_hub_erp_dry_run"):
+		return
+	text = _(
+		"Title {0} was settled in {1} but its protest is still active at the registry ({2}). Withdraw or cancel "
+		"the protest: the system never does it by itself."
+	).format(number, erp, status or _("sent"))
+	protest._note(deal, "⚠ " + text)
+	users = set(
+		frappe.get_all("Has Role", {"role": "System Manager", "parenttype": "User"}, pluck="parent")
+	)
+	if deal.get("deal_owner"):
+		users.add(deal.deal_owner)
+	for user in sorted(users - {"Guest"}):
+		frappe.get_doc(
+			{
+				"doctype": "CRM Notification",
+				"from_user": frappe.session.user,
+				"to_user": user,
+				"type": "Automation",
+				"notification_text": text,
+				"message": f"<p>{frappe.utils.escape_html(text)}</p>",
+				"notification_type_doctype": DEAL,
+				"notification_type_doc": deal.name,
+				"reference_doctype": DEAL,
+				"reference_name": deal.name,
+			}
+		).insert(ignore_permissions=True)
 
 
 def _settle_paid(deal, row, title: dict, paid_on) -> str:

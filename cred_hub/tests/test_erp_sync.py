@@ -321,6 +321,36 @@ class TestErpSync(IntegrationTestCase):
 		self.assertTrue(sync.find_row("Smart Securities", "911"))
 		self.assertFalse(real["dry_run"])
 
+	def _protest(self, title_id, status="PROTESTADO"):
+		deal, row = self.title_row(title_id)
+		frappe.db.set_value("CRM Deal Title", row.name, {"sent_at": frappe.utils.now_datetime(), "protest_status": status})
+		frappe.db.set_value("CRM Deal", deal.name, "deal_owner", "Administrator")
+		return deal.name
+
+	def test_settling_a_protested_title_warns_and_never_withdraws(self):
+		self.run_sync(FakeSmart([open_row(961, "NF-1", DEBTOR_A, CEDENTE_A), open_row(962, "NF-2", DEBTOR_B, CEDENTE_A)]))
+		protested = self._protest(961)
+		withdrawn = self._protest(962, status="RETIRADO")  # already withdrawn: nothing to warn about
+		stats = self.run_sync(FakeSmart(paid_rows=[paid_row(961, "NF-1", DEBTOR_A), paid_row(962, "NF-2", DEBTOR_B)]))
+		self.assertEqual((stats["titles_closed"], stats["protests_to_withdraw"]), (2, 1), stats)
+		self.assertIn("withdraw", frappe.get_single(erp_settings.SETTINGS).last_sync_message)
+		comments = frappe.get_all("Comment", {"reference_name": protested, "comment_type": "Comment"}, pluck="content")
+		self.assertTrue(any("NF-1" in c and "protest is still active" in c for c in comments), comments)
+		self.assertTrue(frappe.get_all("CRM Notification", {"reference_name": protested, "to_user": "Administrator"}))
+		self.assertFalse(frappe.get_all("Comment", {"reference_name": withdrawn, "comment_type": "Comment"}))
+		self.assertFalse(frappe.get_all("CRM Notification", {"reference_name": withdrawn}))
+		# the registry was never touched
+		self.assertFalse([c for c in self.enqueue.call_args_list if "protest" in str(c.args[0])])
+
+	def test_a_simulation_only_counts_the_protests_to_withdraw(self):
+		self.run_sync(FakeSmart([open_row(971, "NF-1", DEBTOR_A, CEDENTE_A)]))
+		deal = self._protest(971)
+		self.reset_cache()
+		stats = sync.run(session=FakeSmart(paid_rows=[paid_row(971, "NF-1", DEBTOR_A)]), dry_run=True)
+		self.assertEqual(stats["protests_to_withdraw"], 1)
+		self.assertTrue(any(line.startswith("! NF-1") for line in stats["plan"]), stats["plan"])
+		self.assertFalse(frappe.get_all("CRM Notification", {"reference_name": deal}))
+
 	def test_the_balance_of_an_erp_title_is_read_only_in_the_crm(self):
 		from crm.api import collection
 

@@ -3343,3 +3343,16 @@ msgstr "A execução do sync que criou este título (para desfazer uma execuçã
 
 msgid "The synchronization run that created this card: filter by it to undo a whole run."
 msgstr "A execução do sync que criou este card: filtre por ela para desfazer uma execução inteira."
+
+# Título quitado no ERP com protesto ainda ativo (credtech#367): só avisa, a retirada é manual
+msgid "{0} títulos settled in the ERP still have a protest at the registry: withdraw or cancel it."
+msgstr "{0} títulos quitados no ERP ainda têm protesto no cartório: retire ou cancele."
+
+msgid "protest still active at the registry: withdraw it"
+msgstr "protesto ainda ativo no cartório: retire"
+
+msgid "Title {0} was settled in {1} but its protest is still active at the registry ({2}). Withdraw or cancel the protest: the system never does it by itself."
+msgstr "O título {0} foi quitado na {1}, mas o protesto dele ainda está ativo no cartório ({2}). Retire ou cancele o protesto: o sistema nunca faz isso sozinho."
+
+msgid "sent"
+msgstr "enviado"
