@@ -408,7 +408,9 @@ def _final_bureaus(settings_doc) -> list[dict[str, Any]]:
 		})
 	has_directd_token = bool(settings_doc.get("directd_token"))
 	for registry in PREMIUM_BUREAUS.values():
-		if settings_doc.get(registry.enabled_field):
+		# O bureau está disponível se habilitado no checkbox OU se o token DirectD está configurado
+		# (permitindo execução sob demanda conforme o nível selecionado na esteira)
+		if settings_doc.get(registry.enabled_field) or has_directd_token:
 			bureaus.append({
 				"key": registry.key,
 				"label": registry.label,
@@ -813,21 +815,30 @@ def save_dossier_package(items: Any, reuse_days: Any) -> dict[str, Any]:
 def _resolve_tier_items(settings_doc, tier: int | str | None) -> list[str] | None:
 	if not tier:
 		return None
+	tier_str = str(tier).lower().strip()
+	if tier_str in ("2", "tier_2", "tier2"):
+		return ["company:dossie_quod", "company:scr_bacen"]
+	if tier_str in ("3", "tier_3", "tier3", "tier_3_boavista", "tier_3_serasa"):
+		deep_pj = (
+			"company:serasa"
+			if "serasa" in tier_str or (settings_doc.get("serasa_enabled") and not settings_doc.get("boavista_risco_enabled"))
+			else "company:boavista_risco"
+		)
+		items = [deep_pj]
+		if settings_doc.get("scr_bacen_enabled") or settings_doc.get("directd_token"):
+			items.append("company:scr_bacen")
+		if settings_doc.get("processos_completa_enabled") or settings_doc.get("directd_token"):
+			items.append("company:processos_completa")
+		if settings_doc.get("boavista_acerta_pf_enabled") or settings_doc.get("directd_token"):
+			items.append("partners:boavista_acerta_pf")
+		elif settings_doc.get("dossie_quod_enabled") or settings_doc.get("directd_token"):
+			items.append("partners:dossie_quod")
+		return items
 	t = cint(tier)
 	if t == 2:
 		return ["company:dossie_quod", "company:scr_bacen"]
 	if t == 3:
-		deep_pj = "company:serasa" if (settings_doc.get("serasa_enabled") and not settings_doc.get("boavista_risco_enabled")) else "company:boavista_risco"
-		items = [deep_pj]
-		if settings_doc.get("scr_bacen_enabled"):
-			items.append("company:scr_bacen")
-		if settings_doc.get("processos_completa_enabled"):
-			items.append("company:processos_completa")
-		if settings_doc.get("boavista_acerta_pf_enabled"):
-			items.append("partners:boavista_acerta_pf")
-		elif settings_doc.get("dossie_quod_enabled"):
-			items.append("partners:dossie_quod")
-		return items
+		return ["company:boavista_risco", "company:scr_bacen"]
 	return None
 
 

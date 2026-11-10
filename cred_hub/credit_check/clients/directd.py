@@ -325,8 +325,10 @@ def fetch_sintegra_ccc(
 	cnpj: str,
 	token: str,
 	uf: str = "",
+	*args,
 	base_url: str = DEFAULT_BASE_URL,
 	timeout: int = DEFAULT_TIMEOUT,
+	**kwargs,
 ) -> dict[str, Any]:
 	"""Sintegra/CCC - Cadastro Centralizado de Contribuinte (R$ 0,36/consulta quando UF informada via
 	/api/SintegraCCC; fallback para SintegraCCC-Completa caso UF não seja passada)."""

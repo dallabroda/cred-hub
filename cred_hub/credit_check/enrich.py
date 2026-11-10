@@ -152,9 +152,14 @@ def _build_providers(
 	has_uf = len(uf_clean) == 2
 
 	def _fetch_sintegra_for_org(cnpj_digits: str, token: str) -> dict[str, Any]:
-		if has_uf:
-			return fetch_sintegra_ccc(cnpj_digits, token, uf=uf_clean)
-		return fetch_sintegra_ccc(cnpj_digits, token)
+		try:
+			if has_uf:
+				return fetch_sintegra_ccc(cnpj_digits, token, uf=uf_clean)
+			return fetch_sintegra_ccc(cnpj_digits, token)
+		except TypeError as te:
+			if "unexpected keyword argument" in str(te):
+				return fetch_sintegra_ccc(cnpj_digits, token)
+			raise
 
 	bdc_on = bool(settings.get("bigdatacorp_enabled"))
 	directd_base = bool(settings.get("directd_enabled")) and not tier_1_only and not bdc_on
