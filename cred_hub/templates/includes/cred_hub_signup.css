@@ -1,4 +1,81 @@
-/* Páginas do cadastro (/cadastro e /cadastro/confirmar): mesmo cartão da tela de login (login.bundle.css) */
+/* Páginas do cadastro (/cadastro e /cadastro/confirmar): mesmo visual da tela de teste grátis do SmartChat no site
+   (credtechdigital.com.br/signup), com as medidas dos componentes da Style Guide do Figma "CredTech-Digital":
+   Campo (48px, borda padrão, raio 6), Caixa de seleção (20px, raio 4), Botão Primária (48px, raio 6). */
+.signup-card {
+	--ct-ink: #000000; /* Uso/Texto/Principal */
+	--ct-muted: #5e6068; /* Uso/Texto/Secundário */
+	--ct-faint: #8a8c94; /* Uso/Texto/Terciário */
+	--ct-line: #dcdde2; /* Uso/Borda/Padrão */
+	--ct-soft: #f5f5f7; /* Uso/Fundo/Suave */
+	--ct-graphite: #2a2b30; /* Uso/Ação/Primária hover */
+	--ct-error: #b42318;
+	--ct-ok: #16794c;
+	--ct-radius: 6px; /* Raio/Pequeno */
+	width: 100%;
+	max-width: 360px !important;
+	margin: 0 auto;
+	padding: 30px 0 80px !important;
+	gap: 0 !important;
+	border: 0 !important;
+	box-shadow: none !important;
+	background: transparent !important;
+	color: var(--ct-ink);
+	font-size: 14px;
+	line-height: 20px;
+}
+/* Topo: ícone de 48, título 26/32 e texto 16/24, centralizados */
+.signup-card .page-card-head {
+	align-items: center !important;
+	gap: 10px !important;
+	padding: 0;
+	margin: 0;
+	text-align: center !important;
+}
+.signup-card .app-logo {
+	width: 48px !important;
+	height: 48px !important;
+	max-width: none !important;
+	max-height: none !important;
+	margin: 0;
+	border-radius: 11.3px; /* como o ícone de 48 da tela do SmartChat */
+}
+.signup-card .page-card-head-text {
+	gap: 8px !important;
+}
+.signup-card #signup-title,
+.signup-card .page-card-head h4 {
+	margin: 0;
+	font-size: 26px;
+	line-height: 32px;
+	font-weight: 500;
+	letter-spacing: -0.03em;
+	color: var(--ct-ink);
+	text-align: center;
+}
+.signup-card .page-card-subtitle,
+.signup-card #signup-subtitle {
+	font-size: 16px;
+	line-height: 24px;
+	color: var(--ct-muted);
+	text-align: center;
+}
+.signup-card #signup-form {
+	gap: 16px !important;
+	margin-top: 24px;
+}
+.signup-card .page-card-body {
+	gap: 16px !important;
+	padding: 0;
+}
+/* Blocos soltos no cartão (envio confirmado, tela de confirmação): 24px abaixo do topo */
+.signup-card > .page-card-body,
+.signup-card > .page-card-actions {
+	margin-top: 24px;
+}
+.signup-card a.es-button {
+	text-decoration: none;
+}
+/* Campo: rótulo Medium 14/20 cinza, 6px, caixa de 48 */
 .signup-card .form-group {
 	display: flex;
 	flex-direction: column;
@@ -8,74 +85,198 @@
 .signup-card label {
 	margin-bottom: 0;
 }
+.signup-card .form-group > label {
+	font-size: 14px;
+	line-height: 20px;
+	font-weight: 500;
+	color: var(--ct-muted);
+}
 .signup-card .page-card-body input[type="text"],
 .signup-card .page-card-body input[type="email"] {
 	width: 100%;
+	height: 48px !important;
+	padding: 0 14px;
+	border: 1px solid var(--ct-line) !important;
+	border-radius: var(--ct-radius);
+	background: #ffffff;
+	box-shadow: none;
+	font-size: 16px;
+	line-height: 24px;
+	color: var(--ct-ink);
 }
+.signup-card .page-card-body input::placeholder {
+	color: var(--ct-faint);
+	opacity: 1;
+}
+.signup-card .page-card-body input[type="text"]:focus,
+.signup-card .page-card-body input[type="email"]:focus {
+	outline: 2px solid var(--ct-ink);
+	outline-offset: -2px;
+	border-color: var(--ct-ink) !important;
+	box-shadow: none;
+}
+/* Endereço: a mesma caixa de 48, com o domínio em cinza dentro dela */
 .signup-card .address-field {
 	display: flex;
 	align-items: center;
 	width: 100%;
-	border: 1px solid var(--outline-gray-2);
-	border-radius: var(--radius);
-	background-color: var(--surface-base);
+	height: 48px !important;
+	border: 1px solid var(--ct-line);
+	border-radius: var(--ct-radius);
+	background: #ffffff;
 }
 .signup-card .address-field:focus-within {
-	box-shadow: var(--focus-default, 0 0 0 2px var(--outline-gray-3));
+	outline: 2px solid var(--ct-ink);
+	outline-offset: -1px;
+	border-color: var(--ct-ink);
 }
 .signup-card .page-card-body .address-field input[type="text"] {
-	border: 0;
-	min-width: 0;
 	flex: 1;
+	min-width: 0;
+	height: 46px !important;
+	padding: 0 2px 0 14px;
+	border: 0 !important;
+	border-radius: var(--ct-radius) 0 0 var(--ct-radius);
+	background: transparent;
 	box-shadow: none;
+	outline: 0;
 }
 .signup-card .address-suffix {
-	padding: 0 8px 0 0;
-	color: var(--ink-gray-5);
+	flex: none;
+	padding: 0 14px 0 0;
+	font-size: 16px;
+	line-height: 24px;
+	color: var(--ct-faint);
 	white-space: nowrap;
 }
+/* Avisos dos campos: só ocupam espaço quando têm texto */
 .signup-card .field-hint {
 	margin: 0;
-	min-height: 18px;
+	font-size: 14px;
+	line-height: 20px;
+}
+.signup-card .field-hint:empty {
+	display: none;
 }
 .signup-card .hint-ok {
-	color: #16794c;
+	color: var(--ct-ok);
 }
-.signup-card .hint-error {
-	color: #c0392b;
+.signup-card .hint-error,
+.signup-card .form-error {
+	margin: 0;
+	color: var(--ct-error);
 }
+/* Quadro do plano: fundo suave, raio 6 */
+.signup-card .plan-note {
+	margin: 0;
+	padding: 12px 16px;
+	border-radius: var(--ct-radius);
+	background: var(--ct-soft);
+	font-size: 14px;
+	line-height: 20px;
+	color: var(--ct-muted);
+}
+.signup-card .no-account-note {
+	margin: 24px 0 0;
+	padding: 12px 16px;
+	border-radius: var(--ct-radius);
+	background: #fff7e6;
+	font-size: 14px;
+	line-height: 20px;
+	color: var(--ct-ink);
+}
+/* Caixa de seleção: quadrado de 20, borda padrão, raio 4; texto 14/20 com 8px de espaço */
 .signup-card .terms {
 	display: flex;
 	align-items: flex-start;
 	gap: 8px;
 	margin: 0;
-	color: var(--ink-gray-6);
+	font-size: 14px;
+	line-height: 20px;
+	color: var(--ct-ink);
 	cursor: pointer;
 }
 .signup-card .terms input {
-	margin-top: 3px;
+	flex: none;
+	width: 20px !important;
+	min-width: 20px;
+	height: 20px !important;
+	margin: 0;
+	appearance: none;
+	-webkit-appearance: none;
+	border: 1px solid var(--ct-line);
+	border-radius: 4px;
+	background: #ffffff;
+	box-shadow: none;
+	cursor: pointer;
+}
+.signup-card .terms input:checked {
+	background: var(--ct-ink) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='10' viewBox='0 0 12 10'%3E%3Cpath d='M1 5.2l3.2 3L11 1.4' fill='none' stroke='%23fff' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat center;
+	border-color: var(--ct-ink);
+}
+.signup-card .terms input:focus-visible {
+	outline: 2px solid var(--ct-ink);
+	outline-offset: 2px;
 }
 .signup-card .terms a,
 .signup-card .muted-link {
-	color: var(--ink-gray-8);
+	font-weight: 500;
+	color: var(--ct-ink);
 	text-decoration: underline;
+	text-underline-offset: 3px;
 }
-.signup-card .plan-note {
-	margin: 0;
-	padding: 10px 12px;
-	border-radius: var(--radius);
-	background-color: var(--surface-gray-1, #f8f8f8);
-	color: var(--ink-gray-6);
+/* Botão Primária 48: preto, raio 6, Semi Bold 16/24; Sutil: fundo suave */
+.signup-card .page-card-actions {
+	gap: 12px !important;
 }
-.signup-card .no-account-note {
-	padding: 10px 12px;
-	border-radius: var(--radius);
-	background-color: var(--surface-amber-1, #fff7e6);
-	color: var(--ink-gray-8);
+.signup-card .es-button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 100%;
+	height: 48px !important;
+	padding: 0 24px;
+	border: 1px solid transparent;
+	border-radius: var(--ct-radius);
+	font-size: 16px;
+	line-height: 24px;
+	font-weight: 600;
+	box-shadow: none;
+	cursor: pointer;
+	transition: background-color 0.15s;
 }
-.signup-card .form-error {
-	margin: 0;
-	color: #c0392b;
+.signup-card .es-button[data-variant="solid"] {
+	background: var(--ct-ink);
+	color: #ffffff;
+}
+.signup-card .es-button[data-variant="solid"]:hover {
+	background: var(--ct-graphite);
+}
+.signup-card .es-button[data-variant="subtle"] {
+	background: var(--ct-soft);
+	color: var(--ct-ink);
+}
+.signup-card .es-button[data-variant="subtle"]:hover {
+	background: #ededf0;
+}
+.signup-card .es-button:disabled {
+	opacity: 0.7;
+	cursor: progress;
+}
+/* "Já usa o HubTech CRM? Entrar": 14/20 cinza, centralizado, 16px abaixo */
+.signup-card > .text-center:last-child {
+	margin: 16px 0 0 !important;
+	font-size: 14px;
+	line-height: 20px;
+	color: var(--ct-muted);
+}
+.signup-card > .text-center:last-child a {
+	font-size: 14px;
+	line-height: 20px;
+	font-weight: 500;
+	color: var(--ct-ink);
+	text-decoration: underline;
+	text-underline-offset: 3px;
 }
 .signup-card .status-icon {
 	width: 40px;
@@ -84,8 +285,8 @@
 .signup-card .spinner {
 	width: 28px;
 	height: 28px;
-	border: 3px solid var(--outline-gray-2);
-	border-top-color: var(--ink-gray-8);
+	border: 3px solid var(--ct-line);
+	border-top-color: var(--ct-ink);
 	border-radius: 50%;
 	animation: signup-spin 0.9s linear infinite;
 }
