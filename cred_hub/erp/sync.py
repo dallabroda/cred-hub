@@ -33,7 +33,7 @@ from cred_hub.party.document import CNPJ, document_kind
 
 from . import SMART
 from .base import ErpError
-from .fields import EXTENDED, PAID, REPURCHASED
+from .fields import PAID, REPURCHASED
 from .settings import client, get_settings, log, user_message
 from .smart import OPEN, OPEN_RANGE_START, normalize_title
 from .smart import PAID as SETTLED
@@ -127,9 +127,13 @@ def run(session=None, dry_run: bool | None = None) -> dict:
 	settings = get_settings()
 	dry = bool(settings.sync_dry_run) if dry_run is None else bool(dry_run)
 	frappe.flags.cred_hub_erp_dry_run = dry
+	# Marks every card and título this run creates, so a whole run can be undone in bulk
+	run_id = f"erp-{now_datetime():%Y%m%d-%H%M%S}"
+	frappe.flags.cred_hub_erp_run_id = run_id
 	started = time.time()
 	stats = _new_stats()
 	stats["dry_run"] = dry
+	stats["run_id"] = run_id
 	try:
 		if settings.erp_provider != SMART:
 			stats["message"] = _("The collection sync for {0} comes in the next version.").format(settings.erp_provider)
@@ -169,6 +173,7 @@ def run(session=None, dry_run: bool | None = None) -> dict:
 		raise
 	finally:
 		frappe.flags.cred_hub_erp_dry_run = False
+		frappe.flags.cred_hub_erp_run_id = None
 		frappe.db.commit()
 		_release_lock()
 	return stats
@@ -184,22 +189,24 @@ def _loggable(stats: dict) -> dict:
 def _sync_smart(erp, settings, stats):
 	pipeline = _collection_pipeline()
 	overdue_until = add_days(today(), -max(int(settings.overdue_days or 0), 0))
+	# Read both reports before writing anything: the database transaction is open only for the (short) write phase
 	_cooldown(OPEN)
 	overdue = [
 		normalize_title(row)
 		for row in erp.titles(OPEN, vencimentoIni=OPEN_RANGE_START, vencimentoFim=getdate(overdue_until))
 	]
 	stats["overdue_read"] = len(overdue)
-	upsert_overdue(pipeline, overdue, stats)
-	stats["left_overdue"] = count_left_overdue(SMART, {t["erp_id"] for t in overdue})
-	_commit()
-
 	lookback = max(int(settings.paid_lookback_days or 7), 1)
 	since = add_days(settings.last_paid_sync or today(), -lookback)
 	_cooldown(SETTLED)
 	settled = [normalize_title(row) for row in erp.titles(SETTLED, quitacaoIni=getdate(since), quitacaoFim=getdate(today()))]
 	stats["settled_read"] = len(settled)
+
+	upsert_overdue(pipeline, overdue, stats)
+	_commit()
 	close_settled(settled, stats)
+	# After the settlements: a título just closed is not "no longer overdue"
+	stats["left_overdue"] = count_left_overdue(SMART, {t["erp_id"] for t in overdue})
 
 
 def _cooldown(report: str):
@@ -220,19 +227,19 @@ def _new_stats() -> dict:
 	return {
 		"overdue_read": 0, "settled_read": 0, "titles_new": 0, "titles_update": 0, "titles_locked": 0,
 		"cards_new": 0, "cards_update": 0, "partial_payments": 0, "titles_closed": 0, "cards_won": 0,
-		"left_overdue": 0, "skipped": 0, "failed": 0, "plan": [],
+		"left_overdue": 0, "cards_to_review": 0, "skipped": 0, "failed": 0, "plan": [],
 	}
 
 
 def _summary(stats) -> str:
 	return _(
 		"{0} overdue títulos read: {1} new, {2} updated, {3} new cards. {4} settlements read: {5} títulos closed, "
-		"{6} cards won. {7} partial payments. {8} títulos skipped, {9} with errors. {10} títulos are no longer "
-		"overdue in the ERP (extended or written off) and stay open here."
+		"{6} cards won, {11} to review. {7} partial payments. {8} títulos skipped, {9} with errors. {10} títulos are "
+		"no longer overdue in the ERP (extended or written off) and stay open here."
 	).format(
 		stats["overdue_read"], stats["titles_new"], stats["titles_update"], stats["cards_new"], stats["settled_read"],
 		stats["titles_closed"], stats["cards_won"], stats["partial_payments"], stats["skipped"], stats["failed"],
-		stats["left_overdue"],
+		stats["left_overdue"], stats["cards_to_review"],
 	)
 
 
@@ -274,6 +281,7 @@ def to_import_title(title: dict) -> dict | None:
 		"erp_operation": title.get("operation") or "",
 		"erp_situation": title.get("situation") or "",
 		"erp_amount": amount,
+		"erp_run_id": frappe.flags.get("cred_hub_erp_run_id") or "",
 	}
 
 
@@ -414,54 +422,79 @@ def close_titles(card: str, items: list, stats: dict):
 		row = by_name.get(row_name)
 		if row is None or row.get("closed_reason"):
 			continue
-		paid_on = title.get("paid_date") or getdate(today())
-		received = flt(title.get("paid_amount"), 2)
-		note = _("{0} in {1} on {2} ({3}); amount received: {4}.").format(
-			_(reason),
-			title["erp"],
-			frappe.utils.formatdate(paid_on),
-			title.get("situation") or "",
-			frappe.utils.fmt_money(received, currency="BRL") if received else "-",
-		)
-		# The ERP closed the título: the whole open balance is settled in one entry (interest, discount and
-		# repurchase included); the amount the ERP received stays in the note
-		register_payment(deal, row, _balance(row), paid_on, note)
-		# The agreement of a settled título has nothing left to collect
-		for slot in deal.get("installments") or []:
-			if slot.title == row.name and not slot.paid_on:
-				slot.paid_on = paid_on
+		closed_on = title.get("paid_date") or getdate(today())
+		if reason == REPURCHASED:
+			note = _settle_repurchased(deal, row, title, closed_on)
+		else:
+			note = _settle_paid(deal, row, title, closed_on)
 		row.closed_reason = reason
-		row.closed_on = paid_on
+		row.closed_on = closed_on
 		row.erp_situation = title.get("situation") or row.erp_situation
 		notes.append(_("Título {0}: {1}").format(row.title_number, note))
 		stats["titles_closed"] += 1
-		_plan(stats, f"v {row.title_number} | {_(reason)} | {frappe.utils.formatdate(paid_on)}")
+		_plan(stats, f"v {row.title_number} | {_(reason)} | {frappe.utils.formatdate(closed_on)}")
 	if not notes:
 		return
-	won = _close_card_if_done(deal)
+	won, review = _close_card_if_done(deal)
+	if review:
+		notes.append(_("All títulos of this card are closed in the ERP, some were repurchased by the cedente. Check the card and close it."))
 	deal.save(ignore_permissions=True)
 	deal.add_comment("Info", "<br>".join(frappe.utils.escape_html(n) for n in notes))
-	if won:
-		stats["cards_won"] += 1
+	stats["cards_won"] += int(won)
+	stats["cards_to_review"] += int(review)
 
 
-def _close_card_if_done(deal) -> bool:
-	"""Every título closed by the ERP -> the card is Won (Lost when all were only extended). Cards already closed
-	by a person are never touched."""
+def _settle_paid(deal, row, title: dict, paid_on) -> str:
+	"""The debtor paid. The payment is what the ERP says it received (VALOR_LIQUIDADO); what is left of the balance
+	is an adjustment (discount), and what came above it is interest or fine: neither is a payment."""
+	owed = _balance(row)
+	received = flt(title.get("paid_amount"), 2)
+	when = frappe.utils.formatdate(paid_on)
+	if received <= 0:
+		register_payment(deal, row, owed, paid_on, _("Paid by debtor in {0} on {1}.").format(title["erp"], when))
+		extra = _("The ERP did not inform the amount received: the whole balance was settled.")
+	else:
+		applied = min(received, owed)
+		register_payment(
+			deal, row, applied, paid_on,
+			_("Paid by debtor in {0} on {1}: {2} received.").format(title["erp"], when, _money(received)),
+		)
+		if owed - applied > CENT:
+			extra = _("Adjustment (discount) of {0} to settle the título.").format(_money(owed - applied))
+		elif received - applied > CENT:
+			extra = _("{0} received above the balance (interest or fine), not counted as payment.").format(_money(received - applied))
+		else:
+			extra = ""
+	row.updated_amount = 0
+	# The agreement of a settled título has nothing left to collect
+	for slot in deal.get("installments") or []:
+		if slot.title == row.name and not slot.paid_on:
+			slot.paid_on = paid_on
+	return " ".join(part for part in (_("{0} in {1} on {2} ({3}).").format(_(PAID), title["erp"], when, title.get("situation") or ""), extra) if part)
+
+
+def _settle_repurchased(deal, row, title: dict, closed_on) -> str:
+	"""The cedente bought the título back: the debtor did not pay, so no payment is registered. The balance is closed
+	by an adjustment and the agreement (if any) is dropped."""
+	owed = _balance(row)
+	row.updated_amount = 0
+	for slot in list(deal.get("installments") or []):
+		if slot.title == row.name and not slot.paid_on:
+			deal.remove(slot)
+	return _("{0} in {1} on {2} ({3}). Balance of {4} closed by adjustment: not a payment of the debtor.").format(
+		_(REPURCHASED), title["erp"], frappe.utils.formatdate(closed_on), title.get("situation") or "", _money(owed)
+	)
+
+
+def _close_card_if_done(deal) -> tuple[bool, bool]:
+	"""(won, to review). Won only when every título was paid by the debtor; a repurchase never marks the card Won by
+	itself: the card stays open for the operator. Cards already closed by a person are never touched."""
 	if deal.get("outcome") not in (None, "", "In progress"):
-		return False
+		return False, False
 	titles = deal.get("titles") or []
 	if not titles or not all(t.get("closed_reason") for t in titles):
-		return False
-	if all(t.closed_reason == EXTENDED for t in titles):
-		deal.outcome = "Lost"
-		deal.lost_reason = _lost_reason(EXTENDED)
-		return False
-	deal.outcome = "Won"
-	return True
-
-
-def _lost_reason(name: str) -> str:
-	if not frappe.db.exists("CRM Lost Reason", name):
-		frappe.get_doc({"doctype": "CRM Lost Reason", "lost_reason": name}).insert(ignore_permissions=True)
-	return name
+		return False, False
+	if all(t.closed_reason == PAID for t in titles):
+		deal.outcome = "Won"
+		return True, False
+	return False, True

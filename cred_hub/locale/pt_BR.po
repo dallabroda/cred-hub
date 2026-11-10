@@ -3309,5 +3309,39 @@ msgstr "pagamento parcial"
 msgid "The synchronization stopped because of an unexpected error. Support was notified."
 msgstr "A sincronização parou por um erro inesperado. O suporte foi avisado."
 
-msgid "{0} overdue títulos read: {1} new, {2} updated, {3} new cards. {4} settlements read: {5} títulos closed, {6} cards won. {7} partial payments. {8} títulos skipped, {9} with errors. {10} títulos are no longer overdue in the ERP (extended or written off) and stay open here."
-msgstr "{0} títulos vencidos lidos: {1} novos, {2} atualizados, {3} cards novos. {4} liquidações lidas: {5} títulos fechados, {6} cards ganhos. {7} pagamentos parciais. {8} títulos ignorados, {9} com erro. {10} títulos não estão mais vencidos no ERP (prorrogados ou baixados) e seguem abertos aqui."
+msgid "{0} overdue títulos read: {1} new, {2} updated, {3} new cards. {4} settlements read: {5} títulos closed, {6} cards won, {11} to review. {7} partial payments. {8} títulos skipped, {9} with errors. {10} títulos are no longer overdue in the ERP (extended or written off) and stay open here."
+msgstr "{0} títulos vencidos lidos: {1} novos, {2} atualizados, {3} cards novos. {4} liquidações lidas: {5} títulos fechados, {6} cards ganhos, {11} para revisar. {7} pagamentos parciais. {8} títulos ignorados, {9} com erro. {10} títulos não estão mais vencidos no ERP (prorrogados ou baixados) e seguem abertos aqui."
+
+# Fechamento de títulos pelo sync do ERP (credtech#367, 3ª rodada de decisões do dono)
+msgid "The ERP did not inform the amount received: the whole balance was settled."
+msgstr "O ERP não informou o valor recebido: o saldo inteiro foi baixado."
+
+msgid "All títulos of this card are closed in the ERP, some were repurchased by the cedente. Check the card and close it."
+msgstr "Todos os títulos deste card estão fechados no ERP e alguns foram recomprados pelo cedente. Confira o card e encerre."
+
+msgid "{0} in {1} on {2} ({3}). Balance of {4} closed by adjustment: not a payment of the debtor."
+msgstr "{0} na {1} em {2} ({3}). Saldo de {4} fechado por ajuste: não é pagamento do sacado."
+
+msgid "Paid by debtor in {0} on {1}."
+msgstr "Pago pelo sacado na {0} em {1}."
+
+msgid "Paid by debtor in {0} on {1}: {2} received."
+msgstr "Pago pelo sacado na {0} em {1}: {2} recebidos."
+
+msgid "Adjustment (discount) of {0} to settle the título."
+msgstr "Ajuste (desconto) de {0} para quitar o título."
+
+msgid "{0} received above the balance (interest or fine), not counted as payment."
+msgstr "{0} recebidos acima do saldo (juros ou multa), não contam como pagamento."
+
+msgid "{0} in {1} on {2} ({3})."
+msgstr "{0} na {1} em {2} ({3})."
+
+msgid "ERP sync run"
+msgstr "Execução do sync do ERP"
+
+msgid "The synchronization run that created this título (to undo a whole run)."
+msgstr "A execução do sync que criou este título (para desfazer uma execução inteira)."
+
+msgid "The synchronization run that created this card: filter by it to undo a whole run."
+msgstr "A execução do sync que criou este card: filtre por ela para desfazer uma execução inteira."

@@ -52,8 +52,29 @@ TITLE_FIELDS = [
 		"insert_after": "erp_amount",
 	},
 	{"fieldname": "closed_on", "fieldtype": "Date", "label": "Closed on", "read_only": 1, "insert_after": "closed_reason"},
+	{
+		"fieldname": "erp_run_id",
+		"fieldtype": "Data",
+		"label": "ERP sync run",
+		"read_only": 1,
+		"search_index": 1,
+		"insert_after": "closed_on",
+		"description": "The synchronization run that created this título (to undo a whole run).",
+	},
+]
+
+DEAL_FIELDS = [
+	{
+		"fieldname": "erp_run_id",
+		"fieldtype": "Data",
+		"label": "ERP sync run",
+		"read_only": 1,
+		"search_index": 1,
+		"in_standard_filter": 1,
+		"description": "The synchronization run that created this card: filter by it to undo a whole run.",
+	}
 ]
 
 
 def erp_custom_fields() -> dict:
-	return {"CRM Deal Title": TITLE_FIELDS}
+	return {"CRM Deal Title": TITLE_FIELDS, "CRM Deal": DEAL_FIELDS}

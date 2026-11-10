@@ -32,7 +32,7 @@ from cred_hub.party.roles import CEDENTE, DEBTOR, add_role
 
 DEAL, TITLE_ROW, ORG, CONTACT = "CRM Deal", "CRM Deal Title", "CRM Organization", "Contact"
 # Campos do título preenchidos pelo sync do ERP (cred_hub.erp.fields)
-ERP_FIELDS = ("erp_source", "erp_title_id", "erp_operation", "erp_situation", "erp_amount")
+ERP_FIELDS = ("erp_source", "erp_title_id", "erp_operation", "erp_situation", "erp_amount", "erp_run_id")
 MAX_ROWS = 20000
 BY_DEBTOR, BY_PAIR = "Debtor", "Debtor and cedente"
 EXTENSIONS = ("xlsx", "csv")
@@ -278,10 +278,16 @@ def find_card(pipeline, debtor, cedente_org, grouping) -> str | None:
 	return found[0] if found else None
 
 
+def _normalized_number(value) -> str:
+	"""Title numbers compare without leading zeros when they are only digits ("000123" is "123")."""
+	text = str(value or "").strip().upper()
+	return (text.lstrip("0") or "0") if text.isdigit() else text
+
+
 def _title_key(values) -> tuple:
 	return (
-		str(values.get("title_number") or "").strip().upper(),
-		str(values.get("our_number") or "").strip().upper(),
+		_normalized_number(values.get("title_number")),
+		_normalized_number(values.get("our_number")),
 		str(getdate(values.get("due_date")) if values.get("due_date") else ""),
 	)
 
@@ -492,6 +498,8 @@ def import_group(pipeline, titles, grouping, stats):
 				"second_organization": card_cedente,
 			}
 		)
+		if frappe.flags.get("cred_hub_erp_run_id") and frappe.get_meta(DEAL).has_field("erp_run_id"):
+			deal.erp_run_id = frappe.flags.cred_hub_erp_run_id
 		if debtor[0] == CONTACT:
 			deal.append("contacts", {"contact": debtor[1], "is_primary": 1})
 		stats["cards_new"] += 1

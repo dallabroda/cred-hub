@@ -72,7 +72,8 @@ class FakeSmart:
 class TestErpSync(IntegrationTestCase):
 	def setUp(self):
 		self.patches = [patch("frappe.enqueue"), patch.object(frappe.db, "commit"), patch("time.sleep")]
-		for p in self.patches:
+		self.enqueue = self.patches[0].start()
+		for p in self.patches[1:]:
 			p.start()
 		provider = frappe.get_single(PROVIDER_SETTINGS)
 		provider.update({"collection_pipeline": None, "collection_grouping": importer.BY_PAIR})
@@ -151,21 +152,57 @@ class TestErpSync(IntegrationTestCase):
 		self.assertFalse(row.closed_reason)
 		self.assertEqual(deal.outcome, "In progress")
 
-	def test_settlement_closes_titles_and_wins_the_card(self):
+	def test_card_is_won_only_when_the_debtor_paid_every_title(self):
 		self.run_sync(FakeSmart([open_row(301, "NF-1", DEBTOR_A, CEDENTE_A), open_row(302, "NF-2", DEBTOR_A, CEDENTE_A)]))
 		stats = self.run_sync(FakeSmart(paid_rows=[paid_row(301, "NF-1", DEBTOR_A)]))
 		self.assertEqual((stats["titles_closed"], stats["cards_won"]), (1, 0))
 		deal, row = self.title_row(301)
-		self.assertEqual((row.closed_reason, row.updated_amount), (PAID, 0))
+		self.assertEqual(row.closed_reason, PAID)
 		self.assertEqual(deal.outcome, "In progress", "one título still open")
-		stats = self.run_sync(FakeSmart(paid_rows=[paid_row(302, "NF-2", DEBTOR_A, situation="Repassado c/ Desconto")]))
-		self.assertEqual((stats["titles_closed"], stats["cards_won"]), (1, 1))
-		deal, row = self.title_row(302)
-		self.assertEqual(row.closed_reason, REPURCHASED)
+		stats = self.run_sync(FakeSmart(paid_rows=[paid_row(302, "NF-2", DEBTOR_A, received="1.000,00")]))
+		self.assertEqual((stats["titles_closed"], stats["cards_won"], stats["cards_to_review"]), (1, 1, 0))
+		deal, _row = self.title_row(302)
 		self.assertEqual(deal.outcome, "Won")
 		self.assertEqual(len(deal.payments), 2)
-		# Settlements come with the look-back window
 		self.assertTrue(frappe.get_all("Comment", {"reference_name": deal.name, "content": ("like", "%NF-2%")}))
+
+	def test_a_repurchase_closes_the_title_without_a_payment_and_never_wins_the_card(self):
+		self.run_sync(FakeSmart([open_row(311, "NF-1", DEBTOR_A, CEDENTE_A)]))
+		deal, row = self.title_row(311)
+		deal.append("installments", {"title": row.name, "number": 1, "due_date": add_days(today(), 5), "amount": 1000})
+		deal.save(ignore_permissions=True)
+		stats = self.run_sync(FakeSmart(paid_rows=[paid_row(311, "NF-1", DEBTOR_A, situation="Repassado c/ Desconto")]))
+		self.assertEqual((stats["titles_closed"], stats["cards_won"], stats["cards_to_review"]), (1, 0, 1), stats)
+		deal, row = self.title_row(311)
+		self.assertEqual(row.closed_reason, REPURCHASED)
+		self.assertEqual((len(deal.payments), row.paid_amount), (0, 0), "not a payment of the debtor")
+		self.assertEqual(sync._balance(row), 0, "the balance is closed by adjustment")
+		self.assertFalse(deal.installments, "the agreement has nothing left to collect")
+		self.assertEqual(deal.outcome, "In progress", "the operator decides")
+		self.assertTrue(frappe.get_all("Comment", {"reference_name": deal.name, "content": ("like", "%adjustment%")}))
+
+	def test_the_payment_is_what_the_erp_received_and_the_difference_is_an_adjustment(self):
+		self.run_sync(FakeSmart([
+			open_row(321, "NF-1", DEBTOR_A, CEDENTE_A, value="1.000,00"),
+			open_row(322, "NF-2", DEBTOR_A, CEDENTE_A, value="1.000,00"),
+			open_row(323, "NF-3", DEBTOR_A, CEDENTE_A, value="1.000,00"),
+		]))
+		self.run_sync(FakeSmart(paid_rows=[
+			paid_row(321, "NF-1", DEBTOR_A, received="800,00"),  # discount of 200
+			paid_row(322, "NF-2", DEBTOR_A, received="1.050,00"),  # 50 above the balance
+			paid_row(323, "NF-3", DEBTOR_A, received="0,00"),  # amount not informed
+		]))
+		deal, discount = self.title_row(321)
+		_deal, interest = self.title_row(322)
+		_deal, unknown = self.title_row(323)
+		self.assertEqual(
+			(discount.paid_amount, interest.paid_amount, unknown.paid_amount), (800, 1000, 1000)
+		)
+		self.assertEqual({sync._balance(r) for r in (discount, interest, unknown)}, {0})
+		notes = " ".join(frappe.get_all("Comment", {"reference_name": deal.name}, pluck="content"))
+		self.assertIn("Adjustment (discount)", notes)
+		self.assertIn("above the balance", notes)
+		self.assertIn("did not inform", notes)
 
 	def test_settlement_of_an_unknown_title_is_ignored(self):
 		stats = self.run_sync(FakeSmart(paid_rows=[paid_row(999, "NF-X", DEBTOR_A)]))
@@ -297,3 +334,40 @@ class TestErpSync(IntegrationTestCase):
 		self.run_sync(FakeSmart([open_row(951, "NF-1", DEBTOR_A, CEDENTE_A, value="700,00")]))
 		_deal, row = self.title_row(951)
 		self.assertEqual((row.updated_amount, row.paid_amount), (700, 300))
+
+	# Round 3 of the owner decisions ------------------------------------------------------------------------------
+
+	def test_every_run_marks_what_it_creates_with_its_run_id(self):
+		stats = self.run_sync(FakeSmart([open_row(931, "NF-1", DEBTOR_A, CEDENTE_A)]))
+		self.assertRegex(stats["run_id"], r"^erp-\d{8}-\d{6}$")
+		deal, row = self.title_row(931)
+		self.assertEqual((deal.erp_run_id, row.erp_run_id), (stats["run_id"], stats["run_id"]))
+		self.assertEqual(frappe.get_all("CRM Deal", {"erp_run_id": stats["run_id"]}, pluck="name"), [deal.name])
+
+	def test_a_title_settled_in_the_same_run_is_not_counted_as_no_longer_overdue(self):
+		self.run_sync(FakeSmart([open_row(731, "NF-1", DEBTOR_A, CEDENTE_A), open_row(732, "NF-2", DEBTOR_A, CEDENTE_A)]))
+		stats = self.run_sync(FakeSmart([open_row(732, "NF-2", DEBTOR_A, CEDENTE_A)], [paid_row(731, "NF-1", DEBTOR_A)]))
+		self.assertEqual((stats["titles_closed"], stats["left_overdue"]), (1, 0), stats)
+
+	def test_the_registry_is_never_reached_by_itself_for_a_card_from_the_erp(self):
+		settings = frappe.get_single(PROVIDER_SETTINGS)
+		settings.update({"cenprot_enabled": 1, "auto_send_on_stage": 1, "auto_withdraw_on_stage": 1})
+		settings.save()
+		self.run_sync(FakeSmart([open_row(941, "NF-1", DEBTOR_A, CEDENTE_A)]))
+		settings = frappe.get_single(PROVIDER_SETTINGS)
+		first, send_stage, agreement_stage = frappe.get_all(
+			"CRM Deal Status", {"pipeline": settings.collection_pipeline}, pluck="name", order_by="position asc", limit=3
+		)
+		settings.update({"stage_send": send_stage, "stage_agreement": agreement_stage})
+		settings.save()
+		erp_deal, _row = self.title_row(941)
+		manual = frappe.get_doc({
+			"doctype": "CRM Deal", "pipeline": settings.collection_pipeline, "status": first, "deal_name": "manual",
+		}).insert()
+		self.enqueue.reset_mock()
+		for deal, stage in ((manual, send_stage), (erp_deal, send_stage), (erp_deal, agreement_stage)):
+			deal.status = stage
+			deal.save(ignore_permissions=True)
+		jobs = [call.args[0] for call in self.enqueue.call_args_list if "protest" in str(call.args[0])]
+		# only the manual card (control) reached the registry job; the card from the ERP never did
+		self.assertEqual(jobs, ["cred_hub.integrations.protest.send_in_background"], jobs)

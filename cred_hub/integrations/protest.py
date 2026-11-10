@@ -709,6 +709,11 @@ def test_connection() -> dict:
 # Gatilhos e rotina -------------------------------------------------------------------------------------------
 
 
+def has_erp_titles(doc) -> bool:
+	"""Card with títulos that came from an ERP (credtech#367): the registry is only ever reached by hand."""
+	return any(row.get("erp_title_id") for row in doc.get("titles") or [])
+
+
 def on_deal_update(doc, method=None):
 	"""Card entrou na etapa de envio ou na de acordo, com a opção ligada: age em segundo plano. As duas opções
 	começam desligadas: o cartório cobra custas e quem decide gastar é o cliente (dono, 30/10/2026)."""
@@ -716,6 +721,10 @@ def on_deal_update(doc, method=None):
 		return
 	settings = get_settings()
 	if not settings.cenprot_enabled or not settings.collection_pipeline or doc.pipeline != settings.collection_pipeline:
+		return
+	if has_erp_titles(doc):
+		# Owner decision (10/11/2026): protest of a título synced from the ERP is manual, even with the automatic
+		# send/withdraw options on; the registry charges fees and the client decides each one
 		return
 	status = (doc.get("protest_status") or "").upper()
 	if doc.status == settings.stage_send and cint(settings.auto_send_on_stage) and status in SENDABLE:
