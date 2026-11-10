@@ -548,6 +548,20 @@ class TestApiKeys(IntegrationTestCase):
 		created = self.create(scopes=("cards_read",))
 		with self.assertRaises(frappe.ValidationError):
 			api_keys.update_api_key(created["name"], custom_rate_limit=100000)
+
+	def test_custom_rate_limit_write_scaling(self):
+		"""Chave com custom_rate_limit alto tem limite de escrita proporcional superior ao padrao 60."""
+		created = self.create(scopes=("cards_read", "cards_write"), custom_rate_limit=1000)
+		rate_info = api_keys._rate_limit(created["name"], write=True, custom_limit=1000)
+		self.assertEqual(rate_info["limit"], 1000)
+		# write_limit escala para 500 (em vez de travar em 60)
+		key_name = created["name"]
+		minute = frappe.utils.now_datetime().strftime("%Y%m%d%H%M")
+		curr_key = frappe.cache.make_key(f"credhub_api:{key_name}:write:{minute}")
+		frappe.cache.set_value(curr_key, 100)
+		# Com 100 escritas realizadas, ainda deve permitir chamada pois limite é 500
+		info = api_keys._rate_limit(key_name, write=True, custom_limit=1000)
+		self.assertEqual(info["limit"], 1000)
 	def test_sync_deleted_notes_with_deleted_parent_and_orphan_isolation(self):
 		"""Notas excluídas exigem vínculo com card do funil (vivo ou excluído); órfãs nunca vazam."""
 		from cred_hub import sync
@@ -653,6 +667,37 @@ class TestApiKeys(IntegrationTestCase):
 		token_read_only = self.create(scopes=("cards_read",))["token"]
 		with self.assertRaises(frappe.PermissionError):
 			self.call(token_read_only, "/api/method/cred_hub.bulk.bulk_upsert", "POST", form={"doctype": "CRM Deal", "records": "[]"})
+
+	def test_bulk_delete_cards(self):
+		"""Exclusão em lote de cards com relatório de sucessos e savepoints."""
+		from cred_hub import bulk
+
+		token = self.create(scopes=("cards_read", "cards_write", "allow_delete"))["token"]
+		deal1 = frappe.get_doc({"doctype": "CRM Deal", "pipeline": self.pipeline, "organization_name": "Del 1"}).insert(ignore_permissions=True)
+		deal2 = frappe.get_doc({"doctype": "CRM Deal", "pipeline": self.pipeline, "organization_name": "Del 2"}).insert(ignore_permissions=True)
+
+		self.call(
+			token,
+			"/api/method/cred_hub.bulk.bulk_delete",
+			"POST",
+			form={"doctype": "CRM Deal", "names": frappe.as_json([deal1.name, deal2.name, "NON_EXISTING_ID"])},
+		)
+		self.assertFalse(frappe.db.exists("CRM Deal", deal1.name))
+		self.assertFalse(frappe.db.exists("CRM Deal", deal2.name))
+
+	def test_bulk_delete_requires_allow_delete(self):
+		"""Chave com escrita mas sem allow_delete é bloqueada no bulk_delete."""
+		token_no_delete = self.create(scopes=("cards_read", "cards_write"))["token"]
+		with self.assertRaises(frappe.PermissionError):
+			self.call(token_no_delete, "/api/method/cred_hub.bulk.bulk_delete", "POST", form={"doctype": "CRM Deal", "names": '["SOME-DEAL"]'})
+
+	def test_bulk_delete_protected_doctypes_blocked(self):
+		"""Doctypes protegidos nunca podem ser excluídos via bulk_delete."""
+		from cred_hub import bulk
+
+		token = self.create(scopes=("cards_read", "cards_write", "allow_delete"))["token"]
+		with self.assertRaises(frappe.ValidationError):
+			self.call(token, "/api/method/cred_hub.bulk.bulk_delete", "POST", form={"doctype": "User", "names": '["Administrator"]'})
 
 	def test_webhooks_signature_and_delivery(self):
 		"""Webhooks assinam o payload com HMAC-SHA256 (X-HubTech-Signature)."""

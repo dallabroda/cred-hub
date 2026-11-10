@@ -44,7 +44,7 @@ LOG_DAYS = 90
 CALLS_PER_MINUTE = 300
 WRITES_PER_MINUTE = 60
 # Teto do limite próprio de uma chave: o servidor é compartilhado entre as empresas (credtech#288)
-MAX_CUSTOM_RATE_LIMIT = 1000
+MAX_CUSTOM_RATE_LIMIT = 5000
 
 # Escopos: (campo da chave, rótulo). Leitura é GET; escrita é criar e alterar. Excluir exige allow_delete.
 SCOPES = {
@@ -123,6 +123,7 @@ METHODS = {
 	"cred_hub.sync.get_deleted_records": "sync_deletes",
 	# Operações em lote (Batch API)
 	"cred_hub.bulk.bulk_upsert": "cards_write",
+	"cred_hub.bulk.bulk_delete": "cards_write",
 	# Busca unificada por CPF/CNPJ e especificação OpenAPI 3.1
 	"cred_hub.api_keys.lookup_by_document": "organizations_read",
 	"cred_hub.api_keys.get_openapi_spec": "pipelines_read",
@@ -356,7 +357,7 @@ def _check_route(key_name: str) -> bool:
 			if scopes & {"credit_read", "cards_read", "organizations_read"}:
 				return False
 			_deny()
-		if target == "cred_hub.bulk.bulk_upsert":
+		if target in ("cred_hub.bulk.bulk_upsert", "cred_hub.bulk.bulk_delete"):
 			doctype = frappe.local.form_dict.get("doctype")
 			req_scope = {
 				"CRM Deal": "cards_write",
@@ -364,6 +365,8 @@ def _check_route(key_name: str) -> bool:
 				"CRM Organization": "organizations_write",
 			}.get(doctype)
 			if not req_scope or req_scope not in scopes:
+				_deny()
+			if target == "cred_hub.bulk.bulk_delete" and "allow_delete" not in scopes:
 				_deny()
 			return True
 		scope = METHODS.get(target)
@@ -413,7 +416,7 @@ def _rate_limit(key_name: str, write: bool, custom_limit: int | None = None) -> 
 		custom_limit = cint(frappe.db.get_value(KEY, key_name, "custom_rate_limit"))
 	custom = min(cint(custom_limit), MAX_CUSTOM_RATE_LIMIT)
 	total_limit = custom if custom > 0 else CALLS_PER_MINUTE
-	write_limit = max(1, min(WRITES_PER_MINUTE, custom // 5)) if custom > 0 else WRITES_PER_MINUTE
+	write_limit = min(total_limit, max(WRITES_PER_MINUTE, custom // 2)) if custom > 0 else WRITES_PER_MINUTE
 	limits = [(total_limit, "all")] + ([(write_limit, "write")] if write else [])
 	remaining = total_limit
 	for limit, counter in limits:
@@ -751,9 +754,16 @@ def get_openapi_spec() -> dict:
 			},
 			"/api/method/cred_hub.bulk.bulk_upsert": {
 				"post": {
-					"summary": "Upsert em Lote (até 100 registros por chamada)",
+					"summary": "Upsert em Lote (até 50 registros por chamada)",
 					"tags": ["Sincronização ERP"],
 					"responses": {"200": {"description": "Resumo de criados, atualizados e erros."}},
+				}
+			},
+			"/api/method/cred_hub.bulk.bulk_delete": {
+				"post": {
+					"summary": "Exclusão em Lote (até 50 registros por chamada, requer allow_delete)",
+					"tags": ["Sincronização ERP"],
+					"responses": {"200": {"description": "Resumo de excluídos, não encontrados e erros."}},
 				}
 			},
 			"/api/method/cred_hub.credit_check.api.get_credit_onboarding": {
