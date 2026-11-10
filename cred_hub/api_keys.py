@@ -44,7 +44,7 @@ LOG_DAYS = 90
 CALLS_PER_MINUTE = 300
 WRITES_PER_MINUTE = 60
 # Teto do limite próprio de uma chave: o servidor é compartilhado entre as empresas (credtech#288)
-MAX_CUSTOM_RATE_LIMIT = 5000
+MAX_CUSTOM_RATE_LIMIT = 1000
 
 # Escopos: (campo da chave, rótulo). Leitura é GET; escrita é criar e alterar. Excluir exige allow_delete.
 SCOPES = {
@@ -404,6 +404,16 @@ def _custom_rate_limit(value) -> int | None:
 	return value
 
 
+def _limits(custom_limit) -> tuple[int, int]:
+	"""(calls, writes) per minute. Without a custom limit: 300 and 60. With one (capped at MAX_CUSTOM_RATE_LIMIT,
+	the server is shared by every company): that many calls, and half of them may be writes (at least 60, never more
+	than the total)."""
+	custom = min(cint(custom_limit), MAX_CUSTOM_RATE_LIMIT)
+	if custom <= 0:
+		return CALLS_PER_MINUTE, WRITES_PER_MINUTE
+	return custom, min(custom, max(WRITES_PER_MINUTE, custom // 2))
+
+
 def _rate_limit(key_name: str, write: bool, custom_limit: int | None = None) -> dict:
 	now = now_datetime()
 	minute = now.strftime("%Y%m%d%H%M")
@@ -414,9 +424,7 @@ def _rate_limit(key_name: str, write: bool, custom_limit: int | None = None) -> 
 
 	if custom_limit is None:
 		custom_limit = cint(frappe.db.get_value(KEY, key_name, "custom_rate_limit"))
-	custom = min(cint(custom_limit), MAX_CUSTOM_RATE_LIMIT)
-	total_limit = custom if custom > 0 else CALLS_PER_MINUTE
-	write_limit = min(total_limit, max(WRITES_PER_MINUTE, custom // 2)) if custom > 0 else WRITES_PER_MINUTE
+	total_limit, write_limit = _limits(custom_limit)
 	limits = [(total_limit, "all")] + ([(write_limit, "write")] if write else [])
 	remaining = total_limit
 	for limit, counter in limits:
@@ -756,14 +764,20 @@ def get_openapi_spec() -> dict:
 				"post": {
 					"summary": "Upsert em Lote (até 50 registros por chamada)",
 					"tags": ["Sincronização ERP"],
-					"responses": {"200": {"description": "Resumo de criados, atualizados e erros."}},
+					"responses": {
+						"200": {"description": "Resumo de criados, atualizados e erros."},
+						"409": {"description": "Banco ocupado (deadlock): nada foi gravado; repita a mesma chamada."},
+					},
 				}
 			},
 			"/api/method/cred_hub.bulk.bulk_delete": {
 				"post": {
 					"summary": "Exclusão em Lote (até 50 registros por chamada, requer allow_delete)",
 					"tags": ["Sincronização ERP"],
-					"responses": {"200": {"description": "Resumo de excluídos, não encontrados e erros."}},
+					"responses": {
+						"200": {"description": "Resumo de excluídos, não encontrados e erros."},
+						"409": {"description": "Banco ocupado (deadlock): nada foi excluído; repita a mesma chamada."},
+					},
 				}
 			},
 			"/api/method/cred_hub.credit_check.api.get_credit_onboarding": {

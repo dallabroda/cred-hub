@@ -550,18 +550,16 @@ class TestApiKeys(IntegrationTestCase):
 			api_keys.update_api_key(created["name"], custom_rate_limit=100000)
 
 	def test_custom_rate_limit_write_scaling(self):
-		"""Chave com custom_rate_limit alto tem limite de escrita proporcional superior ao padrao 60."""
-		created = self.create(scopes=("cards_read", "cards_write"), custom_rate_limit=1000)
-		rate_info = api_keys._rate_limit(created["name"], write=True, custom_limit=1000)
-		self.assertEqual(rate_info["limit"], 1000)
-		# write_limit escala para 500 (em vez de travar em 60)
-		key_name = created["name"]
-		minute = frappe.utils.now_datetime().strftime("%Y%m%d%H%M")
-		curr_key = frappe.cache.make_key(f"credhub_api:{key_name}:write:{minute}")
-		frappe.cache.set_value(curr_key, 100)
-		# Com 100 escritas realizadas, ainda deve permitir chamada pois limite é 500
-		info = api_keys._rate_limit(key_name, write=True, custom_limit=1000)
-		self.assertEqual(info["limit"], 1000)
+		"""Limite próprio: metade das chamadas pode ser escrita (mínimo 60, nunca acima do total); teto 1.000."""
+		self.assertEqual(api_keys.MAX_CUSTOM_RATE_LIMIT, 1000)
+		self.assertEqual(api_keys._limits(0), (300, 60))
+		self.assertEqual(api_keys._limits(None), (300, 60))
+		self.assertEqual(api_keys._limits(1000), (1000, 500))
+		self.assertEqual(api_keys._limits(100), (100, 60))
+		self.assertEqual(api_keys._limits(50), (50, 50))
+		# Acima do teto vale o teto: o servidor é compartilhado entre as empresas
+		self.assertEqual(api_keys._limits(100000), (1000, 500))
+
 	def test_sync_deleted_notes_with_deleted_parent_and_orphan_isolation(self):
 		"""Notas excluídas exigem vínculo com card do funil (vivo ou excluído); órfãs nunca vazam."""
 		from cred_hub import sync
@@ -653,6 +651,7 @@ class TestApiKeys(IntegrationTestCase):
 			{"pipeline": self.pipeline, "organization_name": "Valid Card"},
 			{"pipeline": "INVALID-PIPELINE", "organization_name": "Invalid Card"},
 		]
+		self.as_key(token, "bulk_upsert", records)
 		res = bulk.bulk_upsert("CRM Deal", records)
 		self.assertEqual(res["total"], 2)
 		self.assertEqual(res["success"], 1)
@@ -668,36 +667,131 @@ class TestApiKeys(IntegrationTestCase):
 		with self.assertRaises(frappe.PermissionError):
 			self.call(token_read_only, "/api/method/cred_hub.bulk.bulk_upsert", "POST", form={"doctype": "CRM Deal", "records": "[]"})
 
+	def as_key(self, token, method, items):
+		"""Authenticates like a real call to cred_hub.bulk.<method> (the bulk methods only run under an API key)."""
+		field = "names" if method == "bulk_delete" else "records"
+		self.call(
+			token,
+			f"/api/method/cred_hub.bulk.{method}",
+			"POST",
+			form={"doctype": "CRM Deal", field: frappe.as_json(items)},
+		)
+
+	def new_deal(self, label):
+		return frappe.get_doc({"doctype": "CRM Deal", "pipeline": self.pipeline, "organization_name": label}).insert(
+			ignore_permissions=True
+		)
+
 	def test_bulk_delete_cards(self):
-		"""Exclusão em lote de cards com relatório de sucessos e savepoints."""
+		"""Exclusão em lote: relatório por registro; inexistente vira not_found, sem erro."""
 		from cred_hub import bulk
 
 		token = self.create(scopes=("cards_read", "cards_write", "allow_delete"))["token"]
-		deal1 = frappe.get_doc({"doctype": "CRM Deal", "pipeline": self.pipeline, "organization_name": "Del 1"}).insert(ignore_permissions=True)
-		deal2 = frappe.get_doc({"doctype": "CRM Deal", "pipeline": self.pipeline, "organization_name": "Del 2"}).insert(ignore_permissions=True)
-
-		self.call(
-			token,
-			"/api/method/cred_hub.bulk.bulk_delete",
-			"POST",
-			form={"doctype": "CRM Deal", "names": frappe.as_json([deal1.name, deal2.name, "NON_EXISTING_ID"])},
-		)
-		self.assertFalse(frappe.db.exists("CRM Deal", deal1.name))
-		self.assertFalse(frappe.db.exists("CRM Deal", deal2.name))
+		names = [self.new_deal("Del 1").name, self.new_deal("Del 2").name, "NON_EXISTING_ID"]
+		self.as_key(token, "bulk_delete", names)
+		res = bulk.bulk_delete("CRM Deal", names)
+		self.assertEqual((res["total"], res["success"], res["failed"]), (3, 2, 0))
+		self.assertEqual([r["status"] for r in res["results"]], ["success", "success", "not_found"])
+		self.assertFalse(frappe.db.exists("CRM Deal", names[0]))
+		self.assertFalse(frappe.db.exists("CRM Deal", names[1]))
 
 	def test_bulk_delete_requires_allow_delete(self):
 		"""Chave com escrita mas sem allow_delete é bloqueada no bulk_delete."""
 		token_no_delete = self.create(scopes=("cards_read", "cards_write"))["token"]
 		with self.assertRaises(frappe.PermissionError):
-			self.call(token_no_delete, "/api/method/cred_hub.bulk.bulk_delete", "POST", form={"doctype": "CRM Deal", "names": '["SOME-DEAL"]'})
+			self.call(
+				token_no_delete,
+				"/api/method/cred_hub.bulk.bulk_delete",
+				"POST",
+				form={"doctype": "CRM Deal", "names": '["SOME-DEAL"]'},
+			)
 
-	def test_bulk_delete_protected_doctypes_blocked(self):
-		"""Doctypes protegidos nunca podem ser excluídos via bulk_delete."""
+	def test_bulk_delete_unsupported_doctype_is_refused(self):
+		"""Só Card, Contato e Organização: qualquer outro doctype (ex.: User) é recusado já na autenticação."""
+		token = self.create(scopes=("cards_read", "cards_write", "allow_delete"))["token"]
+		with self.assertRaises(frappe.PermissionError):
+			self.call(
+				token,
+				"/api/method/cred_hub.bulk.bulk_delete",
+				"POST",
+				form={"doctype": "User", "names": '["Administrator"]'},
+			)
+
+	def test_record_error_mentioning_1213_is_not_a_deadlock(self):
+		"""Erro de um registro com "1213" ou "deadlock" no texto fica no relatório do item; o lote segue."""
+		from frappe.model.document import Document
+
 		from cred_hub import bulk
 
+		token = self.create(scopes=("cards_read", "cards_write"))["token"]
+		records = [
+			{"pipeline": self.pipeline, "organization_name": "Bad 1213"},
+			{"pipeline": self.pipeline, "organization_name": "Good"},
+		]
+		self.as_key(token, "bulk_upsert", records)
+		original_insert = Document.insert
+
+		def insert_with_record_error(doc, *args, **kwargs):
+			if doc.doctype == "CRM Deal" and doc.organization_name == "Bad 1213":
+				raise frappe.ValidationError("Could not find Organization: CRM-ORG-2026-01213 (no deadlock here)")
+			return original_insert(doc, *args, **kwargs)
+
+		with patch.object(Document, "insert", insert_with_record_error):
+			res = bulk.bulk_upsert("CRM Deal", records)
+		self.assertEqual((res["success"], res["failed"]), (1, 1))
+		self.assertEqual([r["status"] for r in res["results"]], ["error", "success"])
+
+	def test_deadlock_undoes_the_whole_batch_and_asks_to_retry(self):
+		"""Deadlock no MariaDB desfaz a transação inteira: nada de repetir no meio do lote nem responder gravado."""
+		from frappe.model.document import Document
+
+		from cred_hub import bulk
+
+		deadlock = getattr(frappe, "QueryDeadlockError", Exception)
 		token = self.create(scopes=("cards_read", "cards_write", "allow_delete"))["token"]
-		with self.assertRaises(frappe.ValidationError):
-			self.call(token, "/api/method/cred_hub.bulk.bulk_delete", "POST", form={"doctype": "User", "names": '["Administrator"]'})
+
+		records = [
+			{"pipeline": self.pipeline, "organization_name": "Batch A"},
+			{"pipeline": self.pipeline, "organization_name": "Batch B"},
+		]
+		self.as_key(token, "bulk_upsert", records)
+		original_insert, inserts = Document.insert, []
+
+		def insert_with_deadlock(doc, *args, **kwargs):
+			if doc.doctype == "CRM Deal":
+				inserts.append(doc.organization_name)
+				if len(inserts) == 2:
+					raise deadlock("(1213, 'Deadlock found when trying to get lock')")
+			return original_insert(doc, *args, **kwargs)
+
+		with (
+			patch.object(Document, "insert", insert_with_deadlock),
+			patch.object(frappe.db, "rollback") as rollback,
+			self.assertRaises(bulk.BatchRetryable),
+		):
+			bulk.bulk_upsert("CRM Deal", records)
+		self.assertEqual(inserts, ["Batch A", "Batch B"])  # never repeated
+		rollback.assert_called_once_with()  # the whole transaction, not a savepoint
+		self.assertEqual(bulk.BatchRetryable.http_status_code, 409)
+
+		names = [self.new_deal("Keep 1").name, self.new_deal("Keep 2").name]
+		self.as_key(token, "bulk_delete", names)
+		original_delete, deletes = Document.delete, []
+
+		def delete_with_deadlock(doc, *args, **kwargs):
+			deletes.append(doc.name)
+			if len(deletes) == 1:
+				raise deadlock("(1213, 'Deadlock found when trying to get lock')")
+			return original_delete(doc, *args, **kwargs)
+
+		with (
+			patch.object(Document, "delete", delete_with_deadlock),
+			patch.object(frappe.db, "rollback") as rollback,
+			self.assertRaises(bulk.BatchRetryable),
+		):
+			bulk.bulk_delete("CRM Deal", names)
+		self.assertEqual(deletes, [names[0]])  # stopped at the first, nothing after it
+		rollback.assert_called_once_with()
 
 	def test_webhooks_signature_and_delivery(self):
 		"""Webhooks assinam o payload com HMAC-SHA256 (X-HubTech-Signature)."""

@@ -1,8 +1,5 @@
 """Operações em lote da API do HubTech (Batch API, credtech#288)."""
 
-import random
-import time
-
 import frappe
 from frappe import _
 
@@ -11,21 +8,33 @@ SUPPORTED_DOCTYPES = {"CRM Deal", "Contact", "CRM Organization"}
 MAX_BATCH_SIZE = 50
 
 
+class BatchRetryable(frappe.ValidationError):
+	"""The database undid the whole batch (deadlock): nothing was saved and the same call can be sent again."""
+
+	http_status_code = 409
+
+
 def _is_deadlock(exc: Exception) -> bool:
-	msg = str(exc).lower()
-	return "deadlock" in msg or "1213" in msg or "querydeadlockerror" in msg
+	"""Only a real deadlock: Frappe's QueryDeadlockError, or the driver's error with code 1213 as its first argument.
+	Never the message text: "CRM-ORG-2026-01213" or "Value 1213 is not a valid CPF" are record errors, and treating
+	them as a deadlock would make the client resend the same bad batch forever."""
+	if isinstance(exc, getattr(frappe, "QueryDeadlockError", ())):
+		return True
+	args = getattr(exc, "args", ())
+	return bool(args) and args[0] == 1213
 
 
-def _run_with_retry(fn, max_retries=3, base_delay=0.05):
-	"""Executa uma ação no banco com retry automático e jitter exponencial em caso de deadlock."""
-	for attempt in range(max_retries):
-		try:
-			return fn()
-		except Exception as exc:
-			if _is_deadlock(exc) and attempt < max_retries - 1:
-				time.sleep(base_delay * (2 ** attempt) + random.uniform(0.01, 0.05))
-				continue
-			raise
+def _abort_batch(index: int):
+	"""A deadlock makes MariaDB undo the WHOLE transaction, not just the statement: the records already reported as
+	saved in this call are gone and the item savepoints too. Retrying inside the same transaction would answer
+	"saved" for records that are not. Undo everything and tell the client to send the same call again."""
+	frappe.db.rollback()
+	frappe.throw(
+		_(
+			"The database was busy and undid this batch at record {0}. Nothing was saved: send the same call again."
+		).format(index),
+		BatchRetryable,
+	)
 
 
 @frappe.whitelist(methods=["POST"])
@@ -35,6 +44,7 @@ def bulk_upsert(doctype: str, records: list[dict] | str) -> dict:
 	- Requer chave de API com escopo de escrita no doctype (cards_write, contacts_write ou organizations_write).
 	- Respeita todas as validações, regras de etapa e isolamento de funil.
 	- Retorna relatório estruturado de sucessos e falhas por registro sem abortar o lote inteiro.
+	- Deadlock no banco desfaz o lote inteiro: responde 409 (BatchRetryable) e nada é gravado; repita a chamada.
 	"""
 	key_info = getattr(frappe.local, "credhub_api_key", None)
 	if not key_info:
@@ -77,18 +87,20 @@ def bulk_upsert(doctype: str, records: list[dict] | str) -> dict:
 				doc = frappe.get_doc(doctype, name)
 				doc.check_permission("write")
 				doc.update(item)
-				_run_with_retry(doc.save)
+				doc.save()
 				action = "updated"
 			else:
 				doc_data = {k: v for k, v in item.items() if k != "name"} if name else dict(item)
 				doc = frappe.get_doc({"doctype": doctype, **doc_data})
 				doc.check_permission("create")
-				_run_with_retry(doc.insert)
+				doc.insert()
 				action = "created"
 
 			results.append({"index": index, "status": "success", "action": action, "name": doc.name})
 			success_count += 1
 		except Exception as exc:
+			if _is_deadlock(exc):
+				_abort_batch(index)
 			frappe.db.rollback(save_point=savepoint)
 			results.append({"index": index, "status": "error", "error": str(exc).strip()})
 			failed_count += 1
@@ -108,6 +120,7 @@ def bulk_delete(doctype: str, names: list[str] | str) -> dict:
 	- Requer chave de API com escopo de escrita no doctype e escopo allow_delete.
 	- Respeita isolamento de funil e bloqueio de doctypes protegidos.
 	- Retorna relatório estruturado de sucessos e falhas por registro sem abortar o lote inteiro.
+	- Deadlock no banco desfaz o lote inteiro: responde 409 (BatchRetryable) e nada é gravado; repita a chamada.
 	"""
 	key_info = getattr(frappe.local, "credhub_api_key", None)
 	if not key_info:
@@ -158,13 +171,15 @@ def bulk_delete(doctype: str, names: list[str] | str) -> dict:
 			if frappe.db.exists(doctype, name):
 				doc = frappe.get_doc(doctype, name)
 				doc.check_permission("delete")
-				_run_with_retry(doc.delete)
+				doc.delete()
 				action = "deleted"
 				results.append({"index": index, "name": name, "status": "success", "action": action})
 				success_count += 1
 			else:
 				results.append({"index": index, "name": name, "status": "not_found", "action": "ignored"})
 		except Exception as exc:
+			if _is_deadlock(exc):
+				_abort_batch(index)
 			frappe.db.rollback(save_point=savepoint)
 			results.append({"index": index, "name": name, "status": "error", "error": str(exc).strip()})
 			failed_count += 1
