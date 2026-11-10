@@ -30,6 +30,7 @@ class TestFormats(unittest.TestCase):
 		self.assertEqual(formats.to_decimal("1.234.567"), Decimal(1234567))
 		self.assertEqual(formats.to_decimal("1.500"), Decimal(1500))
 		self.assertEqual(formats.to_decimal("1.50"), Decimal("1.50"))
+		self.assertEqual(formats.to_decimal("0.125"), Decimal("0.125"))
 		self.assertIsNone(formats.to_decimal(""))
 		self.assertEqual(formats.br_money(1587.65), "1.587,65")
 		self.assertEqual(formats.br_money("1234567.891"), "1.234.567,89")
