@@ -32,6 +32,10 @@ class FakeSession:
 
 	def request(self, method, url, headers=None, timeout=None, **kwargs):
 		path = "/" + url.split("://", 1)[1].split("/", 1)[1]
+		path, _sep, query = path.partition("?")
+		if query:
+			kwargs["query"] = query
+			kwargs["params"] = dict(pair.split("=", 1) for pair in query.split("&"))
 		self.sent.append({"method": method, "path": path, "headers": headers or {}, **kwargs})
 		queue = self.routes[(method, path)]
 		return queue.pop(0) if len(queue) > 1 else queue[0]
@@ -175,11 +179,19 @@ class TestSmart(unittest.TestCase):
 		rows = list(client.titles("quitados", quitacaoIni=date(2026, 11, 1), quitacaoFim=date(2026, 11, 10), valorIni=10))
 		self.assertEqual(len(rows), 2)
 		first, second = session.sent[1]["params"], session.sent[2]["params"]
-		self.assertEqual((first["page"], second["page"]), (1, 2))
+		self.assertEqual((first["page"], second["page"]), ("1", "2"))
 		self.assertEqual(first["tipo"], "quitados")
 		self.assertEqual(first["quitacaoIni"], "01/11/2026")
-		self.assertEqual(first["valorIni"], 10)
+		self.assertEqual(first["valorIni"], "10")
 		self.assertEqual(first["tipoSaida"], "json")
+		# Slashes stay raw and a lone end date gets its start (Smart ignores half ranges)
+		self.assertIn("quitacaoIni=01/11/2026", session.sent[1]["query"])
+
+	def test_half_date_range_is_completed(self):
+		client, session, _ = smart({("GET", "/smartsecurities/titulo"): [hal("titulo", [])]})
+		list(client.titles("emaberto", vencimentoFim=date(2026, 11, 9)))
+		params = session.sent[-1]["params"]
+		self.assertEqual((params["vencimentoIni"], params["vencimentoFim"]), ("01/01/2000", "09/11/2026"))
 
 	def test_calls_respect_20_per_minute(self):
 		client, _, clock = smart({("GET", "/smartsecurities/titulo"): [

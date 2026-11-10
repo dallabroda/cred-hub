@@ -10,6 +10,8 @@
 """
 
 import re
+from datetime import date
+from urllib.parse import urlencode
 
 import requests
 
@@ -29,6 +31,7 @@ from .formats import br_date, digits, to_date, to_decimal
 DEFAULT_BASE_URL = "https://api.smartsecurities.com.br"
 API = "/smartsecurities"
 OPEN, PAID = "emaberto", "quitados"
+OPEN_RANGE_START = "01/01/2000"
 # A generic 429 (no minimum-interval message) is the 20/min limit: one pause, then one retry
 RATE_LIMIT_PAUSE = 61
 _MIN_INTERVAL = re.compile(r"intervalo m[ií]nimo de (\d+) minuto", re.IGNORECASE)
@@ -102,7 +105,9 @@ class SmartClient(BaseClient):
 	def _pages(self, path: str, key: str, params: dict):
 		page = 1
 		while True:
-			data = self.request("GET", path, params={**params, "tipoSaida": "json", "page": page}).json() or {}
+			# Query built by hand: Smart only honours date filters with raw slashes (dd/mm/yyyy), not %2F
+			query = urlencode({**params, "tipoSaida": "json", "page": page}, safe="/")
+			data = self.request("GET", f"{path}?{query}").json() or {}
 			yield from (data.get("_embedded") or {}).get(key) or []
 			page_count = int(data.get("page_count") or 0)
 			if page >= page_count:
@@ -117,6 +122,10 @@ class SmartClient(BaseClient):
 			if value in (None, ""):
 				continue
 			params[key] = br_date(value) if key.endswith(("Ini", "Fim")) and not key.startswith("valor") else value
+		# Date ranges only filter when both ends are sent (proved 10/11/2026: Fim alone returned the whole portfolio)
+		for prefix in {key[:-3] for key in params if key.endswith(("Ini", "Fim")) and not key.startswith("valor")}:
+			params.setdefault(f"{prefix}Ini", OPEN_RANGE_START)
+			params.setdefault(f"{prefix}Fim", br_date(date.today()))
 		yield from self._pages(f"{API}/titulo", "titulo", params)
 
 	# Cedente
