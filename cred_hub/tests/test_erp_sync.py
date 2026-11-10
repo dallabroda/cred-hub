@@ -437,3 +437,49 @@ class TestErpSync(IntegrationTestCase):
 		stats = self.run_sync(FakeSmart(rows))
 		self.assertEqual((stats["titles_new"], stats["titles_update"]), (0, 2), stats)
 		self.assertEqual(len(self.title_row(991)[0].titles), 2)
+
+	def _plain(self, title_id, number="NF-7", debtor=DEBTOR_A, cedente=CEDENTE_A):
+		"""A título as the spreadsheet import brings it: no ERP identity."""
+		from cred_hub.erp.smart import normalize_title
+
+		converted = sync.to_import_title(normalize_title(open_row(title_id, number, debtor, cedente, days=-10)))
+		return {k: v for k, v in converted.items() if not k.startswith("erp_")}
+
+	def _import(self, *titles):
+		stats = {"cards_new": 0, "cards_update": 0, "titles_new": 0, "titles_update": 0, "titles_locked": 0}
+		pipeline = sync._collection_pipeline()
+		importer.import_group(pipeline, list(titles), importer.BY_PAIR, stats)
+		return stats
+
+	def test_a_spreadsheet_row_is_adopted_by_one_erp_title_only(self):
+		self._import(self._plain(1))
+		# the ERP now brings TWO títulos with the same key: one adopts the spreadsheet row, the other is a new row
+		rows = [open_row(1001, "NF-7", DEBTOR_A, CEDENTE_A, days=-10), open_row(1002, "NF-7", DEBTOR_A, CEDENTE_A, days=-10)]
+		stats = self.run_sync(FakeSmart(rows))
+		self.assertEqual(stats["titles_new"], 1, stats)
+		deal, first = self.title_row(1001)
+		_deal, second = self.title_row(1002)
+		self.assertEqual(deal.name, _deal.name)
+		self.assertNotEqual(first.name, second.name)
+		self.assertEqual(len(deal.titles), 2)
+
+	def test_a_locked_row_still_gets_its_erp_identity_when_adopted(self):
+		self._import(self._plain(1))
+		deal = frappe.get_doc("CRM Deal", frappe.get_all("CRM Deal", pluck="name", order_by="creation desc", limit=1)[0])
+		# already at the registry: the importer must not rewrite it, but the ERP identity is recorded
+		frappe.db.set_value("CRM Deal Title", deal.titles[0].name, {"sent_at": frappe.utils.now_datetime(), "protest_status": "PROTESTADO"})
+		self.run_sync(FakeSmart([open_row(1003, "NF-7", DEBTOR_A, CEDENTE_A, days=-10)]))
+		self.assertTrue(sync.find_row("Smart Securities", "1003"))
+
+	def test_reimporting_a_spreadsheet_does_not_duplicate_what_the_erp_brought(self):
+		self.run_sync(FakeSmart([open_row(1011, "NF-8", DEBTOR_A, CEDENTE_A, days=-10)]))
+		stats = self._import(self._plain(1, number="NF-8"))
+		self.assertEqual((stats["titles_new"], stats["titles_update"]), (0, 1), stats)
+		self.assertEqual(len(self.title_row(1011)[0].titles), 1)
+
+	def test_an_ambiguous_spreadsheet_title_is_added_instead_of_choosing(self):
+		rows = [open_row(1021, "NF-9", DEBTOR_A, CEDENTE_A, days=-10), open_row(1022, "NF-9", DEBTOR_A, CEDENTE_A, days=-10)]
+		self.run_sync(FakeSmart(rows))
+		stats = self._import(self._plain(1, number="NF-9"))
+		self.assertEqual((stats["titles_new"], stats["titles_update"]), (1, 0), stats)
+		self.assertEqual(len(self.title_row(1021)[0].titles), 3)

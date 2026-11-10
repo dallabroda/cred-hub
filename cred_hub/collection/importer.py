@@ -504,10 +504,16 @@ def import_group(pipeline, titles, grouping, stats):
 			deal.append("contacts", {"contact": debtor[1], "is_primary": 1})
 		stats["cards_new"] += 1
 	# Identity of a título inside the card: the ERP id when it has one (two distinct ERP títulos may share number, our
-	# number and due date), otherwise number + our number + due date. A título without an ERP id may adopt a row
-	# that has none (the same título coming from a spreadsheet).
-	by_erp = {(row.get("erp_source"), str(row.erp_title_id)): row for row in deal.get("titles") or [] if row.get("erp_title_id")}
-	by_key = {_title_key(row): row for row in deal.get("titles") or [] if not row.get("erp_title_id")}
+	# number and due date), otherwise number + our number + due date. A título with an ERP id may adopt ONE row that
+	# has none (the same título coming from a spreadsheet); a título without an ERP id may match a row that came from
+	# the ERP only when that key identifies a single one (two are ambiguous: nothing is chosen, it is added).
+	by_erp = {
+		(row.get("erp_source"), str(row.erp_title_id)): row for row in deal.get("titles") or [] if row.get("erp_title_id")
+	}
+	plain = {_title_key(row): row for row in deal.get("titles") or [] if not row.get("erp_title_id")}
+	erp_by_key = {}
+	for row in by_erp.values():
+		erp_by_key.setdefault(_title_key(row), []).append(row)
 	for title in titles:
 		title_debtor = debtor if title is first else _debtor_for(title)
 		# Papel das organizações (credtech#367), título a título: quem deve é sacado, quem vendeu é cedente. Empresa
@@ -518,14 +524,31 @@ def import_group(pipeline, titles, grouping, stats):
 		if title_cedente and title_cedente != title_debtor[1]:
 			add_role(title_cedente, CEDENTE)
 		values = _row_values(title, title_cedente, title_debtor)
+		key = _title_key(values)
 		erp_id = (values.get("erp_source"), str(values["erp_title_id"])) if values.get("erp_title_id") else None
-		row = (by_erp.get(erp_id) if erp_id else None) or by_key.get(_title_key(values))
+		if erp_id:
+			row = by_erp.get(erp_id)
+			if not row and key in plain:
+				# adopt the spreadsheet row once: from now on it is this ERP título (a second one cannot take it)
+				row = plain.pop(key)
+				by_erp[erp_id] = row
+				erp_by_key.setdefault(key, []).append(row)
+				# the ERP identity is written even when the row is locked (already at the registry)
+				for fieldname in ERP_FIELDS:
+					if values.get(fieldname) not in (None, ""):
+						row.set(fieldname, values[fieldname])
+		else:
+			row = plain.get(key)
+			candidates = erp_by_key.get(key) or []
+			if not row and len(candidates) == 1:
+				row = candidates[0]
 		if not row:
 			row = deal.append("titles", values)
 			if erp_id:
 				by_erp[erp_id] = row
+				erp_by_key.setdefault(key, []).append(row)
 			else:
-				by_key[_title_key(values)] = row
+				plain[key] = row
 			stats["titles_new"] += 1
 		elif row_status(row) in SENDABLE:
 			# só o que veio preenchido: a planilha nova nunca apaga o que o operador já completou (ex.: espécie)
