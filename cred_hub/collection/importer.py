@@ -468,7 +468,9 @@ def import_group(pipeline, titles, grouping, stats):
 	if debtor[0] == ORG:
 		add_role(debtor[1], DEBTOR)
 	for cedente in filter(None, cedentes.values()):
-		add_role(cedente, CEDENTE)
+		# A company listed as cedente of its own debt is treated as having no cedente, so it stays a sacado only
+		if cedente != debtor[1]:
+			add_role(cedente, CEDENTE)
 	card_cedente = cedentes.get(first["cedente_document"]) if grouping == BY_PAIR else None
 	if card_cedente == debtor[1]:
 		card_cedente = None
