@@ -108,6 +108,11 @@ class TestMapping(unittest.TestCase):
 			{"address_line1": "RUA DAS FLORES, 100", "address_line2": "SALA 2, CENTRO", "city": "FLORIANOPOLIS", "state": "SC", "pincode": "88010-000"},
 		)
 		self.assertEqual(d["partners"], [{"name": "MARIA DA SILVA EXEMPLO", "qualification": "Sócio-Administrador", "document": "***123456**"}])
+		self.assertEqual(
+			(d["address_street_type"], d["address_street"], d["address_number"], d["address_complement"]),
+			("RUA", "DAS FLORES", "100", "SALA 2"),
+		)
+		self.assertEqual((d["ibge_code"], d["tax_regime"]), ("", ""))
 		self.assertEqual(d["source"], "OpenCNPJ")
 
 	def test_brasilapi(self):
@@ -122,7 +127,19 @@ class TestMapping(unittest.TestCase):
 		self.assertEqual(d["address"]["address_line2"], "CENTRO")
 		self.assertEqual(d["address"]["pincode"], "20031-170")
 		self.assertEqual(d["partners"][0]["name"], "JOAO DE SOUZA EXEMPLO")
+		self.assertEqual((d["address_street_type"], d["address_street"], d["address_number"]), ("AVENIDA", "BRASIL", "1"))
 		self.assertEqual(d["source"], "BrasilAPI")
+
+	def test_tax_regime(self):
+		from cred_hub.cnpj.mapping import tax_regime
+
+		years = [{"ano": 2023, "forma_de_tributacao": "LUCRO PRESUMIDO"}, {"ano": 2024, "forma_de_tributacao": "LUCRO REAL"}]
+		self.assertEqual(tax_regime(years), "Lucro Real")
+		self.assertEqual(tax_regime(list(reversed(years))), "Lucro Real")  # the latest year wins
+		self.assertEqual(tax_regime([], simples=True), "Simples Nacional")
+		self.assertEqual(tax_regime([], simples="S", mei="S"), "MEI")
+		self.assertEqual(tax_regime([{"ano": 2024, "forma_de_tributacao": "LUCRO PRESUMIDO"}]), "Lucro Presumido")
+		self.assertEqual(tax_regime(None), "")
 
 	def test_company_size(self):
 		self.assertEqual(company_size(text="Microempresa (ME)"), "ME")
@@ -197,6 +214,8 @@ class _Session:
 
 	def get(self, url, **kwargs):
 		self.urls.append(url)
+		if "viacep" in url:
+			return _Resp(200, {"ibge": "4205407"})
 		r = self.responses.pop(0)
 		if isinstance(r, Exception):
 			raise r
@@ -207,7 +226,22 @@ class TestClient(unittest.TestCase):
 	def test_opencnpj_first(self):
 		s = _Session(_Resp(200, OPENCNPJ))
 		self.assertEqual(client.fetch("11.222.333/0001-81", session=s)["source"], "OpenCNPJ")
-		self.assertEqual(s.urls, ["https://api.opencnpj.org/11222333000181"])
+		# OpenCNPJ has no IBGE code: it comes from the CEP (ViaCEP)
+		self.assertEqual(s.urls, ["https://api.opencnpj.org/11222333000181", "https://viacep.com.br/ws/88010000/json/"])
+
+	def test_brasilapi_brings_its_own_ibge_code(self):
+		s = _Session(requests.ConnectionError("down"), _Resp(200, {**BRASILAPI, "codigo_municipio_ibge": 3304557}))
+		data = client.fetch("11222333000181", session=s)
+		self.assertEqual(data["ibge_code"], "3304557")
+		self.assertFalse(any("viacep" in u for u in s.urls))
+
+	def test_ibge_lookup_never_breaks_the_enrichment(self):
+		class Broken:
+			def get(self, *a, **k):
+				raise RuntimeError("anything")
+
+		self.assertEqual(client.ibge_for_cep("88010-000", Broken()), "")
+		self.assertEqual(client.ibge_for_cep("123", Broken()), "")
 
 	def test_fallback_on_error(self):
 		s = _Session(requests.ConnectionError("down"), _Resp(200, BRASILAPI))

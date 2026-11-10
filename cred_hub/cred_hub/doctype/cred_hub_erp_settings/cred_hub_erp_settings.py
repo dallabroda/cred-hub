@@ -29,3 +29,21 @@ class CredHubERPSettings(Document):
 			self.set("cedente_field_map", [])
 		if self.erp_provider and not self.cedente_field_map:
 			settings.load_default_rules(self)
+		self.validate_cedente_trigger()
+
+	def validate_cedente_trigger(self):
+		"""Cedente registration (credtech#367): only the credit funnel, and the stage must belong to it."""
+		if not self.get("cedente_send_enabled"):
+			return
+		if not self.get("cedente_pipeline"):
+			self.cedente_pipeline = frappe.db.get_single_value("Cred Hub Credit Settings", "credit_pipeline")
+		if not self.get("cedente_pipeline"):
+			frappe.throw(_("Choose the credit funnel for the cedente registration."))
+		collection = frappe.db.get_single_value("Cred Hub Provider Settings", "collection_pipeline")
+		if collection and self.cedente_pipeline == collection:
+			frappe.throw(_("The cedente registration is for the credit funnel: collection cedentes are already in the ERP."))
+		if self.get("cedente_trigger") == "Card enters a stage":
+			if not self.get("cedente_stage"):
+				frappe.throw(_("Choose the stage that sends the cedente to the ERP."))
+			if frappe.db.get_value("CRM Deal Status", self.cedente_stage, "pipeline") != self.cedente_pipeline:
+				frappe.throw(_("The stage must belong to the chosen funnel."))

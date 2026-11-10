@@ -15,6 +15,21 @@ SOURCES = (
 TIMEOUT = 10
 
 
+VIACEP = "https://viacep.com.br/ws/{cep}/json/"
+
+
+def ibge_for_cep(cep, session=None) -> str:
+	"""Código IBGE do município pelo CEP (ViaCEP, grátis). "" quando não acha: nunca derruba o enriquecimento."""
+	digits = only_digits(cep)
+	if len(digits) != 8:
+		return ""
+	try:
+		resp = (session or requests).get(VIACEP.format(cep=digits), timeout=TIMEOUT, headers={"Accept": "application/json"})
+		return only_digits((resp.json() or {}).get("ibge")) if resp.status_code == 200 else ""
+	except Exception:  # noqa: BLE001 - best effort: a CEP lookup must never break the CNPJ enrichment
+		return ""
+
+
 class CnpjNotFound(Exception):
 	"""Nenhuma fonte conhece o CNPJ."""
 
@@ -42,11 +57,15 @@ def fetch(cnpj, session=None) -> dict:
 			errors.append(f"{name}: HTTP {resp.status_code}")
 			continue
 		try:
-			return convert(resp.json())
+			data = convert(resp.json())
 		except (ValueError, KeyError, TypeError, AttributeError) as e:
 			# Resposta fora do formato esperado: tenta a próxima fonte
 			errors.append(f"{name}: resposta inesperada ({e})")
 			logger.warning("Resposta inesperada de %s para %s: %s", name, digits, e)
+			continue
+		if not data.get("ibge_code"):
+			data["ibge_code"] = ibge_for_cep((data.get("address") or {}).get("pincode"), http)
+		return data
 	if not_found == len(SOURCES):
 		raise CnpjNotFound(digits)
 	raise CnpjUnavailable("; ".join(errors) or "sem resposta")

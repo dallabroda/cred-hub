@@ -69,6 +69,8 @@ doc_events = {
 		"on_update": [
 			"cred_hub.integrations.protest.on_deal_update",
 			"cred_hub.credit_check.events.on_deal_update",
+			# Card entered the configured stage of the credit funnel: cedente goes to the ERP (credtech#367)
+			"cred_hub.erp.cedente.on_deal_update",
 			"cred_hub.webhooks.on_deal_update",
 		],
 		"on_trash": "cred_hub.webhooks.on_deal_trash",

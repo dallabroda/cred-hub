@@ -115,7 +115,10 @@ def street_number(value) -> str:
 	text = str(value or "").strip()
 	_head, sep, tail = text.rpartition(",")
 	tail = tail.strip()
-	return tail if sep and digits(tail) else ""
+	if sep:
+		return tail if digits(tail) else ""
+	# The number alone (Organization.address_number: "2489", "100A"); a whole street with no comma has no number
+	return text if digits(text) and len(text) <= 10 else ""
 
 
 def person_type(document) -> str:

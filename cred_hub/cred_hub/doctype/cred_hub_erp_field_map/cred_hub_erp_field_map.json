@@ -42,7 +42,7 @@
    "fieldname": "transform",
    "fieldtype": "Select",
    "label": "Transform",
-   "options": "\ndigits\nupper\nlower\ntrim\nascii\nbr_money\ndecimal\nint\nbr_date\niso_date\nphone_ddd\nphone_number\nphone_ddd_int\nphone_number_int\nstreet\nstreet_number\nperson_type\nbool",
+   "options": "\ndigits\nupper\nlower\ntrim\nascii\nbr_money\ndecimal\nint\nbr_date\niso_date\nphone_ddd\nphone_number\nphone_ddd_int\nphone_number_int\nstreet\nstreet_number\nperson_type\nbool\ncnae_code",
    "in_list_view": 1,
    "columns": 1
   },

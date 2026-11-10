@@ -7,6 +7,7 @@ Nomes internos e rótulos em inglês (regra de idioma do dono); a interface em p
 from cred_hub.cnpj.mapping import COMPANY_SIZES
 
 DOCTYPES = ("CRM Organization", "CRM Lead")
+TAX_REGIMES = ("Lucro Real", "Lucro Presumido", "Simples Nacional", "MEI")
 
 # Campos preenchidos direto com a chave de mesmo nome de mapping.from_*
 RECEITA_FIELDS = (
@@ -24,6 +25,13 @@ RECEITA_FIELDS = (
 	"neighborhood",
 	"city",
 	"state",
+	# Endereço em partes, código IBGE e regime tributário: o cadastro do cedente nos ERPs pede (credtech#367)
+	"address_street_type",
+	"address_street",
+	"address_number",
+	"address_complement",
+	"ibge_code",
+	"tax_regime",
 )
 
 # Nomes antigos (v0.1, em português) -> novos; usados pela migração (patches/v0_2)
@@ -67,6 +75,12 @@ def custom_fields(insert_after: str) -> list[dict]:
 		{"fieldname": "neighborhood", "fieldtype": "Data", "label": "Neighborhood"},
 		{"fieldname": "city", "fieldtype": "Data", "label": "City"},
 		{"fieldname": "state", "fieldtype": "Data", "label": "State (UF)", "length": 2},
+		{"fieldname": "address_street_type", "fieldtype": "Data", "label": "Street Type"},
+		{"fieldname": "address_street", "fieldtype": "Data", "label": "Street"},
+		{"fieldname": "address_number", "fieldtype": "Data", "label": "Number"},
+		{"fieldname": "address_complement", "fieldtype": "Data", "label": "Complement"},
+		{"fieldname": "ibge_code", "fieldtype": "Data", "label": "City IBGE Code", "length": 7},
+		{"fieldname": "tax_regime", "fieldtype": "Select", "label": "Tax Regime", "options": "\n" + "\n".join(TAX_REGIMES)},
 		{"fieldname": "cnpj_checked_on", "fieldtype": "Date", "label": "CNPJ Checked On", "read_only": 1},
 	]
 	previous = insert_after
