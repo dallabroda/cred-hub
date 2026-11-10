@@ -316,6 +316,12 @@ curl -X POST "{{ base_url }}/api/method/crm.api.pipeline.move_card" \
   -H "Authorization: Bearer hub_&lt;id&gt;_&lt;segredo&gt;" \
   -H "Content-Type: application/json" \
   -d '{"doctype": "CRM Deal", "records": [{"pipeline": "&lt;funil&gt;", "organization": "Acme Ltda"}]}'</code></pre>
+      <h3><span class="method POST">POST</span> <code>/api/method/cred_hub.bulk.bulk_delete</code> — Exclusão em Lote</h3>
+      <p>Exclui até 50 registros por requisição. Exige chave de API com escopo de escrita no doctype e permissão explícita <code>allow_delete</code>.</p>
+<pre><code>curl -X POST "{{ base_url }}/api/method/cred_hub.bulk.bulk_delete" \
+  -H "Authorization: Bearer hub_&lt;id&gt;_&lt;segredo&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{"doctype": "CRM Deal", "names": ["CRM-DEAL-2026-00001", "CRM-DEAL-2026-00002"]}'</code></pre>
       <h3>Webhooks de Saída (Assinatura <code>X-HubTech-Signature: sha256=...</code>)</h3>
       <p>Eventos suportados: <code>deal.created</code>, <code>deal.stage_changed</code>, <code>deal.won</code>, <code>deal.lost</code>, <code>deal.deleted</code>, <code>contact.created</code>, <code>contact.updated</code> e <code>checklist.item_rejected</code>. Possui <strong>auto-retry até 3 tentativas</strong> em caso de erro <code>5xx</code>/timeout.</p>
     </div>
