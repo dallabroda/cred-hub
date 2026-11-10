@@ -2913,7 +2913,6 @@ msgstr "Em Cartório"
 msgid "Legal / Lawsuit"
 msgstr "Jurídico"
 
-
 # E-mails in the Figma design (hubtech_layout.html, hubtech_macros.html and templates/emails)
 msgid "{0} invited you to HubTech CRM"
 msgstr "{0} convidou você para o HubTech CRM"
@@ -3086,7 +3085,6 @@ msgstr "Cursor de paginação inválido."
 msgid "Provide a valid CPF (11 digits) or CNPJ (14 digits)."
 msgstr "Informe um CPF (11 dígitos) ou CNPJ (14 dígitos) válido."
 
-
 # Integração com ERPs de securitização: WBA e Smart Securities (credtech#367)
 msgid "Cred Hub ERP Settings"
 msgstr "Integração com ERP"
@@ -3201,9 +3199,6 @@ msgstr "Escolha o ERP e salve as credenciais primeiro."
 
 msgid "Connected to {0}."
 msgstr "Conectado à {0}."
-
-msgid "The ERP API URL must start with https://"
-msgstr "A URL da API do ERP precisa começar com https://"
 # Papel da Organização (credtech#367)
 msgid "Party role"
 msgstr "Papel"
@@ -3213,3 +3208,145 @@ msgstr "Cedente e sacado"
 
 msgid "Cedente sells receivables; sacado (debtor) pays them. Filled automatically by collection imports and the ERP integration; the system only adds roles, never removes them."
 msgstr "Cedente vende os recebíveis; sacado é quem paga. Preenchido sozinho pela importação de cobrança e pela integração com o ERP; o sistema só acrescenta papéis, nunca remove."
+
+msgid "The ERP API URL must start with https://"
+msgstr "A URL da API do ERP precisa começar com https://"
+
+# Sync de inadimplentes do ERP para a Cobrança (credtech#367)
+msgid "Sacado"
+msgstr "Sacado"
+
+msgid "Sacado (person)"
+msgstr "Sacado (pessoa física)"
+
+msgid "Who must pay this título (a card grouped by cedente has títulos of several sacados)."
+msgstr "Quem deve pagar este título (no card agrupado por cedente, cada título pode ter um sacado diferente)."
+
+msgid "ERP título ID"
+msgstr "ID do título no ERP"
+
+msgid "ERP operation"
+msgstr "Operação no ERP"
+
+msgid "ERP situation"
+msgstr "Situação no ERP"
+
+msgid "Face value in the ERP"
+msgstr "Valor de face no ERP"
+
+msgid "Face value the ERP reports for the título (the ERP does not report an open balance)."
+msgstr "Valor de face que o ERP informa para o título (o ERP não informa saldo em aberto)."
+
+msgid "Closed because"
+msgstr "Fechado por"
+
+msgid "Closed on"
+msgstr "Fechado em"
+
+msgid "Paid by debtor"
+msgstr "Pago pelo sacado"
+
+msgid "Repurchased by cedente"
+msgstr "Recomprado pelo cedente"
+
+msgid "Extended"
+msgstr "Prorrogado"
+
+msgid "How the spreadsheet import and the ERP sync group the títulos in cards. The cedente is kept on each título either way. Changing it only affects new títulos."
+msgstr "Como a importação de planilha e o sync do ERP agrupam os títulos em cards. O cedente fica em cada título de qualquer jeito. Trocar a opção só vale para títulos novos."
+
+msgid "Turn the ERP integration on and save the credentials first."
+msgstr "Ative a integração com o ERP e salve as credenciais primeiro."
+
+msgid "Synchronization queued. The result appears in the settings when it ends."
+msgstr "Sincronização na fila. O resultado aparece nas configurações quando terminar."
+
+msgid "The collection sync for {0} comes in the next version."
+msgstr "O sync de cobrança da {0} vem na próxima versão."
+
+msgid "{0} in {1} on {2} ({3}); amount received: {4}."
+msgstr "{0} na {1} em {2} ({3}); valor recebido: {4}."
+
+msgid "Título {0}: {1}"
+msgstr "Título {0}: {1}"
+
+# Simulação da primeira execução do sync do ERP (credtech#367)
+msgid "Simulation mode (nothing is saved)"
+msgstr "Modo simulação (nada é gravado)"
+
+msgid "While on, each run only reports what it would create, update and close, and how long the ERP took; nothing is saved. Read the report below, then turn this off to run for real."
+msgstr "Enquanto ligado, cada execução só relata o que criaria, atualizaria e fecharia, e quanto tempo o ERP levou; nada é gravado. Leia o relatório abaixo e depois desligue para rodar de verdade."
+
+msgid "Last simulation report"
+msgstr "Último relatório da simulação"
+
+msgid "SIMULATION: nothing was saved."
+msgstr "SIMULAÇÃO: nada foi gravado."
+
+msgid "ERP read in {0} s: {1} overdue títulos and {2} settlements."
+msgstr "ERP lido em {0} s: {1} títulos vencidos e {2} liquidações."
+
+msgid "Settlements only appear after the first real run, when the títulos exist in the CRM."
+msgstr "As liquidações só aparecem depois da primeira execução de verdade, quando os títulos já existem no CRM."
+
+msgid "... (the list shows the first {0} lines)"
+msgstr "... (a lista mostra as primeiras {0} linhas)"
+
+msgid "SIMULATION (nothing was saved): {0}"
+msgstr "SIMULAÇÃO (nada foi gravado): {0}"
+
+msgid "due"
+msgstr "venc."
+
+msgid "The synchronization stopped because of an unexpected error. Support was notified."
+msgstr "A sincronização parou por um erro inesperado. O suporte foi avisado."
+
+msgid "{0} overdue títulos read: {1} new, {2} updated, {3} new cards. {4} settlements read: {5} títulos closed, {6} cards won, {7} to review. {8} títulos skipped, {9} with errors. {10} títulos are no longer overdue in the ERP (extended or written off) and stay open here."
+msgstr "{0} títulos vencidos lidos: {1} novos, {2} atualizados, {3} cards novos. {4} liquidações lidas: {5} títulos fechados, {6} cards ganhos, {7} para revisar. {8} títulos ignorados, {9} com erro. {10} títulos não estão mais vencidos no ERP (prorrogados ou baixados) e seguem abertos aqui."
+
+# Fechamento de títulos pelo sync do ERP (credtech#367, 3ª rodada de decisões do dono)
+msgid "The ERP did not inform the amount received: the whole balance was settled."
+msgstr "O ERP não informou o valor recebido: o saldo inteiro foi baixado."
+
+msgid "All títulos of this card are closed in the ERP, some were repurchased by the cedente. Check the card and close it."
+msgstr "Todos os títulos deste card estão fechados no ERP e alguns foram recomprados pelo cedente. Confira o card e encerre."
+
+msgid "{0} in {1} on {2} ({3}). Balance of {4} closed by adjustment: not a payment of the debtor."
+msgstr "{0} na {1} em {2} ({3}). Saldo de {4} fechado por ajuste: não é pagamento do sacado."
+
+msgid "Paid by debtor in {0} on {1}."
+msgstr "Pago pelo sacado na {0} em {1}."
+
+msgid "Paid by debtor in {0} on {1}: {2} received."
+msgstr "Pago pelo sacado na {0} em {1}: {2} recebidos."
+
+msgid "Adjustment (discount) of {0} to settle the título."
+msgstr "Ajuste (desconto) de {0} para quitar o título."
+
+msgid "{0} received above the balance (interest or fine), not counted as payment."
+msgstr "{0} recebidos acima do saldo (juros ou multa), não contam como pagamento."
+
+msgid "{0} in {1} on {2} ({3})."
+msgstr "{0} na {1} em {2} ({3})."
+
+msgid "ERP sync run"
+msgstr "Execução do sync do ERP"
+
+msgid "The synchronization run that created this título (to undo a whole run)."
+msgstr "A execução do sync que criou este título (para desfazer uma execução inteira)."
+
+msgid "The synchronization run that created this card: filter by it to undo a whole run."
+msgstr "A execução do sync que criou este card: filtre por ela para desfazer uma execução inteira."
+
+# Título quitado no ERP com protesto ainda ativo (credtech#367): só avisa, a retirada é manual
+msgid "{0} títulos settled in the ERP still have a protest at the registry: withdraw or cancel it."
+msgstr "{0} títulos quitados no ERP ainda têm protesto no cartório: retire ou cancele."
+
+msgid "protest still active at the registry: withdraw it"
+msgstr "protesto ainda ativo no cartório: retire"
+
+msgid "Title {0} was settled in {1} but its protest is still active at the registry ({2}). Withdraw or cancel the protest: the system never does it by itself."
+msgstr "O título {0} foi quitado na {1}, mas o protesto dele ainda está ativo no cartório ({2}). Retire ou cancele o protesto: o sistema nunca faz isso sozinho."
+
+msgid "sent"
+msgstr "enviado"

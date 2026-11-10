@@ -31,6 +31,10 @@ from cred_hub.party.resolve import contact_for_cpf, organization_for_cnpj
 from cred_hub.party.roles import CEDENTE, DEBTOR, add_role
 
 DEAL, TITLE_ROW, ORG, CONTACT = "CRM Deal", "CRM Deal Title", "CRM Organization", "Contact"
+# Campos do título preenchidos pelo sync do ERP (cred_hub.erp.fields)
+ERP_FIELDS = ("erp_source", "erp_title_id", "erp_operation", "erp_situation", "erp_amount", "erp_run_id")
+# Monetary fields of a título: the ERP owns them once the título has an ERP id
+MONEY_FIELDS = ("original_amount", "updated_amount", "paid_amount")
 MAX_ROWS = 20000
 BY_DEBTOR, BY_PAIR = "Debtor", "Debtor and cedente"
 EXTENSIONS = ("xlsx", "csv")
@@ -276,10 +280,16 @@ def find_card(pipeline, debtor, cedente_org, grouping) -> str | None:
 	return found[0] if found else None
 
 
+def _normalized_number(value) -> str:
+	"""Title numbers compare without leading zeros when they are only digits ("000123" is "123")."""
+	text = str(value or "").strip().upper()
+	return (text.lstrip("0") or "0") if text.isdigit() else text
+
+
 def _title_key(values) -> tuple:
 	return (
-		str(values.get("title_number") or "").strip().upper(),
-		str(values.get("our_number") or "").strip().upper(),
+		_normalized_number(values.get("title_number")),
+		_normalized_number(values.get("our_number")),
 		str(getdate(values.get("due_date")) if values.get("due_date") else ""),
 	)
 
@@ -435,7 +445,7 @@ def _cedente_for(title) -> str | None:
 	return organization_for_cnpj(title["cedente_document"], title["cedente_name"])
 
 
-def _row_values(title, cedente) -> dict:
+def _row_values(title, cedente, debtor=None) -> dict:
 	values = {
 		"title_number": title["title_number"],
 		"our_number": title["our_number"],
@@ -449,6 +459,14 @@ def _row_values(title, cedente) -> dict:
 		values["species"] = title["species"]
 	if title["digitable_line"]:
 		values["digitable_line"] = title["digitable_line"]
+	# Sacado de cada título (credtech#367): o protesto usa o sacado do próprio título
+	if debtor and frappe.get_meta(TITLE_ROW).has_field("sacado"):
+		values["sacado"] = debtor[1] if debtor[0] == ORG else None
+		values["sacado_contact"] = debtor[1] if debtor[0] == CONTACT else None
+	# Origem no ERP (credtech#367): só o sync do ERP manda estes campos
+	for fieldname in ERP_FIELDS:
+		if title.get(fieldname) not in (None, ""):
+			values[fieldname] = title[fieldname]
 	return values
 
 
@@ -464,13 +482,6 @@ def import_group(pipeline, titles, grouping, stats):
 	first = titles[0]
 	debtor = _debtor_for(first)
 	cedentes = {title["cedente_document"]: _cedente_for(title) for title in titles}
-	# Papel das organizações (credtech#367): quem deve é sacado, quem vendeu o título é cedente
-	if debtor[0] == ORG:
-		add_role(debtor[1], DEBTOR)
-	for cedente in filter(None, cedentes.values()):
-		# A company listed as cedente of its own debt is treated as having no cedente, so it stays a sacado only
-		if cedente != debtor[1]:
-			add_role(cedente, CEDENTE)
 	card_cedente = cedentes.get(first["cedente_document"]) if grouping == BY_PAIR else None
 	if card_cedente == debtor[1]:
 		card_cedente = None
@@ -489,20 +500,67 @@ def import_group(pipeline, titles, grouping, stats):
 				"second_organization": card_cedente,
 			}
 		)
+		if frappe.flags.get("cred_hub_erp_run_id") and frappe.get_meta(DEAL).has_field("erp_run_id"):
+			deal.erp_run_id = frappe.flags.cred_hub_erp_run_id
 		if debtor[0] == CONTACT:
 			deal.append("contacts", {"contact": debtor[1], "is_primary": 1})
 		stats["cards_new"] += 1
-	existing = {_title_key(row): row for row in deal.get("titles") or []}
+	# Identity of a título inside the card: the ERP id when it has one (two distinct ERP títulos may share number, our
+	# number and due date), otherwise number + our number + due date. A título with an ERP id may adopt ONE row that
+	# has none (the same título coming from a spreadsheet); a título without an ERP id may match a row that came from
+	# the ERP only when that key identifies a single one (two are ambiguous: nothing is chosen, it is added).
+	by_erp = {
+		(row.get("erp_source"), str(row.erp_title_id)): row for row in deal.get("titles") or [] if row.get("erp_title_id")
+	}
+	plain = {_title_key(row): row for row in deal.get("titles") or [] if not row.get("erp_title_id")}
+	erp_by_key = {}
+	for row in by_erp.values():
+		erp_by_key.setdefault(_title_key(row), []).append(row)
 	for title in titles:
-		values = _row_values(title, cedentes.get(title["cedente_document"]))
-		row = existing.get(_title_key(values))
+		title_debtor = debtor if title is first else _debtor_for(title)
+		# Papel das organizações (credtech#367), título a título: quem deve é sacado, quem vendeu é cedente. Empresa
+		# que consta como cedente da própria dívida fica só sacado.
+		if title_debtor[0] == ORG:
+			add_role(title_debtor[1], DEBTOR)
+		title_cedente = cedentes.get(title["cedente_document"])
+		if title_cedente and title_cedente != title_debtor[1]:
+			add_role(title_cedente, CEDENTE)
+		values = _row_values(title, title_cedente, title_debtor)
+		key = _title_key(values)
+		erp_id = (values.get("erp_source"), str(values["erp_title_id"])) if values.get("erp_title_id") else None
+		if erp_id:
+			row = by_erp.get(erp_id)
+			if not row and key in plain:
+				# adopt the spreadsheet row once: from now on it is this ERP título (a second one cannot take it)
+				row = plain.pop(key)
+				by_erp[erp_id] = row
+				erp_by_key.setdefault(key, []).append(row)
+				# the ERP identity is written even when the row is locked (already at the registry)
+				for fieldname in ERP_FIELDS:
+					if values.get(fieldname) not in (None, ""):
+						row.set(fieldname, values[fieldname])
+		else:
+			row = plain.get(key)
+			candidates = erp_by_key.get(key) or []
+			if not row and len(candidates) == 1:
+				row = candidates[0]
 		if not row:
 			row = deal.append("titles", values)
-			existing[_title_key(values)] = row
+			if erp_id:
+				by_erp[erp_id] = row
+				erp_by_key.setdefault(key, []).append(row)
+			else:
+				plain[key] = row
 			stats["titles_new"] += 1
 		elif row_status(row) in SENDABLE:
-			# só o que veio preenchido: a planilha nova nunca apaga o que o operador já completou (ex.: espécie)
-			row.update({k: v for k, v in values.items() if v not in (None, "")})
+			if row.get("erp_title_id"):
+				# The ERP owns the money of its títulos (credtech#367): neither a spreadsheet nor the ERP identity
+				# of an adopted row rewrites original/updated/paid amounts (that would reopen a paid balance or
+				# break the read-only balance); only empty, non-monetary fields are completed
+				row.update({k: v for k, v in values.items() if v not in (None, "") and k not in MONEY_FIELDS and not row.get(k)})
+			else:
+				# só o que veio preenchido: a planilha nova nunca apaga o que o operador já completou (ex.: espécie)
+				row.update({k: v for k, v in values.items() if v not in (None, "")})
 			stats["titles_update"] += 1
 		else:
 			stats["titles_locked"] += 1

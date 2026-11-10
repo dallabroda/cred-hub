@@ -256,12 +256,17 @@ def _primary_contact(deal) -> str | None:
 	return primary or next((row.contact for row in rows), None) or deal.get("contact")
 
 
-def debtor_of(deal) -> dict:
-	"""Devedor: a Organização do card com CNPJ ou, sem ela, o contato principal com CPF."""
-	if deal.get("organization"):
+def debtor_of(deal, row=None) -> dict:
+	"""Devedor: o sacado do título (credtech#367: no card por cedente cada título tem o seu), senão a Organização do
+	card com CNPJ ou, sem ela, o contato principal com CPF."""
+	if row is not None and (row.get("sacado") or row.get("sacado_contact")):
+		organization, contact_name = row.get("sacado"), row.get("sacado_contact")
+	else:
+		organization, contact_name = deal.get("organization"), None
+	if organization:
 		org = None
 		try:
-			org = frappe.get_doc("CRM Organization", deal.organization)
+			org = frappe.get_doc("CRM Organization", organization)
 		except frappe.DoesNotExistError:
 			org = None
 		if org and is_valid_cnpj(org.get("cnpj")):
@@ -279,7 +284,9 @@ def debtor_of(deal) -> dict:
 				email=org.get("registry_email"),
 			)
 			return party
-	contact_name = _primary_contact(deal)
+	if not contact_name and not (row is not None and row.get("sacado")):
+		# A título with its own sacado company never falls back to the card's contact
+		contact_name = _primary_contact(deal)
 	if contact_name:
 		contact = None
 		try:
@@ -702,6 +709,11 @@ def test_connection() -> dict:
 # Gatilhos e rotina -------------------------------------------------------------------------------------------
 
 
+def has_erp_titles(doc) -> bool:
+	"""Card with títulos that came from an ERP (credtech#367): the registry is only ever reached by hand."""
+	return any(row.get("erp_title_id") for row in doc.get("titles") or [])
+
+
 def on_deal_update(doc, method=None):
 	"""Card entrou na etapa de envio ou na de acordo, com a opção ligada: age em segundo plano. As duas opções
 	começam desligadas: o cartório cobra custas e quem decide gastar é o cliente (dono, 30/10/2026)."""
@@ -709,6 +721,10 @@ def on_deal_update(doc, method=None):
 		return
 	settings = get_settings()
 	if not settings.cenprot_enabled or not settings.collection_pipeline or doc.pipeline != settings.collection_pipeline:
+		return
+	if has_erp_titles(doc):
+		# Owner decision (10/11/2026): protest of a título synced from the ERP is manual, even with the automatic
+		# send/withdraw options on; the registry charges fees and the client decides each one
 		return
 	status = (doc.get("protest_status") or "").upper()
 	if doc.status == settings.stage_send and cint(settings.auto_send_on_stage) and status in SENDABLE:
@@ -944,7 +960,7 @@ def _collect_row(deal, row, settings, selected=None):
 			break
 
 	try:
-		debtor = debtor_of(deal)
+		debtor = debtor_of(deal, row)
 	except TitleIncomplete as e:
 		problems.extend(e.problems)
 		debtor = None
@@ -1029,7 +1045,7 @@ def build_title_from_row(deal, row, settings, codebtors=None) -> tuple[dict, dic
 
 def _row_consult(deal, row) -> dict:
 	"""As chaves com que a linha foi enviada (número, nosso número, vencimento e o documento do devedor)."""
-	debtor = debtor_of(deal)
+	debtor = debtor_of(deal, row)
 	return {
 		"devedor": {"documento": debtor["documento"], "nome": ""},
 		"divida": {

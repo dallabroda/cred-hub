@@ -177,3 +177,17 @@ class TestCollectionImport(IntegrationTestCase):
 		self.import_sheet(file_url)
 		self.assertEqual(frappe.db.get_value("CRM Organization", cedente, FIELD), BOTH)
 		self.assertEqual(add_role(cedente, DEBTOR), BOTH)
+
+	def test_title_numbers_compare_without_leading_zeros(self):
+		self.import_sheet(self.sheet(
+			f"{CNPJ_DEBTOR};DEVEDORA TESTE LTDA;{CNPJ_CEDENTE_A};CEDENTE A LTDA;000123;00045;DMI;{br(-60)};{br(-10)};100;100",
+			name="zeros-1.csv",
+		))
+		stats = self.import_sheet(self.sheet(
+			f"{CNPJ_DEBTOR};DEVEDORA TESTE LTDA;{CNPJ_CEDENTE_A};CEDENTE A LTDA;123;45;DMI;{br(-60)};{br(-10)};100;90",
+			name="zeros-2.csv",
+		))
+		self.assertEqual((stats["titles_new"], stats["titles_update"], stats["cards_new"]), (0, 1, 0), stats)
+		self.assertEqual(len(frappe.get_doc("CRM Deal", self.cards()[0].name).titles), 1)
+		# letters are not touched: "NF-007" stays different from "NF-7"
+		self.assertNotEqual(importer._title_key({"title_number": "NF-007"}), importer._title_key({"title_number": "NF-7"}))

@@ -22,7 +22,11 @@ scheduler_events = {
 	# Status dos títulos em protesto no cartório (CENPROT, credtech#290)
 	"daily_long": ["cred_hub.integrations.protest.sync_all"],
 	# Rede de segurança dos leads da Meta: o que o webhook não trouxe (credtech#51)
-	"cron": {"*/10 * * * *": ["cred_hub.meta_leads.catch_up"]},
+	"cron": {
+		"*/10 * * * *": ["cred_hub.meta_leads.catch_up"],
+		# Inadimplentes do ERP no funil de Cobrança (credtech#367): de manhã, depois da liquidação do dia
+		"30 7 * * *": ["cred_hub.erp.sync.scheduled"],
+	},
 }
 
 # Chaves da API do HubTech (credtech#175): Bearer hub_..., escopos, rate limit e log das escritas

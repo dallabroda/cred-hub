@@ -20,12 +20,14 @@
   "smart_client_id",
   "smart_client_secret",
   "sync_section",
+  "sync_dry_run",
   "overdue_days",
   "paid_lookback_days",
   "sync_column",
   "last_open_sync",
   "last_paid_sync",
   "last_sync_message",
+  "last_sync_report",
   "mapping_section",
   "cedente_field_map"
  ],
@@ -164,11 +166,25 @@
    "fieldtype": "Table",
    "label": "Cedente Field Mapping",
    "options": "Cred Hub ERP Field Map"
+  },
+  {
+   "fieldname": "sync_dry_run",
+   "fieldtype": "Check",
+   "label": "Simulation mode (nothing is saved)",
+   "default": "1",
+   "description": "While on, each run only reports what it would create, update and close, and how long the ERP took; nothing is saved. Read the report below, then turn this off to run for real."
+  },
+  {
+   "fieldname": "last_sync_report",
+   "fieldtype": "Long Text",
+   "label": "Last simulation report",
+   "read_only": 1,
+   "depends_on": "eval:doc.last_sync_report"
   }
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-11-10 18:00:00.000000",
+ "modified": "2026-11-10 22:00:00.000000",
  "modified_by": "Administrator",
  "module": "Cred Hub",
  "name": "Cred Hub ERP Settings",
