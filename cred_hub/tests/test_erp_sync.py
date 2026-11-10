@@ -141,16 +141,6 @@ class TestErpSync(IntegrationTestCase):
 		self.assertEqual(getdate(settings.last_paid_sync), getdate(today()))
 		self.assertIn("3 overdue", settings.last_sync_message)
 
-	def test_second_run_updates_and_registers_partial_payment(self):
-		self.run_sync(FakeSmart([open_row(201, "NF-9", DEBTOR_A, CEDENTE_A, value="1.000,00")]))
-		stats = self.run_sync(FakeSmart([open_row(201, "NF-9", DEBTOR_A, CEDENTE_A, value="600,00", situation="Inadimplente(Aberto)")]))
-		self.assertEqual((stats["titles_new"], stats["titles_update"], stats["partial_payments"]), (0, 1, 1), stats)
-		deal, row = self.title_row(201)
-		self.assertEqual(len(deal.titles), 1)
-		self.assertEqual((row.updated_amount, row.paid_amount, row.erp_amount), (600, 400, 600))
-		self.assertEqual(row.erp_situation, "Inadimplente(Aberto)")
-		self.assertFalse(row.closed_reason)
-		self.assertEqual(deal.outcome, "In progress")
 
 	def test_card_is_won_only_when_the_debtor_paid_every_title(self):
 		self.run_sync(FakeSmart([open_row(301, "NF-1", DEBTOR_A, CEDENTE_A), open_row(302, "NF-2", DEBTOR_A, CEDENTE_A)]))
@@ -177,7 +167,8 @@ class TestErpSync(IntegrationTestCase):
 		self.assertEqual(row.closed_reason, REPURCHASED)
 		self.assertEqual((len(deal.payments), row.paid_amount), (0, 0), "not a payment of the debtor")
 		self.assertEqual(sync._balance(row), 0, "the balance is closed by adjustment")
-		self.assertFalse(deal.installments, "the agreement has nothing left to collect")
+		# the agreement stays in the history as cancelled: neither paid nor open
+		self.assertEqual([(bool(i.paid_on), bool(i.cancelled_on)) for i in deal.installments], [(False, True)])
 		self.assertEqual(deal.outcome, "In progress", "the operator decides")
 		self.assertTrue(frappe.get_all("Comment", {"reference_name": deal.name, "content": ("like", "%adjustment%")}))
 
@@ -203,6 +194,28 @@ class TestErpSync(IntegrationTestCase):
 		self.assertIn("Adjustment (discount)", notes)
 		self.assertIn("above the balance", notes)
 		self.assertIn("did not inform", notes)
+
+	def test_second_run_updates_the_situation_and_never_invents_a_payment(self):
+		self.run_sync(FakeSmart([open_row(201, "NF-9", DEBTOR_A, CEDENTE_A, value="1.000,00")]))
+		stats = self.run_sync(
+			FakeSmart([open_row(201, "NF-9", DEBTOR_A, CEDENTE_A, value="600,00", situation="Inadimplente(Aberto)")])
+		)
+		self.assertEqual((stats["titles_new"], stats["titles_update"]), (0, 1), stats)
+		deal, row = self.title_row(201)
+		self.assertEqual(len(deal.titles), 1)
+		# the open report only has the face value: whatever it says, no payment is inferred from it
+		self.assertEqual((row.paid_amount, len(deal.payments), row.updated_amount), (0, 0, 1000))
+		self.assertEqual((row.erp_situation, row.erp_amount), ("Inadimplente(Aberto)", 600))
+		self.assertEqual(deal.outcome, "In progress")
+
+	def test_a_title_whose_updated_amount_is_above_the_face_gets_no_false_payment(self):
+		# a título from a spreadsheet with interest included, then linked to the ERP id (face value below)
+		self.run_sync(FakeSmart([open_row(211, "NF-1", DEBTOR_A, CEDENTE_A, value="1.000,00")]))
+		deal, row = self.title_row(211)
+		frappe.db.set_value("CRM Deal Title", row.name, "updated_amount", 1200)
+		stats = self.run_sync(FakeSmart([open_row(211, "NF-1", DEBTOR_A, CEDENTE_A, value="1.000,00")]))
+		deal, row = self.title_row(211)
+		self.assertEqual((row.updated_amount, row.paid_amount, len(deal.payments)), (1200, 0, 0), stats)
 
 	def test_settlement_of_an_unknown_title_is_ignored(self):
 		stats = self.run_sync(FakeSmart(paid_rows=[paid_row(999, "NF-X", DEBTOR_A)]))
@@ -241,19 +254,6 @@ class TestErpSync(IntegrationTestCase):
 
 	# Review of cred-hub#91 ------------------------------------------------------------------------------------
 
-	def test_manual_payment_then_erp_drop_registers_one_payment_only(self):
-		self.run_sync(FakeSmart([open_row(721, "NF-1", DEBTOR_A, CEDENTE_A, value="1.000,00")]))
-		deal, row = self.title_row(721)
-		sync.register_payment(deal, row, 400, getdate(today()), "registered by the operator")
-		deal.save(ignore_permissions=True)
-		stats = self.run_sync(FakeSmart([open_row(721, "NF-1", DEBTOR_A, CEDENTE_A, value="600,00")]))
-		self.assertEqual(stats["partial_payments"], 0, stats)
-		deal, row = self.title_row(721)
-		self.assertEqual((row.updated_amount, row.paid_amount, len(deal.payments)), (600, 400, 1))
-		# the ERP drops again with nothing registered by hand: the difference is registered once
-		stats = self.run_sync(FakeSmart([open_row(721, "NF-1", DEBTOR_A, CEDENTE_A, value="500,00")]))
-		deal, row = self.title_row(721)
-		self.assertEqual((stats["partial_payments"], row.updated_amount, row.paid_amount), (1, 500, 500))
 
 	def test_titles_that_left_the_overdue_list_are_counted(self):
 		self.run_sync(FakeSmart([open_row(731, "NF-1", DEBTOR_A, CEDENTE_A), open_row(732, "NF-2", DEBTOR_A, CEDENTE_A)]))
@@ -360,10 +360,10 @@ class TestErpSync(IntegrationTestCase):
 			collection.record_payment(deal.name, row.name, 100)
 		with self.assertRaises(frappe.ValidationError):
 			collection.adjust_balance(deal.name, row.name, 800)
-		# only the sync moves the balance
-		self.run_sync(FakeSmart([open_row(951, "NF-1", DEBTOR_A, CEDENTE_A, value="700,00")]))
+		# only the sync moves the balance: when the ERP settles the título
+		self.run_sync(FakeSmart(paid_rows=[paid_row(951, "NF-1", DEBTOR_A, received="1.000,00")]))
 		_deal, row = self.title_row(951)
-		self.assertEqual((row.updated_amount, row.paid_amount), (700, 300))
+		self.assertEqual((sync._balance(row), row.paid_amount, row.closed_reason), (0, 1000, PAID))
 
 	# Round 3 of the owner decisions ------------------------------------------------------------------------------
 
@@ -401,3 +401,24 @@ class TestErpSync(IntegrationTestCase):
 		jobs = [call.args[0] for call in self.enqueue.call_args_list if "protest" in str(call.args[0])]
 		# only the manual card (control) reached the registry job; the card from the ERP never did
 		self.assertEqual(jobs, ["cred_hub.integrations.protest.send_in_background"], jobs)
+
+	def test_only_active_people_are_warned_about_a_protest(self):
+		def user(email, enabled=1, technical=False):
+			doc = frappe.get_doc({
+				"doctype": "User", "email": email, "first_name": email.split("@")[0], "enabled": enabled,
+				"send_welcome_email": 0, "roles": [{"role": "System Manager"}],
+			}).insert(ignore_permissions=True)
+			if technical:
+				frappe.db.set_value("User", doc.name, "credhub_api_key", "key-1")
+			return doc.name
+
+		active = user("active-admin-367@example.com")
+		disabled = user("disabled-admin-367@example.com", enabled=0)
+		technical = user("technical-367@example.com", technical=True)
+		self.run_sync(FakeSmart([open_row(981, "NF-1", DEBTOR_A, CEDENTE_A)]))
+		deal = self._protest(981)
+		self.run_sync(FakeSmart(paid_rows=[paid_row(981, "NF-1", DEBTOR_A)]))
+		notified = set(frappe.get_all("CRM Notification", {"reference_name": deal}, pluck="to_user"))
+		self.assertIn(active, notified)
+		self.assertNotIn(disabled, notified)
+		self.assertNotIn(technical, notified)

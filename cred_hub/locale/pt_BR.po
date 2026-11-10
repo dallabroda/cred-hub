@@ -3231,11 +3231,11 @@ msgstr "Operação no ERP"
 msgid "ERP situation"
 msgstr "Situação no ERP"
 
-msgid "Open amount in the ERP"
-msgstr "Valor em aberto no ERP"
+msgid "Face value in the ERP"
+msgstr "Valor de face no ERP"
 
-msgid "Last open amount the ERP reported; a drop means a partial payment."
-msgstr "Último valor em aberto informado pelo ERP; se diminuir, é pagamento parcial."
+msgid "Face value the ERP reports for the título (the ERP does not report an open balance)."
+msgstr "Valor de face que o ERP informa para o título (o ERP não informa saldo em aberto)."
 
 msgid "Closed because"
 msgstr "Fechado por"
@@ -3263,9 +3263,6 @@ msgstr "Sincronização na fila. O resultado aparece nas configurações quando 
 
 msgid "The collection sync for {0} comes in the next version."
 msgstr "O sync de cobrança da {0} vem na próxima versão."
-
-msgid "Partial payment reported by {0}."
-msgstr "Pagamento parcial informado pela {0}."
 
 msgid "{0} in {1} on {2} ({3}); amount received: {4}."
 msgstr "{0} na {1} em {2} ({3}); valor recebido: {4}."
@@ -3301,14 +3298,11 @@ msgstr "SIMULAÇÃO (nada foi gravado): {0}"
 msgid "due"
 msgstr "venc."
 
-msgid "partial payment"
-msgstr "pagamento parcial"
-
 msgid "The synchronization stopped because of an unexpected error. Support was notified."
 msgstr "A sincronização parou por um erro inesperado. O suporte foi avisado."
 
-msgid "{0} overdue títulos read: {1} new, {2} updated, {3} new cards. {4} settlements read: {5} títulos closed, {6} cards won, {11} to review. {7} partial payments. {8} títulos skipped, {9} with errors. {10} títulos are no longer overdue in the ERP (extended or written off) and stay open here."
-msgstr "{0} títulos vencidos lidos: {1} novos, {2} atualizados, {3} cards novos. {4} liquidações lidas: {5} títulos fechados, {6} cards ganhos, {11} para revisar. {7} pagamentos parciais. {8} títulos ignorados, {9} com erro. {10} títulos não estão mais vencidos no ERP (prorrogados ou baixados) e seguem abertos aqui."
+msgid "{0} overdue títulos read: {1} new, {2} updated, {3} new cards. {4} settlements read: {5} títulos closed, {6} cards won, {7} to review. {8} títulos skipped, {9} with errors. {10} títulos are no longer overdue in the ERP (extended or written off) and stay open here."
+msgstr "{0} títulos vencidos lidos: {1} novos, {2} atualizados, {3} cards novos. {4} liquidações lidas: {5} títulos fechados, {6} cards ganhos, {7} para revisar. {8} títulos ignorados, {9} com erro. {10} títulos não estão mais vencidos no ERP (prorrogados ou baixados) e seguem abertos aqui."
 
 # Fechamento de títulos pelo sync do ERP (credtech#367, 3ª rodada de decisões do dono)
 msgid "The ERP did not inform the amount received: the whole balance was settled."

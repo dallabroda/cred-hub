@@ -38,10 +38,10 @@ TITLE_FIELDS = [
 	{
 		"fieldname": "erp_amount",
 		"fieldtype": "Currency",
-		"label": "Open amount in the ERP",
+		"label": "Face value in the ERP",
 		"read_only": 1,
 		"insert_after": "erp_situation",
-		"description": "Last open amount the ERP reported; a drop means a partial payment.",
+		"description": "Face value the ERP reports for the título (the ERP does not report an open balance).",
 	},
 	{
 		"fieldname": "closed_reason",

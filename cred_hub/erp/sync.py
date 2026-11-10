@@ -15,7 +15,8 @@ transaction, measures it and reports what it would create, update and close; the
 simulation can never differ from the real run. The owner (and the client) read the report before turning it off.
 
 Owner decisions applied: nobody is assigned to the cards (the client assigns), the species is never guessed,
-a partial payment keeps the título open with its balance.
+partial payments cannot be detected (the ERP reports only the face value of an open título), so the título stays
+open until the ERP settles it.
 Smart Securities only in this version; WBA has no overdue filter nor settlement data (next PR).
 """
 
@@ -226,7 +227,7 @@ def _cooldown(report: str):
 def _new_stats() -> dict:
 	return {
 		"overdue_read": 0, "settled_read": 0, "titles_new": 0, "titles_update": 0, "titles_locked": 0,
-		"cards_new": 0, "cards_update": 0, "partial_payments": 0, "titles_closed": 0, "cards_won": 0,
+		"cards_new": 0, "cards_update": 0, "titles_closed": 0, "cards_won": 0,
 		"left_overdue": 0, "cards_to_review": 0, "protests_to_withdraw": 0, "skipped": 0, "failed": 0, "plan": [],
 	}
 
@@ -243,12 +244,12 @@ def _summary(stats) -> str:
 def _summary_base(stats) -> str:
 	return _(
 		"{0} overdue títulos read: {1} new, {2} updated, {3} new cards. {4} settlements read: {5} títulos closed, "
-		"{6} cards won, {11} to review. {7} partial payments. {8} títulos skipped, {9} with errors. {10} títulos are "
-		"no longer overdue in the ERP (extended or written off) and stay open here."
+		"{6} cards won, {7} to review. {8} títulos skipped, {9} with errors. {10} títulos are no longer overdue in "
+		"the ERP (extended or written off) and stay open here."
 	).format(
 		stats["overdue_read"], stats["titles_new"], stats["titles_update"], stats["cards_new"], stats["settled_read"],
-		stats["titles_closed"], stats["cards_won"], stats["partial_payments"], stats["skipped"], stats["failed"],
-		stats["left_overdue"], stats["cards_to_review"],
+		stats["titles_closed"], stats["cards_won"], stats["cards_to_review"], stats["skipped"], stats["failed"],
+		stats["left_overdue"],
 	)
 
 
@@ -361,17 +362,8 @@ def update_open_row(found, title: dict, stats: dict):
 	row = next((r for r in deal.titles if r.name == found[1]), None)
 	if row is None or row.get("closed_reason"):
 		return
+	# The open report only has the face value (no balance): no payment is ever inferred from it
 	amount = flt(title.get("amount"), 2)
-	# Settle the balance to what the ERP says (not the difference between two ERP readings), so a payment the
-	# operator already registered on the card is never counted twice
-	owed = _balance(row)
-	if amount and owed - amount > CENT:
-		register_payment(
-			deal, row, flt(owed - amount, 2), getdate(today()),
-			_("Partial payment reported by {0}.").format(title["erp"]),
-		)
-		stats["partial_payments"] += 1
-		_plan(stats, f"~ {row.title_number} | {_('partial payment')}: {_money(owed)} -> {_money(amount)}")
 	row.erp_situation = title.get("situation") or row.erp_situation
 	row.erp_amount = amount or row.erp_amount
 	if title.get("digitable_line") and not row.digitable_line:
@@ -460,6 +452,14 @@ def close_titles(card: str, items: list, stats: dict):
 		warn_protest_active(deal, number, erp, status)
 
 
+def people_to_notify(users: set) -> set:
+	"""Only people: enabled users that are not the hidden technical user of an API key."""
+	filters = {"name": ("in", list(users - {"Guest"})), "enabled": 1}
+	if frappe.get_meta("User").has_field("credhub_api_key"):
+		filters["credhub_api_key"] = ("is", "not set")
+	return set(frappe.get_all("User", filters, pluck="name")) if users else set()
+
+
 def has_active_protest(row) -> bool:
 	"""The título went to the registry and the registry did not close it yet: its protest is still alive."""
 	return bool(row.get("sent_at")) and protest.row_status(row) not in protest.FINAL
@@ -475,12 +475,10 @@ def warn_protest_active(deal, number: str, erp: str, status: str):
 		"the protest: the system never does it by itself."
 	).format(number, erp, status or _("sent"))
 	protest._note(deal, "⚠ " + text)
-	users = set(
-		frappe.get_all("Has Role", {"role": "System Manager", "parenttype": "User"}, pluck="parent")
-	)
+	users = set(frappe.get_all("Has Role", {"role": "System Manager", "parenttype": "User"}, pluck="parent"))
 	if deal.get("deal_owner"):
 		users.add(deal.deal_owner)
-	for user in sorted(users - {"Guest"}):
+	for user in sorted(people_to_notify(users)):
 		frappe.get_doc(
 			{
 				"doctype": "CRM Notification",
@@ -521,19 +519,22 @@ def _settle_paid(deal, row, title: dict, paid_on) -> str:
 	row.updated_amount = 0
 	# The agreement of a settled título has nothing left to collect
 	for slot in deal.get("installments") or []:
-		if slot.title == row.name and not slot.paid_on:
+		if slot.title == row.name and not slot.paid_on and not slot.get("cancelled_on"):
 			slot.paid_on = paid_on
 	return " ".join(part for part in (_("{0} in {1} on {2} ({3}).").format(_(PAID), title["erp"], when, title.get("situation") or ""), extra) if part)
 
 
 def _settle_repurchased(deal, row, title: dict, closed_on) -> str:
 	"""The cedente bought the título back: the debtor did not pay, so no payment is registered. The balance is closed
-	by an adjustment and the agreement (if any) is dropped."""
+	by an adjustment and the agreement (if any) is kept in the history as cancelled."""
 	owed = _balance(row)
 	row.updated_amount = 0
 	for slot in list(deal.get("installments") or []):
-		if slot.title == row.name and not slot.paid_on:
-			deal.remove(slot)
+		if slot.title == row.name and not slot.paid_on and not slot.get("cancelled_on"):
+			if frappe.get_meta("CRM Deal Installment").has_field("cancelled_on"):
+				slot.cancelled_on = closed_on
+			else:
+				deal.remove(slot)
 	return _("{0} in {1} on {2} ({3}). Balance of {4} closed by adjustment: not a payment of the debtor.").format(
 		_(REPURCHASED), title["erp"], frappe.utils.formatdate(closed_on), title.get("situation") or "", _money(owed)
 	)
