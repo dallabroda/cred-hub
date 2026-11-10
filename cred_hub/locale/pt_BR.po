@@ -2913,7 +2913,6 @@ msgstr "Em Cartório"
 msgid "Legal / Lawsuit"
 msgstr "Jurídico"
 
-
 # E-mails in the Figma design (hubtech_layout.html, hubtech_macros.html and templates/emails)
 msgid "{0} invited you to HubTech CRM"
 msgstr "{0} convidou você para o HubTech CRM"
@@ -3085,7 +3084,6 @@ msgstr "Cursor de paginação inválido."
 
 msgid "Provide a valid CPF (11 digits) or CNPJ (14 digits)."
 msgstr "Informe um CPF (11 dígitos) ou CNPJ (14 dígitos) válido."
-
 
 # Integração com ERPs de securitização: WBA e Smart Securities (credtech#367)
 msgid "Cred Hub ERP Settings"
@@ -3345,3 +3343,6 @@ msgstr "A execução do sync que criou este título (para desfazer uma execuçã
 
 msgid "The synchronization run that created this card: filter by it to undo a whole run."
 msgstr "A execução do sync que criou este card: filtre por ela para desfazer uma execução inteira."
+# Papel da Organização (credtech#367)
+msgid "Party role"
+msgstr "Papel"
