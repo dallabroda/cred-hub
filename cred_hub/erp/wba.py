@@ -77,6 +77,8 @@ class WbaClient(BaseClient):
 	def find_people(self, documents=(), kinds=()) -> list[dict]:
 		"""Registered people by CPF/CNPJ (and/or tipoCadastro like CEDENTE, SACADO)."""
 		docs = [digits(d) for d in documents if digits(d)]
+		if not docs and not kinds:
+			raise ValueError("find_people needs at least one document or kind (an empty filter lists everyone)")
 		body = {}
 		cnpjs = [d for d in docs if len(d) != 11]
 		cpfs = [d for d in docs if len(d) == 11]
@@ -90,6 +92,9 @@ class WbaClient(BaseClient):
 
 	def find_person(self, document) -> dict | None:
 		wanted = digits(document)
+		if not wanted:
+			# An empty filter would list the whole registry
+			return None
 		for person in self.find_people([wanted]):
 			if digits(person.get("cnpj") or person.get("cpf")) == wanted:
 				return person

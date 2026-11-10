@@ -3201,3 +3201,6 @@ msgstr "Escolha o ERP e salve as credenciais primeiro."
 
 msgid "Connected to {0}."
 msgstr "Conectado à {0}."
+
+msgid "The ERP API URL must start with https://"
+msgstr "A URL da API do ERP precisa começar com https://"

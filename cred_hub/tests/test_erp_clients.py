@@ -6,7 +6,7 @@ import unittest
 from datetime import date
 from decimal import Decimal
 
-from cred_hub.erp.base import ErpAuthError, ErpMaintenance, ErpRateLimited
+from cred_hub.erp.base import ErpAuthError, ErpError, ErpMaintenance, ErpRateLimited
 from cred_hub.erp.smart import SmartClient, normalize_title, outcome_of
 from cred_hub.erp.wba import WbaClient, normalize_receivable
 
@@ -192,6 +192,10 @@ class TestSmart(unittest.TestCase):
 		list(client.titles("emaberto", vencimentoFim=date(2026, 11, 9)))
 		params = session.sent[-1]["params"]
 		self.assertEqual((params["vencimentoIni"], params["vencimentoFim"]), ("01/01/2000", "09/11/2026"))
+		list(client.titles("emaberto", vencimentoIni=date(2026, 11, 1)))
+		params = session.sent[-1]["params"]
+		# A lone start date keeps every future due date
+		self.assertEqual((params["vencimentoIni"], params["vencimentoFim"]), ("01/11/2026", "31/12/2099"))
 
 	def test_calls_respect_20_per_minute(self):
 		client, _, clock = smart({("GET", "/smartsecurities/titulo"): [
@@ -228,6 +232,21 @@ class TestSmart(unittest.TestCase):
 		result = client.create_cedente({"cpfCnpj": "43141963000118", "nomeFantasia": "", "telefones": []})
 		self.assertEqual(result, {"created": True, "duplicate": False, "id": 77, "message": ""})
 		self.assertEqual(session.sent[-1]["json"], {"cpfCnpj": "43141963000118"})
+
+	def test_500_saying_it_does_not_exist_is_an_error(self):
+		client, _, _ = smart({("POST", "/smartsecurities/cedente"): [
+			FakeResponse(500, {"detail": "Gerente informado não existe"}),
+		]})
+		with self.assertRaises(ErpError):
+			client.create_cedente({"cpfCnpj": "43141963000118"})
+
+	def test_empty_document_never_lists_everyone(self):
+		client, session, _ = smart({})
+		self.assertIsNone(client.find_cedente(""))
+		self.assertEqual(session.sent, [])
+		wba_client, wba_session = wba({})
+		self.assertIsNone(wba_client.find_person(None))
+		self.assertEqual(wba_session.sent, [])
 
 	def test_existing_cedente_is_a_duplicate_not_an_error(self):
 		for answer in (FakeResponse(409, {"detail": "Cedente já cadastrado"}),
