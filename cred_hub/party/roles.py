@@ -44,27 +44,34 @@ def has_role(value: str | None, role: str) -> bool:
 
 def backfill() -> dict:
 	"""One-off fill for sites that already had collection cards: the debtor of each collection card becomes
-	sacado; the card's second organization and every título's cedente become cedente."""
+	sacado; the card's second organization and every título's cedente become cedente. Returns how many distinct
+	organizations got each role."""
 	import frappe
 
 	from cred_hub.integrations import get_settings
 
-	counts = {CEDENTE: 0, DEBTOR: 0}
+	debtors, cedentes = set(), set()
 	pipeline = get_settings().get("collection_pipeline")
 	if pipeline:
 		for row in frappe.get_all(
 			"CRM Deal", {"pipeline": pipeline}, ["organization", "second_organization"], limit_page_length=0
 		):
 			if row.organization:
-				add_role(row.organization, DEBTOR)
-				counts[DEBTOR] += 1
+				debtors.add(row.organization)
 			if row.second_organization and row.second_organization != row.organization:
-				add_role(row.second_organization, CEDENTE)
-				counts[CEDENTE] += 1
+				cedentes.add(row.second_organization)
 	if frappe.db.has_column("CRM Deal Title", "cedente"):
-		for cedente in frappe.get_all(
-			"CRM Deal Title", {"cedente": ("is", "set")}, pluck="cedente", distinct=True, limit_page_length=0
+		for row in frappe.get_all(
+			"CRM Deal Title",
+			{"parenttype": "CRM Deal", "cedente": ("is", "set")},
+			["cedente", "parent"],
+			limit_page_length=0,
 		):
-			add_role(cedente, CEDENTE)
-			counts[CEDENTE] += 1
-	return counts
+			# Same rule as the import: a company that is cedente of its own debt is not marked cedente
+			if row.cedente != frappe.db.get_value("CRM Deal", row.parent, "organization"):
+				cedentes.add(row.cedente)
+	for name in debtors:
+		add_role(name, DEBTOR)
+	for name in cedentes:
+		add_role(name, CEDENTE)
+	return {DEBTOR: len(debtors), CEDENTE: len(cedentes)}
