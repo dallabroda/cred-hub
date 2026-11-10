@@ -256,12 +256,17 @@ def _primary_contact(deal) -> str | None:
 	return primary or next((row.contact for row in rows), None) or deal.get("contact")
 
 
-def debtor_of(deal) -> dict:
-	"""Devedor: a Organização do card com CNPJ ou, sem ela, o contato principal com CPF."""
-	if deal.get("organization"):
+def debtor_of(deal, row=None) -> dict:
+	"""Devedor: o sacado do título (credtech#367: no card por cedente cada título tem o seu), senão a Organização do
+	card com CNPJ ou, sem ela, o contato principal com CPF."""
+	if row is not None and (row.get("sacado") or row.get("sacado_contact")):
+		organization, contact_name = row.get("sacado"), row.get("sacado_contact")
+	else:
+		organization, contact_name = deal.get("organization"), None
+	if organization:
 		org = None
 		try:
-			org = frappe.get_doc("CRM Organization", deal.organization)
+			org = frappe.get_doc("CRM Organization", organization)
 		except frappe.DoesNotExistError:
 			org = None
 		if org and is_valid_cnpj(org.get("cnpj")):
@@ -279,7 +284,9 @@ def debtor_of(deal) -> dict:
 				email=org.get("registry_email"),
 			)
 			return party
-	contact_name = _primary_contact(deal)
+	if not contact_name and not (row is not None and row.get("sacado")):
+		# A título with its own sacado company never falls back to the card's contact
+		contact_name = _primary_contact(deal)
 	if contact_name:
 		contact = None
 		try:
@@ -944,7 +951,7 @@ def _collect_row(deal, row, settings, selected=None):
 			break
 
 	try:
-		debtor = debtor_of(deal)
+		debtor = debtor_of(deal, row)
 	except TitleIncomplete as e:
 		problems.extend(e.problems)
 		debtor = None
@@ -1029,7 +1036,7 @@ def build_title_from_row(deal, row, settings, codebtors=None) -> tuple[dict, dic
 
 def _row_consult(deal, row) -> dict:
 	"""As chaves com que a linha foi enviada (número, nosso número, vencimento e o documento do devedor)."""
-	debtor = debtor_of(deal)
+	debtor = debtor_of(deal, row)
 	return {
 		"devedor": {"documento": debtor["documento"], "nome": ""},
 		"divida": {

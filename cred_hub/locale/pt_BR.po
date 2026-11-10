@@ -3213,3 +3213,67 @@ msgstr "Cedente vende os recebíveis; sacado é quem paga. Preenchido sozinho pe
 
 msgid "The ERP API URL must start with https://"
 msgstr "A URL da API do ERP precisa começar com https://"
+
+# Sync de inadimplentes do ERP para a Cobrança (credtech#367)
+msgid "Sacado"
+msgstr "Sacado"
+
+msgid "Sacado (person)"
+msgstr "Sacado (pessoa física)"
+
+msgid "Who must pay this título (a card grouped by cedente has títulos of several sacados)."
+msgstr "Quem deve pagar este título (no card agrupado por cedente, cada título pode ter um sacado diferente)."
+
+msgid "ERP título ID"
+msgstr "ID do título no ERP"
+
+msgid "ERP operation"
+msgstr "Operação no ERP"
+
+msgid "ERP situation"
+msgstr "Situação no ERP"
+
+msgid "Open amount in the ERP"
+msgstr "Valor em aberto no ERP"
+
+msgid "Last open amount the ERP reported; a drop means a partial payment."
+msgstr "Último valor em aberto informado pelo ERP; se diminuir, é pagamento parcial."
+
+msgid "Closed because"
+msgstr "Fechado por"
+
+msgid "Closed on"
+msgstr "Fechado em"
+
+msgid "Paid by debtor"
+msgstr "Pago pelo sacado"
+
+msgid "Repurchased by cedente"
+msgstr "Recomprado pelo cedente"
+
+msgid "Extended"
+msgstr "Prorrogado"
+
+msgid "How the spreadsheet import and the ERP sync group the títulos in cards. The cedente and the sacado are kept on each título either way. Changing it only affects new títulos."
+msgstr "Como a importação de planilha e o sync do ERP agrupam os títulos em cards. O cedente e o sacado ficam em cada título de qualquer jeito. Trocar a opção só vale para títulos novos."
+
+msgid "Turn the ERP integration on and save the credentials first."
+msgstr "Ative a integração com o ERP e salve as credenciais primeiro."
+
+msgid "Synchronization queued. The result appears in the settings when it ends."
+msgstr "Sincronização na fila. O resultado aparece nas configurações quando terminar."
+
+msgid "The collection sync for {0} comes in the next version."
+msgstr "O sync de cobrança da {0} vem na próxima versão."
+
+msgid "{0} overdue títulos read: {1} new, {2} updated, {3} new cards. {4} settlements read: {5} títulos closed, {6} cards won. {7} partial payments. {8} títulos skipped, {9} with errors."
+msgstr "{0} títulos vencidos lidos: {1} novos, {2} atualizados, {3} cards novos. {4} liquidações lidas: {5} títulos fechados, {6} cards ganhos. {7} pagamentos parciais. {8} títulos ignorados, {9} com erro."
+
+msgid "Partial payment reported by {0}."
+msgstr "Pagamento parcial informado pela {0}."
+
+msgid "{0} in {1} on {2} ({3}); amount received: {4}."
+msgstr "{0} na {1} em {2} ({3}); valor recebido: {4}."
+
+msgid "Título {0}: {1}"
+msgstr "Título {0}: {1}"

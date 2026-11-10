@@ -14,6 +14,7 @@ from cred_hub.company.fields import COMPANY_SECTION, company_custom_fields
 from cred_hub.email_company.apply import install as install_email_company
 from cred_hub.integrations.fields import CONTACT_PANEL_FIELDS
 from cred_hub.integrations.fields import custom_fields as integration_custom_fields
+from cred_hub.erp.fields import erp_custom_fields
 from cred_hub.party.fields import party_custom_fields
 from cred_hub.party.roles import FIELD as PARTY_ROLE_FIELD
 
@@ -124,6 +125,8 @@ def after_install():
 	backfill_contact_cenprot_addresses()
 	# Papel da Organização: cedente, sacado ou os dois (credtech#367), no painel logo abaixo do nome
 	create_custom_fields(party_custom_fields(), update=True)
+	# Títulos vindos do ERP (credtech#367): sacado de cada título, ID e situação no ERP, motivo do fechamento
+	create_custom_fields(erp_custom_fields(), update=True)
 	_once(
 		"cred_hub_party_role_in_details",
 		move_to_details,

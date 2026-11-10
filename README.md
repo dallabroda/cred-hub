@@ -91,6 +91,12 @@ Base da integração nativa com os ERPs de retaguarda de securitizadoras, factor
 - Próximos PRs do épico: papel Cedente/Sacado na Organização, envio do cedente (gatilho + trava + preview), sync diário de inadimplentes para o funil de Cobrança, tela de configurações e régua de cobrança pelo bot de IA do SmartChat.
 - **Papel da Organização** (`party/roles.py`, credtech#367): campo `party_role` (Cedente / Sacado / Cedente e sacado) logo abaixo do nome no painel lateral e filtro na lista. A importação da Cobrança marca sozinha: quem deve vira sacado, quem vendeu o título vira cedente. O sistema só acrescenta papel, nunca remove (`merge`); o admin pode trocar à mão. Na instalação, uma única vez, os cards e títulos de cobrança existentes preenchem o papel das Organizações.
 
+- **Sync de inadimplentes → Cobrança** (`erp/sync.py`, credtech#367; só Smart nesta versão): todo dia às 07:30, depois da liquidação, e pelo botão `sync_now` (só admin).
+  - **Vencidos:** `emaberto` com `vencimentoIni`+`vencimentoFim` (barras cruas; vencidos há `overdue_days`, padrão D+1). Título já ligado pelo ID do ERP (`erp_title_id`) é atualizado: situação, linha digitável, e **pagamento parcial** quando o valor em aberto cai. Título novo passa pelo importador da Cobrança, que aplica o agrupamento escolhido (par, sacado, cedente ou um card por título), cria Organizações e marca os papéis.
+  - **Liquidações:** `quitados` desde a última execução bem-sucedida menos `paid_lookback_days` (padrão 7). Quitado* = "Pago pelo sacado"; Recomprado*/Repassado* = "Recomprado pelo cedente". O saldo é baixado num lançamento e o motivo fica no título. Com todos os títulos do card fechados, o card vira **Ganho**; card fechado por uma pessoa nunca é mexido.
+  - A data de referência (`last_paid_sync`) só avança quando tudo dá certo. Um título com erro não para o resto. Nunca reabre o mesmo relatório em menos de 11 min (a espera de 10 min da Smart vale para a credencial inteira). Uma execução por vez por site.
+  - Nunca atribui responsável (quem atribui é o cliente) e nunca chuta a espécie.
+- **Agrupamento dos cards** (`collection_grouping`): por cedente+sacado (padrão), por sacado, por cedente ou um card por título. Cada título guarda o seu `sacado` (Organização) ou `sacado_contact` (CPF); o protesto usa o sacado do título.
 ## Instalação
 
 ```sh
