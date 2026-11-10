@@ -15,10 +15,13 @@ class BatchRetryable(frappe.ValidationError):
 
 
 def _is_deadlock(exc: Exception) -> bool:
+	"""Only a real deadlock: Frappe's QueryDeadlockError, or the driver's error with code 1213 as its first argument.
+	Never the message text: "CRM-ORG-2026-01213" or "Value 1213 is not a valid CPF" are record errors, and treating
+	them as a deadlock would make the client resend the same bad batch forever."""
 	if isinstance(exc, getattr(frappe, "QueryDeadlockError", ())):
 		return True
-	# MariaDB error 1213 ("Deadlock found when trying to get lock") reaching us unwrapped
-	return "1213" in str(exc) or "deadlock" in str(exc).lower()
+	args = getattr(exc, "args", ())
+	return bool(args) and args[0] == 1213
 
 
 def _abort_batch(index: int):

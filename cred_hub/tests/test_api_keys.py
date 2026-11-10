@@ -717,6 +717,30 @@ class TestApiKeys(IntegrationTestCase):
 				form={"doctype": "User", "names": '["Administrator"]'},
 			)
 
+	def test_record_error_mentioning_1213_is_not_a_deadlock(self):
+		"""Erro de um registro com "1213" ou "deadlock" no texto fica no relatório do item; o lote segue."""
+		from frappe.model.document import Document
+
+		from cred_hub import bulk
+
+		token = self.create(scopes=("cards_read", "cards_write"))["token"]
+		records = [
+			{"pipeline": self.pipeline, "organization_name": "Bad 1213"},
+			{"pipeline": self.pipeline, "organization_name": "Good"},
+		]
+		self.as_key(token, "bulk_upsert", records)
+		original_insert = Document.insert
+
+		def insert_with_record_error(doc, *args, **kwargs):
+			if doc.doctype == "CRM Deal" and doc.organization_name == "Bad 1213":
+				raise frappe.ValidationError("Could not find Organization: CRM-ORG-2026-01213 (no deadlock here)")
+			return original_insert(doc, *args, **kwargs)
+
+		with patch.object(Document, "insert", insert_with_record_error):
+			res = bulk.bulk_upsert("CRM Deal", records)
+		self.assertEqual((res["success"], res["failed"]), (1, 1))
+		self.assertEqual([r["status"] for r in res["results"]], ["error", "success"])
+
 	def test_deadlock_undoes_the_whole_batch_and_asks_to_retry(self):
 		"""Deadlock no MariaDB desfaz a transação inteira: nada de repetir no meio do lote nem responder gravado."""
 		from frappe.model.document import Document
