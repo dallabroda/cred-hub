@@ -45,9 +45,11 @@ if frappe:
 
 			self.assertTrue(frappe.get_meta("CRM Organization").has_field("party_role"))
 			layout = frappe.db.get_value("CRM Fields Layout", "CRM Organization-Side Panel", "layout")
-			if layout:
-				fields = json.loads(layout)[0]["columns"][0]["fields"]
-				self.assertEqual(fields[fields.index("organization_name") + 1], "party_role")
+			self.assertTrue(layout, "the CRM installs the Organization side panel layout")
+			# Wherever the admin moved the name, the role comes right after it
+			columns = [c for section in json.loads(layout) for c in section.get("columns") or []]
+			fields = next(c["fields"] for c in columns if "organization_name" in (c.get("fields") or []))
+			self.assertEqual(fields[fields.index("organization_name") + 1], "party_role")
 
 		def test_backfill_from_collection_cards_and_titles(self):
 			from cred_hub.integrations import SETTINGS, protest
@@ -64,6 +66,9 @@ if frappe:
 			})
 			deal.append("titles", {"title_number": "NF-1", "due_date": "2026-01-10", "original_amount": 100, "cedente": other})
 			deal.insert(ignore_permissions=True)
-			backfill()
+			counts = backfill()
 			roles = {name: frappe.db.get_value("CRM Organization", name, FIELD) for name in (debtor, cedente, other)}
 			self.assertEqual(roles, {debtor: DEBTOR, cedente: CEDENTE, other: CEDENTE})
+			# Distinct organizations, not rows
+			self.assertGreaterEqual(counts[CEDENTE], 2)
+			self.assertGreaterEqual(counts[DEBTOR], 1)
