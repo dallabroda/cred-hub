@@ -157,3 +157,23 @@ class TestCollectionImport(IntegrationTestCase):
 		frappe.db.set_value("File", {"file_url": file_url}, "owner", "someone.else@example.com")
 		with patch("frappe.get_roles", return_value=["Sales User"]), self.assertRaises(frappe.PermissionError):
 			importer.read_table(file_url)
+
+	def test_import_marks_debtor_and_cedente_roles(self):
+		from cred_hub.party.roles import BOTH, CEDENTE, DEBTOR, FIELD, add_role
+
+		file_url = self.sheet(
+			f"{CNPJ_DEBTOR};DEVEDORA TESTE LTDA;{CNPJ_CEDENTE_A};CEDENTE A LTDA;NF-1;;DMI;{br(-60)};{br(-10)};100;100",
+		)
+		self.import_sheet(file_url)
+		debtor = importer._existing_org(CNPJ_DEBTOR)
+		cedente = importer._existing_org(CNPJ_CEDENTE_A)
+		self.assertEqual(frappe.db.get_value("CRM Organization", debtor, FIELD), DEBTOR)
+		self.assertEqual(frappe.db.get_value("CRM Organization", cedente, FIELD), CEDENTE)
+		# The cedente also owes on another título: it becomes both, never loses a role
+		file_url = self.sheet(
+			f"{CNPJ_CEDENTE_A};CEDENTE A LTDA;{CNPJ_CEDENTE_B};CEDENTE B LTDA;NF-9;;DMI;{br(-60)};{br(-10)};100;100",
+			name="carteira-367.csv",
+		)
+		self.import_sheet(file_url)
+		self.assertEqual(frappe.db.get_value("CRM Organization", cedente, FIELD), BOTH)
+		self.assertEqual(add_role(cedente, DEBTOR), BOTH)
