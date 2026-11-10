@@ -29,8 +29,8 @@ def to_decimal(value) -> Decimal | None:
 	if "," in text:
 		# BR format: dot = thousands, comma = decimals
 		text = text.replace(".", "").replace(",", ".")
-	elif text.count(".") > 1:
-		# "1.234.567" with no decimals
+	elif text.count(".") > 1 or re.fullmatch(r"-?\d{1,3}\.\d{3}", text):
+		# "1.234.567" or "1.500": BR thousands with no decimals (money never comes with 3 decimals)
 		text = text.replace(".", "")
 	try:
 		return Decimal(text)

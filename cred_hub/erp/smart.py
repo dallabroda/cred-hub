@@ -10,7 +10,6 @@
 """
 
 import re
-from datetime import date
 from urllib.parse import urlencode
 
 import requests
@@ -31,9 +30,11 @@ from .formats import br_date, digits, to_date, to_decimal
 DEFAULT_BASE_URL = "https://api.smartsecurities.com.br"
 API = "/smartsecurities"
 OPEN, PAID = "emaberto", "quitados"
-OPEN_RANGE_START = "01/01/2000"
+OPEN_RANGE_START, OPEN_RANGE_END = "01/01/2000", "31/12/2099"
 # A generic 429 (no minimum-interval message) is the 20/min limit: one pause, then one retry
 RATE_LIMIT_PAUSE = 61
+# "já existe", "já cadastrado", "existe um cedente"... but never "não existe"
+_ALREADY_EXISTS = re.compile(r"(?<!n[aã]o )\bexiste\b|j[aá] cadastrad", re.IGNORECASE)
 _MIN_INTERVAL = re.compile(r"intervalo m[ií]nimo de (\d+) minuto", re.IGNORECASE)
 
 
@@ -125,12 +126,15 @@ class SmartClient(BaseClient):
 		# Date ranges only filter when both ends are sent (proved 10/11/2026: Fim alone returned the whole portfolio)
 		for prefix in {key[:-3] for key in params if key.endswith(("Ini", "Fim")) and not key.startswith("valor")}:
 			params.setdefault(f"{prefix}Ini", OPEN_RANGE_START)
-			params.setdefault(f"{prefix}Fim", br_date(date.today()))
+			params.setdefault(f"{prefix}Fim", OPEN_RANGE_END)
 		yield from self._pages(f"{API}/titulo", "titulo", params)
 
 	# Cedente
 	def find_cedente(self, document) -> dict | None:
 		wanted = digits(document)
+		if not wanted:
+			# Without cpfCnpjCedente Smart returns every cedente
+			return None
 		for row in self._pages(f"{API}/cedente", "cedente", {"cpfCnpjCedente": wanted}):
 			if digits(row.get("CPF_CNPJ")) == wanted:
 				return row
@@ -153,7 +157,7 @@ class SmartClient(BaseClient):
 			response = self.request("POST", f"{API}/cedente", json=body)
 		except ErpError as e:
 			text = str(e).lower()
-			if e.http_status == 409 or (e.http_status == 500 and "existe" in text):
+			if e.http_status == 409 or (e.http_status == 500 and _ALREADY_EXISTS.search(text)):
 				return {"created": False, "duplicate": True, "id": None, "message": str(e)}
 			raise
 		data = json_or_none(response) or {}
