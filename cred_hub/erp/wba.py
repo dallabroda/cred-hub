@@ -5,6 +5,10 @@ Spec: WBA "Documentação de API externa" (Jan/2026) + Postman/cURL samples.
 - Every data call sends `Tenant-ID` + Bearer.
 - Lists are paginated with `paginacao.page` (0-based) and `pageSize` (max 100).
 - Títulos (recebíveis) can only be listed per borderô; there is no status, due-date or settlement filter.
+- Settlements live in the accounting ledger ("Consulta de lançamentos contábeis", conta corrente): each entry has
+  the borderô number, the document number, the sacado and the ledger account. Which account means "paid by the
+  debtor" or "repurchased" is set up by each client in WBA, so the client picks them; nothing is guessed
+  (`cred_hub.erp.wba_ledger`). The ledger answers a plain list with no page count.
 """
 
 from datetime import date
@@ -17,6 +21,11 @@ from .formats import br_date, digits, to_date, to_decimal
 DEFAULT_BASE_URL = "https://new-api.wba.com.br"
 PAGE_SIZE = 100
 CADASTRO_RECEIVED = "Requisição Recebida."
+LEDGER_PATH = "/v1/external/financeiro/contacorrente/filter/lista"
+INCOME, OUTGOING = "ENTRADA", "SAIDA"
+REVERTED = "REVERT"
+# The ledger has no page count: stop on a short page, and never loop forever if WBA ignores the page number
+LEDGER_MAX_PAGES = 2000
 
 
 class WbaClient(BaseClient):
@@ -128,6 +137,47 @@ class WbaClient(BaseClient):
 			"/v1/external/recebivel/filter", body, "listRecebivel", order_by="RECEBIVEL_NUMERO_DOCUMENTO"
 		)
 
+	# Accounting ledger (conta corrente): where settlements and repurchases are recorded
+	def list_entries(self, period_from: date, period_to: date, category: str = INCOME, bordero_numbers=(),
+			documents=(), page_size: int = PAGE_SIZE):
+		"""Ledger entries paid between the two dates (both required by WBA). Yields raw entries."""
+		if not (period_from and period_to):
+			raise ValueError("list_entries needs both period dates")
+		body = {"periodoDe": br_date(period_from), "periodoAte": br_date(period_to), "categoria": category}
+		if bordero_numbers:
+			body["numerosBordero"] = [int(n) for n in bordero_numbers]
+		if documents:
+			body["numerosDocumento"] = [str(d) for d in documents]
+		first_ids = set()
+		for page in range(LEDGER_MAX_PAGES):
+			data = self.request("POST", LEDGER_PATH, json={**body, "paginaAtual": page, "itensPagina": page_size}).json()
+			rows = data if isinstance(data, list) else (data or {}).get("list") or []
+			if rows:
+				# The same first entry twice means WBA ignored the page number: stop instead of looping
+				marker = rows[0].get("id")
+				if marker and marker in first_ids:
+					raise ErpError("WBA returned the same ledger page twice; the listing was stopped.", "api")
+				first_ids.add(marker)
+			yield from rows
+			if len(rows) < page_size:
+				return
+		raise ErpError("The WBA ledger has more pages than expected; narrow the period.", "api")
+
+	def ledger_accounts(self, period_from: date, period_to: date) -> list[dict]:
+		"""Ledger accounts used by income entries in the period, for the client to pick which one means "paid by the
+		debtor", "partial payment" or "repurchased" (each WBA client names its own accounts)."""
+		accounts = {}
+		for raw in self.list_entries(period_from, period_to):
+			entry = normalize_entry(raw)
+			key = entry["account_id"] or entry["account"]
+			if not key:
+				continue
+			found = accounts.setdefault(
+				key, {"id": entry["account_id"], "name": entry["account"], "group": entry["group"], "entries": 0}
+			)
+			found["entries"] += 1
+		return sorted(accounts.values(), key=lambda a: (-a["entries"], a["name"] or ""))
+
 	def ping(self) -> dict:
 		"""Login + the cheapest read, to prove the user has API access (profile API_CADASTRO)."""
 		self.authenticate()
@@ -147,6 +197,8 @@ def normalize_receivable(item: dict, bordero: dict | None = None) -> dict:
 		"erp_id": item.get("idRecebivel"),
 		"operation": item.get("idOperacao"),
 		"bordero": item.get("idBordero") or bordero.get("idBordero"),
+		# The ledger points to títulos by borderô number + document number
+		"bordero_number": _int(item.get("numeroBordero") or bordero.get("numeroBordero")),
 		"number": str(item.get("numeroDocumento") or ""),
 		"kind": item.get("tipoRecebivel"),
 		"sacado_document": digits(item.get("documentoSacado")),
@@ -160,4 +212,38 @@ def normalize_receivable(item: dict, bordero: dict | None = None) -> dict:
 		# WBA exposes no status, settlement or boleto line on recebíveis
 		"situation": "",
 		"digitable_line": "",
+	}
+
+
+def _int(value) -> int | None:
+	text = digits(value)
+	return int(text) if text else None
+
+
+def _truthy(value) -> bool:
+	if isinstance(value, bool):
+		return value
+	return str(value or "").strip().lower() in ("true", "1", "s", "sim", "y", "yes")
+
+
+def normalize_entry(item: dict) -> dict:
+	"""WBA ledger entry -> the fields the settlement matching needs."""
+	return {
+		"erp_id": item.get("id") or "",
+		"event": item.get("idEvento") or "",
+		"date": to_date(item.get("data")),
+		"amount": to_decimal(item.get("valor")),
+		"category": (item.get("categoria") or "").upper(),
+		"bordero_number": _int(item.get("numeroBordero")),
+		"document": str(item.get("documento") or "").strip(),
+		"bank_number": str(item.get("numeroBancario") or "").strip(),
+		"sacado_document": digits(item.get("documentoSacado")),
+		"cedente_document": digits(item.get("documentoCedente")),
+		"account_id": item.get("idContaEvento") or "",
+		"account": item.get("contaEvento") or "",
+		"group": item.get("grupoConta") or "",
+		"reverted": (item.get("situacao") or "").upper() == REVERTED,
+		# Only a real "true" blocks: "false", "N" or "0" as text must not hide a settlement
+		"blocked": _truthy(item.get("bloqueado")),
+		"note": item.get("observacao") or "",
 	}
