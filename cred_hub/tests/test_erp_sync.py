@@ -506,4 +506,6 @@ class TestErpSync(IntegrationTestCase):
 		self.run_sync(FakeSmart([open_row(1041, "NF-6", DEBTOR_A, CEDENTE_A, value="1.000,00")]))
 		_deal, adopted = self.title_row(1041)
 		self.assertEqual((adopted.updated_amount, adopted.paid_amount, len(_deal.payments)), (700, 300, 1))
+		# the row existed before the run: undoing the run (by erp_run_id) must not take it
+		self.assertFalse(adopted.get("erp_run_id"))
 

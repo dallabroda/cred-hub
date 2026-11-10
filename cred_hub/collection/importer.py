@@ -536,8 +536,9 @@ def import_group(pipeline, titles, grouping, stats):
 				by_erp[erp_id] = row
 				erp_by_key.setdefault(key, []).append(row)
 				# the ERP identity is written even when the row is locked (already at the registry)
+				# (never the run id: the row existed before this run, so undoing the run must not delete it)
 				for fieldname in ERP_FIELDS:
-					if values.get(fieldname) not in (None, ""):
+					if fieldname != "erp_run_id" and values.get(fieldname) not in (None, ""):
 						row.set(fieldname, values[fieldname])
 		else:
 			row = plain.get(key)
@@ -557,7 +558,14 @@ def import_group(pipeline, titles, grouping, stats):
 				# The ERP owns the money of its títulos (credtech#367): neither a spreadsheet nor the ERP identity
 				# of an adopted row rewrites original/updated/paid amounts (that would reopen a paid balance or
 				# break the read-only balance); only empty, non-monetary fields are completed
-				row.update({k: v for k, v in values.items() if v not in (None, "") and k not in MONEY_FIELDS and not row.get(k)})
+				# (and never the run id: this row existed before the run, undoing the run must not take it)
+				row.update(
+					{
+						k: v
+						for k, v in values.items()
+						if v not in (None, "") and k not in MONEY_FIELDS and k != "erp_run_id" and not row.get(k)
+					}
+				)
 			else:
 				# só o que veio preenchido: a planilha nova nunca apaga o que o operador já completou (ex.: espécie)
 				row.update({k: v for k, v in values.items() if v not in (None, "")})
