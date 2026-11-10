@@ -6,6 +6,8 @@
  "engine": "InnoDB",
  "field_order": [
   "status",
+  "plan_tier",
+  "pending_plan_tier",
   "trial_ends_on",
   "trial_reminders_sent",
   "contracted_in_trial",
@@ -35,6 +37,21 @@
    "fieldtype": "Select",
    "label": "Status",
    "options": "Free\nAwaiting Payment\nActive\nPast Due\nCanceled",
+   "read_only": 1
+  },
+  {
+   "description": "Contracted plan tier: free_legacy (grandfathering), vendas (CRM Vendas), credito_cobranca (Crédito & Cobrança — Pro), or enterprise.",
+   "fieldname": "plan_tier",
+   "fieldtype": "Select",
+   "label": "Plan Tier",
+   "options": "\nfree_legacy\nvendas\ncredito_cobranca\nenterprise",
+   "read_only": 1
+  },
+  {
+   "description": "Plan tier requested and waiting for payment confirmation or scheduled for the next due date.",
+   "fieldname": "pending_plan_tier",
+   "fieldtype": "Data",
+   "label": "Pending Plan Tier",
    "read_only": 1
   },
   {
