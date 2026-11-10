@@ -27,7 +27,7 @@
    "fieldname": "provider",
    "fieldtype": "Select",
    "label": "Provider",
-   "options": "Assertiva\nCENPROT",
+   "options": "Assertiva\nCENPROT\nWBA\nSmart Securities",
    "in_list_view": 1,
    "in_standard_filter": 1
   },
@@ -118,7 +118,7 @@
  ],
  "in_create": 1,
  "links": [],
- "modified": "2026-10-30 09:00:00.000000",
+ "modified": "2026-11-10 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "Cred Hub",
  "name": "Cred Hub Bureau Query",
