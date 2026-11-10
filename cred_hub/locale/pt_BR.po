@@ -3204,3 +3204,12 @@ msgstr "Conectado à {0}."
 
 msgid "The ERP API URL must start with https://"
 msgstr "A URL da API do ERP precisa começar com https://"
+# Papel da Organização (credtech#367)
+msgid "Party role"
+msgstr "Papel"
+
+msgid "Cedente and debtor"
+msgstr "Cedente e sacado"
+
+msgid "Cedente sells receivables; sacado (debtor) pays them. Filled automatically by collection imports and the ERP integration; the system only adds roles, never removes them."
+msgstr "Cedente vende os recebíveis; sacado é quem paga. Preenchido sozinho pela importação de cobrança e pela integração com o ERP; o sistema só acrescenta papéis, nunca remove."

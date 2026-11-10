@@ -89,6 +89,7 @@ Base da integração nativa com os ERPs de retaguarda de securitizadoras, factor
 - **De-para** (`mapper.py`): regras "campo do ERP ← origem no CRM" (`deal`, `organization`, `contact`, `address`, campos customizados inclusive; `a.x|b.y` = alternativa; `today`; `auto`), com transformação (dígitos, dinheiro BR, datas, DDD/número, rua/número, ASCII), valor padrão e obrigatório. Devolve o payload e a lista de obrigatórios vazios, que vão virar o alerta no card. Ao escolher o ERP, as configurações recebem o de-para sugerido daquele ERP (`DEFAULT_RULES`), editável; `reset_field_map` volta ao sugerido.
 - **Testar conexão** (`settings.test_connection`, POST, só admin): login + leitura mais barata, registrada no histórico.
 - Próximos PRs do épico: papel Cedente/Sacado na Organização, envio do cedente (gatilho + trava + preview), sync diário de inadimplentes para o funil de Cobrança, tela de configurações e régua de cobrança pelo bot de IA do SmartChat.
+- **Papel da Organização** (`party/roles.py`, credtech#367): campo `party_role` (Cedente / Sacado / Cedente e sacado) logo abaixo do nome no painel lateral e filtro na lista. A importação da Cobrança marca sozinha: quem deve vira sacado, quem vendeu o título vira cedente. O sistema só acrescenta papel, nunca remove (`merge`); o admin pode trocar à mão. Na instalação, uma única vez, os cards e títulos de cobrança existentes preenchem o papel das Organizações.
 
 ## Instalação
 
