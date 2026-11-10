@@ -1409,3 +1409,154 @@ def get_whatsapp_onboarding_reminder(
 	from cred_hub.credit_check.committee import build_whatsapp_onboarding_reminder
 
 	return build_whatsapp_onboarding_reminder(ctx["organization"], ctx["deal"].name if ctx["deal"] else None)
+
+
+# ==============================================================================
+# VERTICAL DE CRÉDITO, BIRÔ, LOCALIZE & PROSPECÇÃO B2B (6 PRODUTOS + CRM SYNC)
+# ==============================================================================
+
+
+@frappe.whitelist()
+def get_bureau_vertical_catalog() -> dict[str, Any]:
+	"""Retorna os 6 produtos oficiais (PJ Básico, PJ Avançado, PF Básico, PF Avançado,
+	Localize Só Telefones e Localize Completo c/ CENPROT) e o saldo atual da carteira."""
+	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
+	from cred_hub.billing import wallet_balance
+	from cred_hub.credit_check.bureau_vertical import get_catalog_dict
+
+	return {
+		"products": get_catalog_dict(),
+		"wallet_balance": wallet_balance(),
+	}
+
+
+@frappe.whitelist(methods=["POST"])
+def run_bureau_vertical_product(
+	product_key: str,
+	document: str,
+	requested_amount: float = 0.0,
+	sync_to_crm: int | bool = 1,
+	create_deal: int | bool = 0,
+	deal_stage: str = "",
+	force: int | bool = 0,
+	charge_wallet: int | bool = 0,
+) -> dict[str, Any]:
+	"""Executa qualquer um dos 6 produtos na vertical de Crédito & Localize, utilizando cache de 30 dias,
+	aplicando o Motor de Crédito e sincronizando nativamente com Organizações/Contatos/Cards do HubTech CRM."""
+	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
+	from cred_hub.billing import refund_credits, spend_credits
+	from cred_hub.cnpj import client as cnpj_client
+	from cred_hub.credit_check.bureau_vertical import (
+		BUREAU_PRODUCTS,
+		run_product_query,
+		sync_result_to_hubtech_crm,
+	)
+	from cred_hub.credit_check.platform_credentials import platform_bigdatacorp_token
+	from cred_hub.integrations import bureau_log
+
+	key = (product_key or "").strip().upper()
+	if key not in BUREAU_PRODUCTS:
+		frappe.throw(_("Invalid bureau product: {0}.").format(product_key))
+	spec = BUREAU_PRODUCTS[key]
+	digits = only_digits(document)
+
+	settings = get_credit_settings()
+	token = platform_bigdatacorp_token(allow_empty=True) or settings.get("bigdatacorp_token") or ""
+	directd_token = settings.get("directd_token") or ""
+
+	operation = f"vertical_{key.lower()}"
+	cached_entry = None if _truthy(force) else bureau_log.recent("BigDataCorp", operation, digits, days=30)
+	if cached_entry and isinstance(cached_entry.data, dict):
+		result = dict(cached_entry.data)
+		result["cached"] = True
+	else:
+		price_to_charge = spec.suggested_price_brl if _truthy(charge_wallet) else 0.0
+		if price_to_charge > 0:
+			spend_credits(price_to_charge, description=f"{spec.label} ({digits})")
+		try:
+			opencnpj_data = None
+			if len(digits) == 14:
+				try:
+					opencnpj_data = cnpj_client.fetch(digits)
+				except Exception:
+					opencnpj_data = None
+			policy_cfg = {**settings, **(credit_policy.current().get("parameters") or {})}
+			result = run_product_query(
+				product_key=key,
+				document=digits,
+				token=token,
+				opencnpj_data=opencnpj_data,
+				directd_token=directd_token,
+				policy_settings=policy_cfg,
+				requested_amount=flt(requested_amount),
+			)
+			result["cached"] = False
+			bureau_log.record(
+				"BigDataCorp",
+				operation,
+				bureau_log.SUCCESS,
+				document=digits,
+				http_status=200,
+				protocol=str(result.get("query_id") or ""),
+				purpose="Credit protection and collection",
+				response=result,
+			)
+		except Exception:
+			if price_to_charge > 0:
+				refund_credits(price_to_charge, description=f"Estorno {spec.label} ({digits})")
+			raise
+
+	if _truthy(sync_to_crm):
+		result["crm_sync"] = sync_result_to_hubtech_crm(
+			result,
+			create_deal=_truthy(create_deal),
+			deal_stage=deal_stage,
+		)
+	return result
+
+
+@frappe.whitelist()
+def search_bureau_b2b_leads(
+	uf: str = "",
+	cnaes: str | list[str] | None = None,
+	id_municipio: str = "",
+	cep_prefix: str = "",
+	portes: str | list[str] | None = None,
+	capital_social_min: float = 0.0,
+	capital_social_max: float = 0.0,
+	somente_simples: int | bool = 0,
+	excluir_mei: int | bool = 1,
+	idade_minima_anos: int = 0,
+	somente_com_telefone: int | bool = 0,
+	limit: int = 100,
+) -> dict[str, Any]:
+	"""Monta a consulta parametrizada de prospecção de leads B2B na Receita Federal (`basedosdados.br_rf_cnpj`)."""
+	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
+	from cred_hub.credit_check.bureau_vertical import build_bigquery_leads_sql
+
+	if isinstance(cnaes, str):
+		cnae_list = [c.strip() for c in cnaes.split(",") if c.strip()]
+	else:
+		cnae_list = list(cnaes or [])
+
+	if isinstance(portes, str):
+		porte_list = [p.strip() for p in portes.split(",") if p.strip()]
+	else:
+		porte_list = list(portes or [])
+
+	sql, params = build_bigquery_leads_sql(
+		uf=uf,
+		cnaes=cnae_list,
+		id_municipio=id_municipio,
+		cep_prefix=cep_prefix,
+		portes=porte_list,
+		capital_social_min=flt(capital_social_min),
+		capital_social_max=flt(capital_social_max),
+		somente_simples=_truthy(somente_simples),
+		excluir_mei=_truthy(excluir_mei),
+		idade_minima_anos=cint(idade_minima_anos),
+		somente_com_telefone=_truthy(somente_com_telefone),
+		limit=cint(limit or 100),
+	)
+	return {"ok": True, "sql": sql, "params": params}
+

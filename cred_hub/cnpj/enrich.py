@@ -45,10 +45,18 @@ def enrich_doc(doctype, name, cnpj):
 		_finish_without_data(doc, _("Não foi possível consultar o CNPJ {0} agora. Salve de novo mais tarde para tentar outra vez.").format(doc.cnpj), retry=True)
 		return
 
+	# Encerra a transação anterior à chamada HTTP externa e grava auxiliares (setor/endereço) antes
+	# de recarregar o documento, evitando erro 1020 ("Record has changed since last read").
+	sector = ensure_industry(sector_for_cnae(data.get("main_cnae")))
+	new_addr = upsert_address(doc, data.get("address") or {}) if doctype == "CRM Organization" else None
+	frappe.db.commit()
+	if not frappe.db.exists(doctype, name):
+		return
+	doc.reload()
+
 	for field in RECEITA_FIELDS:
 		doc.set(field, data.get(field))
 	doc.years_in_business = years_between(data.get("activity_start_date"))
-	sector = ensure_industry(sector_for_cnae(data.get("main_cnae")))
 	if sector:
 		doc.industry = sector
 	# Estima imediatamente a faixa de funcionários pelo Porte + CNAE + Capital Social da Receita
@@ -71,17 +79,19 @@ def enrich_doc(doctype, name, cnpj):
 			doc.employee_source = "SEBRAE/CNPJ"
 	if doctype == "CRM Lead" and not doc.get("organization"):
 		doc.organization = data.get("trade_name") or data.get("legal_name")
-	if doctype == "CRM Organization":
-		doc.address = upsert_address(doc, data.get("address") or {}) or doc.address
+	if doctype == "CRM Organization" and new_addr:
+		doc.address = new_addr
 	doc.cnpj_checked_on = today()
 	doc.flags.cred_hub_enriching = True
 	doc.save(ignore_permissions=True)
+	frappe.db.commit()
 
 	partners = add_partners(doc, data.get("partners") or []) if doctype == "CRM Organization" else 0
 	resumo = _("Dados do CNPJ {0} preenchidos automaticamente (fonte: {1}).").format(doc.cnpj, data.get("source"))
 	if partners:
 		resumo += " " + _("{0} sócio(s) cadastrado(s) como contato.").format(partners)
 	doc.add_comment("Comment", resumo)
+	frappe.db.commit()
 	if doctype == "CRM Organization":
 		use_legal_name(doc, data.get("legal_name"))
 		final_name = (data.get("legal_name") or "").strip()
@@ -198,3 +208,62 @@ def update_years_in_business():
 			where activity_start_date is not null"""
 		)
 	frappe.db.commit()
+
+
+@frappe.whitelist()
+def resolve_organization(org_name: str) -> dict:
+	"""Localiza o nome atual de uma organização caso tenha sido renomeada pelo CNPJ (razão social da Receita).
+	Permite que a interface redirecione para a rota atual sem exibir 404."""
+	if not org_name:
+		return {"exists": False}
+	org_name = org_name.strip()
+	if frappe.db.exists("CRM Organization", org_name):
+		return {"exists": True, "name": org_name}
+
+	found = frappe.db.get_value("CRM Organization", {"organization_name": org_name}, "name")
+	if found:
+		return {"exists": True, "name": found, "redirect": True}
+
+	# Busca em comentários de alteração de nome da Receita
+	comment = frappe.db.get_value(
+		"Comment",
+		{
+			"reference_doctype": "CRM Organization",
+			"comment_type": "Comment",
+			"content": ["like", f"%Nome trocado de {org_name} para a razão social da Receita%"],
+		},
+		"reference_name",
+	)
+	if comment and frappe.db.exists("CRM Organization", comment):
+		return {"exists": True, "name": comment, "redirect": True}
+
+	return {"exists": False}
+
+
+@frappe.whitelist()
+def fetch_cnpj_preview(cnpj: str) -> dict:
+	"""Consulta imediata de CNPJ na Receita Federal para autopreenchimento no modal de criação."""
+	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
+	digits = only_digits(cnpj)
+	if not digits or len(digits) != 14:
+		return {"success": False, "error": "CNPJ inválido"}
+	try:
+		data = client.fetch(digits)
+		return {
+			"success": True,
+			"legal_name": data.get("legal_name") or "",
+			"trade_name": data.get("trade_name") or "",
+			"main_cnae": data.get("main_cnae") or "",
+			"address": data.get("address") or {},
+			"state": data.get("state") or "",
+			"city": data.get("city") or "",
+			"activity_start_date": data.get("activity_start_date") or "",
+			"share_capital": data.get("share_capital") or 0.0,
+			"partners_count": len(data.get("partners") or []),
+			"source": data.get("source") or "",
+		}
+	except client.CnpjNotFound:
+		return {"success": False, "error": "CNPJ não encontrado na Receita Federal"}
+	except Exception as e:
+		return {"success": False, "error": str(e)}
+

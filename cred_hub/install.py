@@ -114,6 +114,8 @@ def after_install():
 	add_quick_entry_cnpj("CRM Organization", after="organization_name")
 	# Bureaus (credtech#290): dados da Assertiva no Contato e campos de protesto (CENPROT) no Card
 	create_custom_fields(integration_custom_fields(), update=True)
+	# Google Calendar & Meet
+	install_google_calendar_fields()
 	add_side_panel_section(
 		"Contact", name="cred_hub_localize_section", label="Localize (Assertiva)", fields=CONTACT_PANEL_FIELDS
 	)
@@ -300,6 +302,67 @@ def add_quick_entry_cnpj(doctype, after):
 				doc.layout = json.dumps(layout)
 				doc.save(ignore_permissions=True)
 				return
+
+
+def install_google_calendar_fields():
+	"""Instala os campos do Google Calendar e Meet na CRM Task e no User."""
+	create_custom_fields(
+		{
+			"CRM Task": [
+				{
+					"fieldname": "create_google_meet",
+					"fieldtype": "Check",
+					"label": "Criar link do Google Meet",
+					"insert_after": "due_date",
+				},
+				{
+					"fieldname": "google_meet_link",
+					"fieldtype": "Data",
+					"label": "Link do Google Meet",
+					"read_only": 1,
+					"insert_after": "create_google_meet",
+				},
+				{
+					"fieldname": "google_calendar_event_id",
+					"fieldtype": "Data",
+					"label": "ID Evento Google Calendar",
+					"read_only": 1,
+					"insert_after": "google_meet_link",
+				},
+			],
+			"User": [
+				{
+					"fieldname": "google_calendar_connected",
+					"fieldtype": "Check",
+					"label": "Conectado ao Google Calendar",
+					"read_only": 1,
+					"insert_after": "credhub_paused",
+				},
+				{
+					"fieldname": "google_calendar_access_token",
+					"fieldtype": "Text",
+					"label": "Google Calendar Access Token",
+					"read_only": 1,
+					"insert_after": "google_calendar_connected",
+				},
+				{
+					"fieldname": "google_calendar_refresh_token",
+					"fieldtype": "Text",
+					"label": "Google Calendar Refresh Token",
+					"read_only": 1,
+					"insert_after": "google_calendar_access_token",
+				},
+				{
+					"fieldname": "google_calendar_expires_at",
+					"fieldtype": "Datetime",
+					"label": "Google Calendar Token Expires At",
+					"read_only": 1,
+					"insert_after": "google_calendar_refresh_token",
+				},
+			],
+		},
+		update=True,
+	)
 
 
 def install_credit_check_fields():

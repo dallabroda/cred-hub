@@ -532,6 +532,16 @@ def calculate_rating_and_limit(
 	report_name = org.get("credit_report")
 	if report_name and frappe.db.exists("Cred Hub Credit Report", report_name):
 		rep = frappe.get_doc("Cred Hub Credit Report", report_name)
+		raw_details: dict[str, Any] = {}
+		if rep.get("raw_details_json"):
+			try:
+				raw_details = json.loads(rep.get("raw_details_json")) or {}
+			except Exception:
+				raw_details = {}
+		checked_sources = raw_details.get("checked_sources") if isinstance(raw_details.get("checked_sources"), dict) else {}
+		directd_prot = raw_details.get("directd_protestos") if isinstance(raw_details.get("directd_protestos"), dict) else {}
+		directd_sc = raw_details.get("directd_score") if isinstance(raw_details.get("directd_score"), dict) else {}
+
 		if rep.get("ceis_cnep_sanctioned"):
 			score -= 400
 			_add_factor(factors, "Sanção pública ativa no CEIS/CNEP", -400)
@@ -547,8 +557,8 @@ def calculate_rating_and_limit(
 			if policy.get("hard_stop_rj_falencia", True):
 				hard_stop_reason = "Recuperação Judicial / Falência ativa (Trava Eliminatória)"
 
-		protests = cint(rep.get("cenprot_protests_count") or 0)
-		protests_amt = flt(rep.get("cenprot_total_amount") or 0.0)
+		protests = cint(rep.get("cenprot_protests_count") or directd_prot.get("protests_count") or 0)
+		protests_amt = flt(rep.get("cenprot_total_amount") or directd_prot.get("total_value") or 0.0)
 		if rep.get("cenprot_has_protests") or protests > 0:
 			if protests_amt > 50_000 or protests >= 10:
 				penalty = -160
@@ -558,7 +568,7 @@ def calculate_rating_and_limit(
 				penalty = -40
 			score += penalty
 			_add_factor(factors, f"{protests} protesto(s) em cartório (CENPROT)", penalty)
-		else:
+		elif rep.get("protests_checked") or checked_sources.get("protests"):
 			score += 60
 			_add_factor(factors, "Sem protestos em cartório (CENPROT)", 60)
 
@@ -566,7 +576,7 @@ def calculate_rating_and_limit(
 		if pgfn_debt > 0:
 			score -= 120
 			_add_factor(factors, f"Dívida ativa na PGFN (R$ {pgfn_debt:,.0f})", -120)
-		elif rep.get("pgfn_status"):
+		elif rep.get("pgfn_status") and rep.get("pgfn_status") != "Não verificado":
 			score += 40
 			_add_factor(factors, "Regularidade fiscal PGFN verificada", 40)
 
@@ -586,8 +596,14 @@ def calculate_rating_and_limit(
 			score += 70
 			_add_factor(factors, "SCR Bacen 100% adimplente (zero vencido)", 70)
 
-		# Bureau Score Externo (DirectD / Quod / Boa Vista / Serasa)
-		ext_score = cint(rep.get("credit_score") or rep.get("quod_score") or rep.get("serasa_score") or 0)
+		# Bureau Score Externo / Proprietário (extraído de raw_details_json ou campos diretos)
+		ext_score = cint(
+			rep.get("credit_score")
+			or rep.get("quod_score")
+			or rep.get("serasa_score")
+			or directd_sc.get("score")
+			or 0
+		)
 		if ext_score > 0:
 			if ext_score >= 750:
 				score += 90

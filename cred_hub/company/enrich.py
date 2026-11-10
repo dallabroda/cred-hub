@@ -43,6 +43,9 @@ def enrich_company(doctype, name):
 		frappe.log_error(title=f"Cred Hub: descoberta de empresa falhou ({company_name(doc)})")
 		return
 
+	if not getattr(frappe.flags, "in_test", False):
+		frappe.db.commit()  # nosemgrep — renova o snapshot após chamadas HTTP longas para evitar erro 1020
+	doc.reload()
 	apply(doc, found)
 	doc.company_checked_on = today()
 	doc.flags.cred_hub_enriching = True  # não reconsulta o CNPJ por causa deste salvamento

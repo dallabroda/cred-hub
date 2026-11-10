@@ -23,31 +23,71 @@ from frappe.utils import cint, now_datetime
 from cred_hub.cnpj.enrich import person_name
 from cred_hub.cnpj.mapping import is_valid_cnpj, only_digits
 from cred_hub.integrations import bureau_log, get_settings, secret
+from cred_hub.integrations import bigdatacorp as bdc_adapter
 from cred_hub.integrations.assertiva import (
 	PURPOSES,
 	AssertivaClient,
 	AssertivaError,
-	addresses,
-	emails,
-	partners,
-	phones,
-	protocol_of,
+	addresses as _assertiva_addresses,
+	emails as _assertiva_emails,
+	partners as _assertiva_partners,
+	phones as _assertiva_phones,
+	protocol_of as _assertiva_protocol_of,
 )
+from cred_hub.integrations.bigdatacorp import BigDataCorpClient, BigDataCorpError
 from cred_hub.party.document import format_cpf
 
 PROVIDER = "Assertiva"
+BDC_PROVIDER = "BigDataCorp"
 OP_CNPJ, OP_CPF = "localize_cnpj", "localize_cpf"
 DEFAULT_PURPOSE = "Credit protection and collection"
 
 
+def _is_bdc_payload(payload) -> bool:
+	return isinstance(payload, dict) and isinstance(payload.get("Result"), list)
+
+
+def protocol_of(payload) -> str:
+	return bdc_adapter.protocol_of(payload) if _is_bdc_payload(payload) else _assertiva_protocol_of(payload)
+
+
+def partners(payload) -> list[dict]:
+	return bdc_adapter.partners(payload) if _is_bdc_payload(payload) else _assertiva_partners(payload)
+
+
+def phones(payload) -> list[dict]:
+	return bdc_adapter.phones(payload) if _is_bdc_payload(payload) else _assertiva_phones(payload)
+
+
+def emails(payload) -> list[str]:
+	return bdc_adapter.emails(payload) if _is_bdc_payload(payload) else _assertiva_emails(payload)
+
+
+def addresses(payload) -> list[dict]:
+	return bdc_adapter.addresses(payload) if _is_bdc_payload(payload) else _assertiva_addresses(payload)
+
+
+def _use_bdc(settings) -> bool:
+	return bool(getattr(settings, "bigdatacorp_localize_enabled", 0))
+
+
+def _active_provider(settings) -> str:
+	return BDC_PROVIDER if _use_bdc(settings) else PROVIDER
+
+
 def _settings():
 	settings = get_settings()
-	if not settings.assertiva_enabled:
+	if not settings.assertiva_enabled and not _use_bdc(settings):
 		frappe.throw(_("Assertiva Localize is off. An admin turns it on in Settings > Integrations > Bureaus."))
 	return settings
 
 
-def _client(settings) -> AssertivaClient:
+def _client(settings):
+	if _use_bdc(settings):
+		return BigDataCorpClient(
+			secret(settings, "bigdatacorp_access_token") or getattr(settings, "bigdatacorp_access_token", ""),
+			getattr(settings, "bigdatacorp_token_id", "") or "",
+		)
 	return AssertivaClient(settings.assertiva_client_id, secret(settings, "assertiva_client_secret"))
 
 
@@ -58,22 +98,24 @@ def _purpose(settings) -> tuple[int, str]:
 
 def _query(client, settings, operation, document, reference, force) -> tuple[dict | None, bool]:
 	"""(resposta ou None se não localizado, veio do cache?). Toda consulta paga fica no histórico."""
+	provider = _active_provider(settings)
+	cache_days = cint(getattr(settings, "bigdatacorp_cache_days", 0) or settings.assertiva_cache_days or 30)
 	if not force:
-		cached = bureau_log.recent(PROVIDER, operation, document, cint(settings.assertiva_cache_days))
+		cached = bureau_log.recent(provider, operation, document, cache_days)
 		if cached:
 			return cached.data, True
 	purpose, label = _purpose(settings)
 	call = client.localize_cnpj if operation == OP_CNPJ else client.localize_cpf
 	try:
 		status, payload = call(document, purpose)
-	except AssertivaError as e:
+	except (AssertivaError, BigDataCorpError) as e:
 		bureau_log.record(
-			PROVIDER, operation, bureau_log.ERROR, document=document, reference=reference,
+			provider, operation, bureau_log.ERROR, document=document, reference=reference,
 			http_status=e.http_status, purpose=label, error=str(e),
 		)
 		raise
 	bureau_log.record(
-		PROVIDER,
+		provider,
 		operation,
 		bureau_log.SUCCESS if payload is not None else bureau_log.NOT_FOUND,
 		document=document,
@@ -92,18 +134,20 @@ def get_status(organization: str) -> dict:
 	org = frappe.get_doc("CRM Organization", organization)
 	org.check_permission("read")
 	settings = get_settings()
-	if not settings.assertiva_enabled:
+	if not settings.assertiva_enabled and not _use_bdc(settings):
 		return {"enabled": False}
+	provider = _active_provider(settings)
 	cnpj = only_digits(org.get("cnpj"))
-	cache_days = cint(settings.assertiva_cache_days)
-	last = bureau_log.recent(PROVIDER, OP_CNPJ, cnpj, cache_days) if cnpj else None
+	cache_days = cint(getattr(settings, "bigdatacorp_cache_days", 0) or settings.assertiva_cache_days or 30)
+	last = bureau_log.recent(provider, OP_CNPJ, cnpj, cache_days) if cnpj else None
 	return {
 		"enabled": True,
+		"provider": provider,
 		"has_cnpj": is_valid_cnpj(cnpj),
 		"can_write": bool(frappe.has_permission("CRM Organization", "write", org)),
 		"last_query_on": last.creation if last else None,
 		"cache_days": cache_days,
-		"partner_lookup": bool(settings.assertiva_partner_lookup),
+		"partner_lookup": True if _use_bdc(settings) else bool(settings.assertiva_partner_lookup),
 	}
 
 
@@ -119,7 +163,7 @@ def enrich_organization(organization: str, force: int | str = 0) -> dict:
 	client = _client(settings)
 	try:
 		company, cached = _query(client, settings, OP_CNPJ, cnpj, org, force)
-	except AssertivaError as e:
+	except (AssertivaError, BigDataCorpError) as e:
 		# sem frappe.throw: o histórico da tentativa (cobrada ou não) precisa ficar gravado
 		return {"ok": False, "message": str(e)}
 	summary = {"ok": True, "found": company is not None, "cached": cached, "paid_queries": 0 if cached else 1}
@@ -130,11 +174,11 @@ def enrich_organization(organization: str, force: int | str = 0) -> dict:
 
 	protocol = protocol_of(company)
 	for partner in partners(company):
-		person, person_protocol = None, protocol
-		if settings.assertiva_partner_lookup:
+		person, person_protocol = partner.get("inline_person_payload"), protocol
+		if settings.assertiva_partner_lookup and person is None:
 			try:
 				person, person_cached = _query(client, settings, OP_CPF, partner["cpf"], org, force)
-			except AssertivaError as e:
+			except (AssertivaError, BigDataCorpError) as e:
 				summary["errors"].append(f"{person_name(partner['name'])}: {e}")
 			else:
 				summary["paid_queries"] += 0 if person_cached else 1

@@ -74,6 +74,11 @@ doc_events = {
 		"after_insert": "cred_hub.webhooks.on_contact_insert",
 		"on_update": "cred_hub.webhooks.on_contact_update",
 	},
+	"CRM Task": {
+		"after_insert": "cred_hub.integrations.google_calendar.sync_task_to_google_calendar",
+		"on_update": "cred_hub.integrations.google_calendar.sync_task_to_google_calendar",
+		"on_trash": "cred_hub.integrations.google_calendar.on_task_trash",
+	},
 	"CRM Lead": {
 		# Empresa pelo domínio do e-mail (credtech#183): em fila, nunca atrasa a entrada do lead
 		"after_insert": "cred_hub.email_company.finder.on_lead_insert",

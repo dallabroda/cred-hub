@@ -1043,6 +1043,19 @@ def generate_portal_link(
 	}
 	_save_org_state(organization_name, state, deal_name=deal_name)
 	_store_set(_token_key(new_token), organization_name)
+	if _relational_tables_ready():
+		try:
+			tok_doc = frappe.new_doc(TOKEN_DOCTYPE)
+			tok_doc.token = new_token
+			tok_doc.organization = organization_name
+			tok_doc.deal = deal_name or None
+			tok_doc.created_on_str = now_datetime().strftime("%Y-%m-%d %H:%M")
+			tok_doc.created_by_user = frappe.session.user
+			tok_doc.expires_on = expires_on
+			tok_doc.revoked = 0
+			tok_doc.insert(ignore_permissions=True)
+		except Exception:
+			pass
 	return get_onboarding(organization_name, deal_name)
 
 
