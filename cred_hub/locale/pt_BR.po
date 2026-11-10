@@ -3343,6 +3343,3 @@ msgstr "A execução do sync que criou este título (para desfazer uma execuçã
 
 msgid "The synchronization run that created this card: filter by it to undo a whole run."
 msgstr "A execução do sync que criou este card: filtre por ela para desfazer uma execução inteira."
-# Papel da Organização (credtech#367)
-msgid "Party role"
-msgstr "Papel"
