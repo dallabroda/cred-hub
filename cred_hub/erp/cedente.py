@@ -196,16 +196,27 @@ def send_for_deal(deal: str) -> dict:
 	except _Missing as e:
 		return _missing(doc, org, provider, e.items)
 	except ErpError as e:
-		log(provider, "Cedente registration", ERROR, document=org.get("cnpj") or "", reference=doc.name,
-			http_status=e.http_status, error=str(e))
 		frappe.db.rollback()
 		_note(doc, org, frappe._("{0} refused the cedente registration: {1}").format(provider, user_message(e)))
 		frappe.db.commit()
+		_safe_log(log, provider, ERROR, org, doc, http_status=e.http_status, error=str(e))
 		return {"ok": False, "error": str(e)}
-	log(provider, "Cedente registration", SUCCESS, document=org.get("cnpj") or "", reference=doc.name,
-		response={k: v for k, v in outcome.items() if k != "note"})
+	# The ERP write is irreversible (Smart has no update/delete): the note is saved first and never depends on the
+	# audit log; a failing log is reported to the error log, not to the card
 	_note(doc, org, outcome["note"])
+	frappe.db.commit()
+	_safe_log(log, provider, SUCCESS, org, doc, response={k: v for k, v in outcome.items() if k != "note"})
 	return outcome
+
+
+def _safe_log(log, provider, status, org, doc, **kwargs):
+	import frappe
+
+	try:
+		log(provider, "Cedente registration", status, document=org.get("cnpj") or "", reference=doc, **kwargs)
+		frappe.db.commit()
+	except Exception:  # noqa: BLE001 - the audit log must never undo or hide what happened in the ERP
+		frappe.log_error(title="Cred Hub: ERP cedente registration log")
 
 
 def ensure_enriched(org):

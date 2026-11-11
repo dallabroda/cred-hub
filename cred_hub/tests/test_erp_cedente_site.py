@@ -37,6 +37,10 @@ class FakeSmart:
 class TestCedenteRegistration(IntegrationTestCase):
 	def setUp(self):
 		frappe.set_user("Administrator")
+		# send_for_deal commits after the ERP write; the test keeps everything in its own transaction
+		commit = patch.object(frappe.db, "commit")
+		commit.start()
+		self.addCleanup(commit.stop)
 		from crm.api.pipeline import save_pipeline
 
 		self.pipeline = save_pipeline(
@@ -115,6 +119,18 @@ class TestCedenteRegistration(IntegrationTestCase):
 			note = " ".join(self.comments(doctype, name))
 			self.assertIn("2513", note)
 			self.assertIn("NF SECURITIZADORA SA", note)
+
+	def test_note_is_written_even_if_the_audit_log_fails(self):
+		"""The Smart write is irreversible: the card must tell it even when the Bureau Query log breaks."""
+		fake = FakeSmart()
+		with patch("cred_hub.erp.settings.log", side_effect=AttributeError("boom")):
+			self.assertEqual(self.send(fake)["status"], "created")
+		self.assertIn("2513", " ".join(self.comments("CRM Deal", self.deal.name)))
+
+	def test_audit_log_points_to_the_card(self):
+		self.send(FakeSmart())
+		log = frappe.get_last_doc("Cred Hub Bureau Query", filters={"operation": "Cedente registration"})
+		self.assertEqual((log.reference_doctype, log.reference_name), ("CRM Deal", self.deal.name))
 
 	def test_already_registered_is_never_resent(self):
 		fake = FakeSmart(existing={"ID_CEDENTE": "1966"})
