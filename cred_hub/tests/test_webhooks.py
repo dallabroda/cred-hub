@@ -202,6 +202,60 @@ class TestWebhooks(IntegrationTestCase):
 			self.assertEqual(webhooks.dispatch_outbox()["sent"], 1)
 		self.assertEqual(session.post.call_count, 3)
 
+	def test_rows_are_claimed_once_and_stale_claims_come_back(self):
+		wh = self.webhook(deal_created=1)
+		row = self.pending(wh)
+		self.assertTrue(webhooks._claim(row.name))
+		self.assertFalse(webhooks._claim(row.name))  # a second run cannot take it
+		(p1, p2), session = self.network(200)
+		with p1, p2:
+			self.assertEqual(webhooks.dispatch_outbox()["sent"], 0)  # in flight elsewhere: not sent again
+			frappe.db.set_value(OUTBOX, row.name, "claimed_at", add_to_date(now_datetime(), minutes=-11))
+			self.assertEqual(webhooks.dispatch_outbox()["sent"], 1)  # the dead run's claim expired
+		self.assertEqual(session.post.call_count, 1)
+		self.assertEqual(frappe.db.get_value(OUTBOX, row.name, "status"), "Delivered")
+
+	def test_runs_are_bounded_in_time_overall_and_per_webhook(self):
+		slow, fast = self.webhook(deal_created=1), self.webhook(deal_created=1)
+		for _ in range(2):
+			self.deal()
+		(p1, p2), session = self.network(200)
+		with p1, p2, patch.object(webhooks, "RUN_SECONDS", -1):
+			self.assertEqual(webhooks.dispatch_outbox()["sent"], 0)
+		with p1, p2, patch.object(webhooks, "WEBHOOK_SECONDS_PER_RUN", -1):
+			self.assertEqual(webhooks.dispatch_outbox()["sent"], 2)  # one per webhook, then each budget is spent
+		sent_to = [c.args[0] for c in session.post.call_args_list]
+		self.assertEqual(len(sent_to), 2)
+		self.assertEqual({r.webhook for r in frappe.get_all(OUTBOX, {"status": "Delivered"}, ["webhook"])}, {slow.name, fast.name})
+
+	def test_network_errors_are_retried_and_final_4xx_do_not_trip_the_circuit(self):
+		import requests
+
+		from cred_hub.email_company import safe_http
+
+		wh = self.webhook(deal_created=1)
+		cases = (
+			(patch.object(safe_http, "resolve_public", side_effect=safe_http.BlockedAddress("dns hooks.example.com: x")), None),
+			(patch.object(safe_http, "resolve_public"), requests.ConnectionError("reset")),
+			(patch.object(safe_http, "resolve_public"), requests.Timeout("slow")),
+		)
+		for resolve, error in cases:
+			row = self.pending(wh)
+			session = MagicMock()
+			session.post.side_effect = error
+			with self.subTest(error=error), resolve, patch.object(safe_http, "_session", return_value=session):
+				webhooks.deliver(row.name)
+				row.reload()
+				self.assertEqual((row.status, row.attempts), ("Pending", 1))
+		frappe.cache.delete_value(f"credhub_wh_fails:{wh.name}")
+		for status in (404, 410):
+			row = self.pending(wh)
+			(p1, p2), _session = self.network(status)
+			with p1, p2:
+				webhooks.deliver(row.name)
+			self.assertEqual(frappe.db.get_value(OUTBOX, row.name, "status"), "Dead")
+		self.assertFalse(frappe.cache.get_value(f"credhub_wh_fails:{wh.name}"))
+
 	def test_ten_failures_open_the_circuit(self):
 		wh = self.webhook(deal_created=1)
 		for _ in range(webhooks.CIRCUIT_FAILURES):

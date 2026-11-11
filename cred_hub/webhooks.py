@@ -55,6 +55,13 @@ LOG_DAYS = 30
 OUTBOX_DAYS = 7
 SECRET_OVERLAP_HOURS = 24
 DISPATCH_JOB_ID = "credhub_webhook_dispatch"
+# A run stops taking rows after this many seconds (the short queue kills a job at 300 s); one webhook gets at most
+# WEBHOOK_SECONDS_PER_RUN of it, so a slow endpoint never holds the others back
+RUN_SECONDS = 240
+WEBHOOK_SECONDS_PER_RUN = 60
+# A row claimed by a run that died (worker killed) goes back to Pending after this; it may then be sent twice,
+# which the receiver absorbs with the delivery_id
+STALE_CLAIM_MINUTES = 10
 
 EVENT_FIELD_MAP = {
 	"deal.created": "deal_created",
@@ -390,12 +397,36 @@ def _note_result(webhook: str, ok: bool):
 		frappe.cache.delete_value(fails_key)
 
 
+def _release_stale_claims():
+	cutoff = add_to_date(now_datetime(), minutes=-STALE_CLAIM_MINUTES)
+	frappe.db.sql(
+		f"update `tab{OUTBOX_DOCTYPE}` set status='Pending', claimed_at=null where status='Sending' and claimed_at < %s",
+		(cutoff,),
+	)
+
+
+def _claim(name: str) -> bool:
+	"""Atomic: only one run moves a row from Pending to Sending (committed before the HTTP call)."""
+	frappe.db.sql(
+		f"update `tab{OUTBOX_DOCTYPE}` set status='Sending', claimed_at=%s where name=%s and status='Pending'",
+		(now_datetime(), name),
+	)
+	claimed = bool(frappe.db._cursor.rowcount) if getattr(frappe.db, "_cursor", None) else True
+	if not getattr(frappe.flags, "in_test", False):
+		frappe.db.commit()
+	return claimed
+
+
 def dispatch_outbox(limit: int = BATCH_SIZE) -> dict:
-	"""Send what is due in the outbox (cron every minute and the kick after commit). One runner at a time."""
-	if not frappe.db.exists("DocType", OUTBOX_DOCTYPE) or not _lock("credhub_webhook_dispatch_lock", 300):
-		return {"sent": 0}
+	"""Send what is due in the outbox (cron every minute and the kick after commit). Rows are claimed one by one,
+	so two runs never send the same row; each run is bounded in time overall and per webhook."""
+	if not frappe.db.exists("DocType", OUTBOX_DOCTYPE):
+		return {"sent": 0, "failed": 0}
+	locked = _lock("credhub_webhook_dispatch_lock", RUN_SECONDS + 60)
 	sent = failed = 0
+	started = time.monotonic()
 	try:
+		_release_stale_claims()
 		rows = frappe.get_all(
 			OUTBOX_DOCTYPE,
 			{"status": "Pending", "next_attempt_at": ("<=", now_datetime())},
@@ -404,25 +435,36 @@ def dispatch_outbox(limit: int = BATCH_SIZE) -> dict:
 			limit_page_length=limit,
 		)
 		per_webhook: dict[str, int] = {}
+		spent: dict[str, float] = {}
 		for row in rows:
+			if time.monotonic() - started > RUN_SECONDS:
+				break
 			if frappe.cache.get_value(_circuit_key(row.webhook)):
 				continue
 			if per_webhook.get(row.webhook, 0) >= PER_WEBHOOK_PER_RUN:
 				continue
+			if row.webhook in spent and spent[row.webhook] > WEBHOOK_SECONDS_PER_RUN:
+				continue
+			if not _claim(row.name):
+				continue
 			per_webhook[row.webhook] = per_webhook.get(row.webhook, 0) + 1
-			if deliver(row.name):
+			t0 = time.monotonic()
+			ok = deliver(row.name)
+			spent[row.webhook] = spent.get(row.webhook, 0.0) + (time.monotonic() - t0)
+			if ok:
 				sent += 1
 			else:
 				failed += 1
 	finally:
-		_unlock("credhub_webhook_dispatch_lock")
+		if locked:
+			_unlock("credhub_webhook_dispatch_lock")
 	return {"sent": sent, "failed": failed}
 
 
 def deliver(outbox_name: str) -> bool:
 	"""Send one outbox row and schedule its next attempt or close it."""
 	row = frappe.get_doc(OUTBOX_DOCTYPE, outbox_name)
-	if row.status != "Pending":
+	if row.status not in ("Pending", "Sending"):
 		return row.status == "Delivered"
 	payload = json.loads(row.payload or "{}")
 	attempt = (row.attempts or 0) + 1
@@ -439,15 +481,22 @@ def deliver(outbox_name: str) -> bool:
 		event_id=row.event_id,
 		replay=bool(row.replay),
 	)
-	values = {"attempts": attempt, "last_error": "" if result["ok"] else (result["error"] or "")[:500]}
+	values = {
+		"attempts": attempt,
+		"claimed_at": None,
+		"last_error": "" if result["ok"] else (result["error"] or "")[:500],
+	}
 	if result["ok"]:
 		values["status"] = "Delivered"
 	elif result["retryable"] and attempt < MAX_ATTEMPTS:
+		values["status"] = "Pending"
 		values["next_attempt_at"] = add_to_date(now_datetime(), seconds=BACKOFF_SECONDS[attempt - 1])
 	else:
 		values["status"] = "Dead"
 	frappe.db.set_value(OUTBOX_DOCTYPE, row.name, values, update_modified=False)
-	if result["sent"]:
+	if result["sent"] and (result["ok"] or result["retryable"]):
+		# only success and transient failures move the breaker; a final 4xx (404, 410...) is the endpoint's
+		# answer, not an outage
 		_note_result(row.webhook, result["ok"])
 	if not getattr(frappe.flags, "in_test", False):
 		frappe.db.commit()
@@ -622,6 +671,8 @@ def send_webhook(
 	except safe_http.BlockedAddress as exc:
 		response_text = f"Security error: Destination blocked ({exc})"
 		status_code = 0
+		# a name that does not resolve right now is transient; a private/blocked address is final
+		retryable = str(exc).startswith("dns ")
 	except Exception as exc:
 		response_text = f"Connection error: {str(exc)[:1500]}"
 		status_code = 0
