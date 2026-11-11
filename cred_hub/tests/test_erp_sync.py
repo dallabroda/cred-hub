@@ -600,3 +600,24 @@ class TestErpImportMap(TestErpSync):
 		fake = FakeSmartWithSacados([open_row(2041, "NF-24", DEBTOR_A, CEDENTE_A)], sacados=[{"CPF/CNPJ": masked(DEBTOR_A), "E-mail": "x@y.com"}])
 		self.run_sync(fake)
 		self.assertFalse([q for q in fake.queries if "dataIniSacado" in q])
+
+	def test_a_failed_registry_read_is_tried_again_on_the_next_run(self):
+		self.maps(sacado=[("E-mail", "organization.registry_email")])
+		frappe.db.set_single_value(erp_settings.SETTINGS, "erp_pending_parties", None)
+		row = open_row(2051, "NF-25", DEBTOR_B, CEDENTE_A)
+
+		class Down(FakeSmartWithSacados):
+			def request(self, method, url, headers=None, timeout=None, **kwargs):
+				if "/sacado?" in url:
+					return Response(500, {"detail": "Sistema em manutenção"})
+				return super().request(method, url, headers=headers, timeout=timeout, **kwargs)
+
+		stats = self.run_sync(Down([row]))
+		self.assertTrue(stats.get("sacado_error"), stats)
+		self.assertIn(DEBTOR_B, frappe.db.get_single_value(erp_settings.SETTINGS, "erp_pending_parties"))
+		# next run: the sacado already exists, but it is still pending, so the registry is read for it
+		sacados = [{"CPF/CNPJ": masked(DEBTOR_B), "E-mail": "pagar@sacadob.com.br"}]
+		stats = self.run_sync(FakeSmartWithSacados([row], sacados=sacados))
+		self.assertEqual(stats.get("sacados_updated"), 1, stats)
+		self.assertEqual(frappe.db.get_value("CRM Organization", self.org(DEBTOR_B), "registry_email"), "pagar@sacadob.com.br")
+		self.assertFalse(frappe.db.get_single_value(erp_settings.SETTINGS, "erp_pending_parties"))

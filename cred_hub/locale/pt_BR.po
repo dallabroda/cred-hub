@@ -3720,3 +3720,9 @@ msgstr "A coluna {0} ficou de fora: {1} não pode receber dados do ERP."
 
 msgid "cedente"
 msgstr "cedente"
+
+msgid "The ERP {0} registry could not be read ({1}); the new ones are tried again on the next run."
+msgstr "O cadastro de {0} do ERP não pôde ser lido ({1}); os novos são lidos de novo na próxima execução."
+
+msgid "Registries to read again"
+msgstr "Cadastros a ler de novo"

@@ -44,7 +44,8 @@
   "sacado_field_map",
   "cedente_registry_section",
   "cedente_registry_map",
-  "erp_columns"
+  "erp_columns",
+  "erp_pending_parties"
  ],
  "fields": [
   {
@@ -280,6 +281,14 @@
    "read_only": 1,
    "hidden": 1,
    "description": "JSON {\"title\": [...], \"sacado\": [...]}: every column the ERP returned, offered in the mapping screen."
+  },
+  {
+   "fieldname": "erp_pending_parties",
+   "fieldtype": "Long Text",
+   "label": "Registries to read again",
+   "read_only": 1,
+   "hidden": 1,
+   "description": "JSON: new cedentes/sacados whose ERP registry could not be read yet (tried again on the next runs)."
   },
   {
    "fieldname": "sync_dry_run",

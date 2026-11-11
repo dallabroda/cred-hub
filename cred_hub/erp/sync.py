@@ -20,6 +20,7 @@ open until the ERP settles it.
 Smart Securities only in this version; WBA has no overdue filter nor settlement data (next PR).
 """
 
+import json
 import time
 
 import frappe
@@ -252,30 +253,68 @@ PARTIES = (
 )
 
 
+# A new cedente/sacado whose registry could not be read (ERP down, cooldown, an error filling it) is kept pending
+# and tried again on the next runs, up to this many times
+PENDING_TRIES = 5
+
+
 def sync_parties(erp, settings, stats, titles, since):
+	pending = _load_pending()
 	for kind, table, document_key, reader in PARTIES:
 		rules = settings.get(table) or []
+		waiting = pending.get(kind) or {}
 		if not rules:
+			pending.pop(kind, None)
 			continue
-		created = _created_since({t[document_key] for t in titles if t.get(document_key)}, since)
-		stats[f"{kind}s_new"] = len(created)
-		if not created:
+		todo = {doc: (doctype, name) for doc, (doctype, name, _tries) in waiting.items() if frappe.db.exists(doctype, name)}
+		todo.update(_created_since({t[document_key] for t in titles if t.get(document_key)}, since))
+		stats[f"{kind}s_new"] = len(todo)
+		if not todo:
+			pending.pop(kind, None)
 			continue
+		started = time.time()
 		try:
 			_cooldown(kind)
 			rows = list(getattr(erp, reader)())
 		except ErpError as e:
-			# The títulos are already saved; these records keep what the CNPJ enrichment brings
+			# The títulos are already saved; these records wait for the next run (the CNPJ enrichment runs anyway)
 			stats[f"{kind}_error"] = user_message(e)
+			pending[kind] = _retry(waiting, todo, todo)
 			continue
+		stats[f"{kind}_seconds"] = round(time.time() - started, 1)
 		stats.setdefault("columns", {})[kind] = _distinct_shapes(rows)
 		org_types, contact_types = _fieldtypes("CRM Organization"), _fieldtypes("Contact")
 		from cred_hub.cnpj.mapping import only_digits
 
+		failed = {}
 		for row in rows:
 			document = only_digits(import_map.value_of(row, "CPF/CNPJ"))
-			if document in created:
-				_savepoint(stats, fill_party, kind, row, created[document], rules, org_types, contact_types, stats)
+			if document in todo:
+				before = stats["failed"]
+				_savepoint(stats, fill_party, kind, row, todo[document], rules, org_types, contact_types, stats)
+				if stats["failed"] > before:
+					failed[document] = todo[document]
+		# Read: done, even when the registry did not have it (the registration is read once)
+		pending[kind] = _retry(waiting, failed, todo)
+	if not frappe.flags.get("cred_hub_erp_dry_run"):
+		frappe.db.set_single_value("Cred Hub ERP Settings", "erp_pending_parties", json.dumps(pending) if any(pending.values()) else None)
+
+
+def _load_pending() -> dict:
+	try:
+		return json.loads(frappe.db.get_single_value("Cred Hub ERP Settings", "erp_pending_parties") or "{}")
+	except ValueError:
+		return {}
+
+
+def _retry(waiting: dict, again: dict, todo: dict) -> dict:
+	"""The ones to try again on the next run, each with one more try (given up after PENDING_TRIES)."""
+	result = {}
+	for document, (doctype, name) in again.items():
+		tries = (waiting.get(document) or [None, None, 0])[2] + 1
+		if tries < PENDING_TRIES:
+			result[document] = [doctype, name, tries]
+	return result
 
 
 def _created_since(documents, since) -> dict:
@@ -377,6 +416,11 @@ def _new_stats() -> dict:
 
 def _summary(stats) -> str:
 	text = _summary_base(stats)
+	for kind, label in ((import_map.SACADO, _("sacado")), (import_map.CEDENTE, _("cedente"))):
+		if stats.get(f"{kind}_error"):
+			text += " " + _("The ERP {0} registry could not be read ({1}); the new ones are tried again on the next run.").format(
+				label, stats[f"{kind}_error"]
+			)
 	if stats.get("protests_to_withdraw"):
 		text += " " + _(
 			"{0} títulos settled in the ERP still have a protest at the registry: withdraw or cancel it."
