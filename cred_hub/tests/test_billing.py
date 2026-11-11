@@ -81,8 +81,6 @@ class TestBilling(IntegrationTestCase):
 		plan.update(
 			{
 				"status": "Free",
-				"plan_tier": None,
-				"pending_plan_tier": None,
 				"extra_users": 0,
 				"pending_extra_users": 0,
 				"asaas_subscription_id": None,
@@ -598,37 +596,3 @@ class TestBilling(IntegrationTestCase):
 		paused.save(ignore_permissions=True)
 		self.assertEqual(billing.active_users(), [paused.name])
 		self.assertFalse(frappe.db.get_value("User", paused.name, "credhub_paused"))
-
-	def test_three_tier_plans_vendas_credito_enterprise(self):
-		fake = FakeAsaas()
-		with patch.object(billing, "_asaas", fake):
-			res = billing.request_extra_users(1, PAYER, plan_tier="vendas")
-			self.assertTrue(res["ok"])
-			billing.apply_asaas_event("PAYMENT_CONFIRMED", "pay_1", "sub_1")
-		p = billing.get_plan()
-		self.assertEqual(p["plan_tier"], "vendas")
-		self.assertEqual(p["limit"], 3)  # 2 incluídos + 1 extra
-		self.assertEqual(p["amount"], 119 + 49)
-		self.assertEqual(p["included_opinions"], 0)
-		self.assertFalse(p["has_credit_and_collection"])
-
-		fake_pro = FakeAsaas()
-		with patch.object(billing, "_asaas", fake_pro):
-			billing.request_extra_users(2, plan_tier="credito_cobranca")
-			billing.apply_asaas_event("PAYMENT_CONFIRMED", "pay_up", None)
-		p2 = billing.get_plan()
-		self.assertEqual(p2["plan_tier"], "credito_cobranca")
-		self.assertEqual(p2["limit"], 7)  # 5 incluídos + 2 extras
-		self.assertEqual(p2["amount"], 449 + 2 * 59)
-		self.assertEqual(p2["included_opinions"], 30)
-		self.assertTrue(p2["has_credit_and_collection"])
-
-		fake_ent = FakeAsaas()
-		with patch.object(billing, "_asaas", fake_ent):
-			billing.request_extra_users(10, plan_tier="enterprise")
-			billing.apply_asaas_event("PAYMENT_CONFIRMED", "pay_up", None)
-		p3 = billing.get_plan()
-		self.assertEqual(p3["plan_tier"], "enterprise")
-		self.assertEqual(p3["limit"], billing.UNLIMITED)
-		self.assertEqual(p3["amount"], 990)
-		self.assertEqual(p3["included_opinions"], 100)
