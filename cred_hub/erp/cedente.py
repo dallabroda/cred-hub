@@ -332,6 +332,7 @@ def _send_smart(erp, settings, doc, org, result) -> dict:
 		payload["idGerente"] = int(manager["idGerente"])
 	else:
 		missing.append(_("Manager (the card owner is not a Smart manager and there is no default manager)"))
+	missing += _smart_lists(erp, payload, result.lists)
 	if missing:
 		raise _Missing(missing)
 	regime = smart_regime(org.get("tax_regime"), erp.lookup("regime-tributario"))
@@ -359,6 +360,29 @@ def _send_smart(erp, settings, doc, org, result) -> dict:
 			payload["numeroContratoMae"],
 		),
 	}
+
+
+def smart_list_id(name, rows: list[dict], id_key: str):
+	"""Id of the row of an ERP list whose name is this one (accents and case ignored); None when none or two match."""
+	matches = [row for row in rows if norm(row.get("descricao")) == norm(name)]
+	return matches[0].get(id_key) if len(matches) == 1 else None
+
+
+def _smart_lists(erp, payload, picked) -> list[str]:
+	"""Fields the company filled with a name of a Smart list (operator, originator...): the id goes in the payload."""
+	from frappe import _
+
+	from . import SMART, catalog
+
+	missing = []
+	for erp_field, name in picked:
+		spec = catalog.field(SMART, erp_field) or {}
+		found = smart_list_id(name, erp.lookup(spec["resource"]), spec["id_key"]) if spec.get("resource") else None
+		if found in (None, ""):
+			missing.append(_("{0}: \"{1}\" is not in the Smart list").format(_(spec.get("label") or erp_field), name))
+			continue
+		payload[erp_field] = int(found) if str(found).isdigit() else found
+	return missing
 
 
 def _send_wba(erp, org, result) -> dict:

@@ -1,0 +1,43 @@
+{
+ "actions": [],
+ "creation": "2026-11-11 12:00:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "description": "One import de-para rule: a column the ERP returns -> the CRM field it fills (credtech#367).",
+ "field_order": [
+  "erp_column",
+  "crm_field"
+ ],
+ "fields": [
+  {
+   "fieldname": "erp_column",
+   "fieldtype": "Data",
+   "label": "ERP Column",
+   "reqd": 1,
+   "in_list_view": 1,
+   "columns": 4,
+   "description": "Column name exactly as the ERP returns it, e.g. VALOR_TOTAL"
+  },
+  {
+   "fieldname": "crm_field",
+   "fieldtype": "Data",
+   "label": "CRM Field",
+   "reqd": 1,
+   "in_list_view": 1,
+   "columns": 4,
+   "description": "Títulos: the título field (e.g. updated_amount). Sacados: organization.<field> or contact.<field>"
+  }
+ ],
+ "istable": 1,
+ "links": [],
+ "modified": "2026-11-11 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Cred Hub",
+ "name": "Cred Hub ERP Import Map",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

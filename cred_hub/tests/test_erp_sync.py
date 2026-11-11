@@ -509,3 +509,77 @@ class TestErpSync(IntegrationTestCase):
 		# the row existed before the run: undoing the run (by erp_run_id) must not take it
 		self.assertFalse(adopted.get("erp_run_id"))
 
+
+
+class FakeSmartWithSacados(FakeSmart):
+	"""Also answers the sacado registry (/sacado), with the inconsistent key spelling of the real API."""
+
+	def __init__(self, *args, sacados=(), **kwargs):
+		super().__init__(*args, **kwargs)
+		self.sacados = list(sacados)
+
+	def request(self, method, url, headers=None, timeout=None, **kwargs):
+		if "/sacado?" in url:
+			self.queries.append(url.split("?", 1)[1])
+			rows = self.sacados
+			return Response(200, {"_embedded": {"sacado": rows}, "page": 1, "page_count": 1, "total_items": len(rows)})
+		return super().request(method, url, headers=headers, timeout=timeout, **kwargs)
+
+
+class TestErpImportMap(TestErpSync):
+	"""The company's de-para of títulos and sacados (credtech#367)."""
+
+	def setUp(self):
+		super().setUp()
+		frappe.cache.delete_value("cred_hub_erp_report:sacado")
+
+	def maps(self, title=(), sacado=()):
+		erp = frappe.get_single(erp_settings.SETTINGS)
+		erp.set("title_field_map", [{"erp_column": c, "crm_field": f} for c, f in title])
+		erp.set("sacado_field_map", [{"erp_column": c, "crm_field": f} for c, f in sacado])
+		erp.save()
+		frappe.clear_document_cache(erp_settings.SETTINGS, erp_settings.SETTINGS)
+
+	def run_sync(self, fake):
+		frappe.cache.delete_value("cred_hub_erp_report:sacado")
+		return super().run_sync(fake)
+
+	def test_titulo_columns_fill_the_fields_the_company_chose(self):
+		self.maps(title=[("TIPO", "erp_title_type"), ("VALOR_TOTAL", "updated_amount")])
+		row = {**open_row(2001, "NF-20", DEBTOR_A, CEDENTE_A, value="1.000,00"), "VALOR_TOTAL": "1.087,50"}
+		self.run_sync(FakeSmart([row]))
+		_deal, title = self.title_row(2001)
+		self.assertEqual((title.erp_title_type, title.original_amount, title.updated_amount), ("DMR", 1000, 1087.5))
+		self.assertFalse(title.species)  # the protest species is never read from the ERP's type
+		# the ERP owns the título: the next run brings the new value
+		self.run_sync(FakeSmart([{**row, "VALOR_TOTAL": "1.120,00"}]))
+		self.assertEqual(self.title_row(2001)[1].updated_amount, 1120)
+
+	def test_columns_the_erp_returned_are_kept_even_in_a_simulation(self):
+		frappe.db.set_single_value(erp_settings.SETTINGS, "sync_dry_run", 1)
+		frappe.clear_document_cache(erp_settings.SETTINGS, erp_settings.SETTINGS)
+		self.run_sync(FakeSmart([{**open_row(2011, "NF-21", DEBTOR_A, CEDENTE_A), "PRAZO_MEDIO": "30"}]))
+		columns = json.loads(frappe.db.get_single_value(erp_settings.SETTINGS, "erp_columns"))["title"]
+		self.assertIn("PRAZO_MEDIO", columns)
+		self.assertFalse(sync.find_row("Smart Securities", "2011"))
+
+	def test_nothing_mapped_never_reads_the_sacado_registry(self):
+		self.maps()
+		fake = FakeSmartWithSacados([open_row(2021, "NF-22", DEBTOR_A, CEDENTE_A)])
+		self.run_sync(fake)
+		self.assertFalse([q for q in fake.queries if "dataIniSacado" in q])
+
+	def test_sacado_registry_fills_only_empty_fields(self):
+		self.maps(sacado=[("E-mail", "organization.registry_email"), ("Telefone", "contact.mobile_no")])
+		self.run_sync(FakeSmartWithSacados([open_row(2031, "NF-23", DEBTOR_A, CEDENTE_A)]))
+		org = self.org(DEBTOR_A)
+		frappe.db.set_value("CRM Organization", org, "registry_email", "")
+		sacados = [{"ID": "9", "Nome": "SACADO A LTDA", "CPF/CNPJ": masked(DEBTOR_A), "E-Mail": "fin@sacado.com.br", "Telefone": "(11) 98765-4321"}]
+		stats = self.run_sync(FakeSmartWithSacados([open_row(2031, "NF-23", DEBTOR_A, CEDENTE_A)], sacados=sacados))
+		self.assertEqual(stats.get("sacados_updated"), 1, stats)
+		self.assertEqual(frappe.db.get_value("CRM Organization", org, "registry_email"), "fin@sacado.com.br")
+		self.assertEqual(frappe.db.get_value("Contact", {"company_name": org}, "mobile_no"), "(11) 98765-4321")
+		# what the user wrote stays
+		frappe.db.set_value("CRM Organization", org, "registry_email", "cobranca@sacado.com.br")
+		self.run_sync(FakeSmartWithSacados([open_row(2031, "NF-23", DEBTOR_A, CEDENTE_A)], sacados=sacados))
+		self.assertEqual(frappe.db.get_value("CRM Organization", org, "registry_email"), "cobranca@sacado.com.br")

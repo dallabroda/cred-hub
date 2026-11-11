@@ -37,7 +37,13 @@
   "default_manager",
   "sector_by_cnae",
   "mapping_section",
-  "cedente_field_map"
+  "cedente_field_map",
+  "title_map_section",
+  "title_field_map",
+  "sacado_map_section",
+  "sacado_field_map",
+  "last_sacado_sync",
+  "erp_columns"
  ],
  "fields": [
   {
@@ -228,6 +234,46 @@
    "options": "Cred Hub ERP Field Map"
   },
   {
+   "fieldname": "title_map_section",
+   "fieldtype": "Section Break",
+   "label": "Título field mapping",
+   "collapsible": 1,
+   "description": "Which título field receives each column of the ERP's open títulos. ID, due date, sacado and cedente are always read."
+  },
+  {
+   "fieldname": "title_field_map",
+   "fieldtype": "Table",
+   "label": "Título Field Mapping",
+   "options": "Cred Hub ERP Import Map"
+  },
+  {
+   "fieldname": "sacado_map_section",
+   "fieldtype": "Section Break",
+   "label": "Sacado field mapping",
+   "collapsible": 1,
+   "description": "Which field of the sacado (company or person) receives each column of the ERP's sacado registry. Only empty fields are filled."
+  },
+  {
+   "fieldname": "sacado_field_map",
+   "fieldtype": "Table",
+   "label": "Sacado Field Mapping",
+   "options": "Cred Hub ERP Import Map"
+  },
+  {
+   "fieldname": "last_sacado_sync",
+   "fieldtype": "Date",
+   "label": "Sacado registry read until",
+   "read_only": 1
+  },
+  {
+   "fieldname": "erp_columns",
+   "fieldtype": "Long Text",
+   "label": "Columns seen in the ERP",
+   "read_only": 1,
+   "hidden": 1,
+   "description": "JSON {\"title\": [...], \"sacado\": [...]}: every column the ERP returned, offered in the mapping screen."
+  },
+  {
    "fieldname": "sync_dry_run",
    "fieldtype": "Check",
    "label": "Simulation mode (nothing is saved)",
@@ -244,7 +290,7 @@
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-11-10 23:30:00.000000",
+ "modified": "2026-11-11 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Cred Hub",
  "name": "Cred Hub ERP Settings",

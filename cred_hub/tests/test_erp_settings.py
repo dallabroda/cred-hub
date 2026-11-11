@@ -38,10 +38,10 @@ class TestErpSettings(IntegrationTestCase):
 
 	def test_edited_mapping_is_kept_on_save(self):
 		doc = configure("WBA")
-		doc.cedente_field_map[0].source = "organization.custom_cnpj"
+		doc.cedente_field_map[0].source = "organization.legal_name"
 		doc.save(ignore_permissions=True)
 		doc.reload()
-		self.assertEqual(doc.cedente_field_map[0].source, "organization.custom_cnpj")
+		self.assertEqual(doc.cedente_field_map[0].source, "organization.legal_name")
 
 	def test_secret_is_stored_encrypted(self):
 		configure("Smart Securities")
@@ -95,3 +95,50 @@ class TestErpSettings(IntegrationTestCase):
 		frappe.set_user("Guest")
 		with self.assertRaises(frappe.PermissionError):
 			erp_settings.erp_lists()
+
+
+class TestErpFullMapping(IntegrationTestCase):
+	"""Every field and column of the ERP offered in the de-para screen (credtech#367)."""
+
+	def tearDown(self):
+		frappe.set_user("Administrator")
+		frappe.db.rollback()
+
+	def test_screen_offers_every_smart_cedente_field_and_the_crm_fields(self):
+		configure("Smart Securities", erp_enabled=0)
+		options = erp_settings.mapping_options()
+		fields = {f["erp_field"] for f in options["cedente"]["fields"]}
+		self.assertIn("inscricaoEstadual", fields)
+		self.assertIn("idOperador", fields)
+		self.assertIn("organization.cnpj", {s["value"] for s in options["cedente"]["sources"]})
+		self.assertIn("VALOR_TOTAL", options["title"]["columns"])
+		targets = {t["value"] for t in options["title"]["targets"]}
+		self.assertIn("updated_amount", targets)
+		self.assertNotIn("species", targets)
+		self.assertIn("E-mail", options["sacado"]["columns"])
+
+	def test_a_new_field_and_an_erp_list_name_are_kept(self):
+		doc = configure("Smart Securities")
+		doc.append("cedente_field_map", {"erp_field": "inscricaoEstadual", "source": "organization.legal_nature"})
+		doc.append("cedente_field_map", {"erp_field": "idOperador", "source": "", "default_value": "Maria Operadora"})
+		doc.save(ignore_permissions=True)
+		rows = {r.erp_field: r for r in doc.cedente_field_map}
+		self.assertEqual((rows["inscricaoEstadual"].transform, rows["idOperador"].source), ("trim", "erp_list"))
+		self.assertEqual(rows["idOperador"].default_value, "Maria Operadora")
+
+	def test_a_required_field_cannot_be_left_out(self):
+		doc = configure("Smart Securities")
+		row = next(r for r in doc.cedente_field_map if r.erp_field == "emailPrincipal")
+		row.source, row.default_value = "", ""
+		self.assertRaises(frappe.ValidationError, doc.save)
+
+	def test_an_unknown_crm_field_is_refused(self):
+		doc = configure("Smart Securities")
+		doc.cedente_field_map[0].source = "organization.does_not_exist"
+		self.assertRaises(frappe.ValidationError, doc.save)
+
+	def test_title_map_never_targets_the_protest_species(self):
+		doc = configure("Smart Securities")
+		doc.set("title_field_map", [{"erp_column": "TIPO", "crm_field": "species"}, {"erp_column": "VALOR_TOTAL", "crm_field": "updated_amount"}])
+		doc.save(ignore_permissions=True)
+		self.assertEqual([r.crm_field for r in doc.title_field_map], ["updated_amount"])

@@ -32,7 +32,7 @@ from cred_hub.integrations import protest
 from cred_hub.integrations.bureau_log import ERROR, SUCCESS
 from cred_hub.party.document import CNPJ, document_kind
 
-from . import SMART
+from . import SMART, import_map
 from .base import ErpError
 from .fields import PAID, REPURCHASED
 from .settings import client, get_settings, log, user_message
@@ -145,6 +145,8 @@ def run(session=None, dry_run: bool | None = None) -> dict:
 		if dry:
 			# Throw away everything the run wrote, keep only the report
 			frappe.db.rollback()
+		_save_columns(stats)
+		if dry:
 			frappe.db.set_single_value(
 				"Cred Hub ERP Settings",
 				{
@@ -181,7 +183,18 @@ def run(session=None, dry_run: bool | None = None) -> dict:
 
 
 def _loggable(stats: dict) -> dict:
-	return {key: value for key, value in stats.items() if key != "plan"}
+	return {key: value for key, value in stats.items() if key not in ("plan", "columns")}
+
+
+def _save_columns(stats: dict):
+	"""Columns the ERP returned in this run, offered in the de-para screen (kept after a simulation too)."""
+	raw = frappe.db.get_single_value("Cred Hub ERP Settings", "erp_columns")
+	changed = False
+	for kind, rows in (stats.get("columns") or {}).items():
+		raw, new = import_map.merge_columns(raw, kind, rows)
+		changed = changed or new
+	if changed:
+		frappe.db.set_single_value("Cred Hub ERP Settings", "erp_columns", raw)
 
 
 # Smart Securities -----------------------------------------------------------------------------------------------
@@ -197,6 +210,7 @@ def _sync_smart(erp, settings, stats):
 		for row in erp.titles(OPEN, vencimentoIni=OPEN_RANGE_START, vencimentoFim=getdate(overdue_until))
 	]
 	stats["overdue_read"] = len(overdue)
+	stats["columns"] = {import_map.TITLE: _distinct_shapes(t["raw"] for t in overdue)}
 	lookback = max(int(settings.paid_lookback_days or 7), 1)
 	since = add_days(settings.last_paid_sync or today(), -lookback)
 	_cooldown(SETTLED)
@@ -208,6 +222,111 @@ def _sync_smart(erp, settings, stats):
 	close_settled(settled, stats)
 	# After the settlements: a título just closed is not "no longer overdue"
 	stats["left_overdue"] = count_left_overdue(SMART, {t["erp_id"] for t in overdue})
+	_commit()
+	sync_sacados(erp, settings, stats)
+
+
+def _distinct_shapes(rows) -> list[dict]:
+	"""One sample row per distinct set of columns: enough to learn the columns of a report with thousands of rows."""
+	shapes = {}
+	for row in rows:
+		shapes.setdefault(tuple(row), row)
+	return list(shapes.values())
+
+
+# Sacado registry: the de-para fills the empty fields of the sacados the CRM already has -------------------------
+
+
+def sync_sacados(erp, settings, stats):
+	"""Reads the ERP's sacado registry (only the newly registered ones after the first read) and fills, with the
+	columns the company mapped, the EMPTY fields of the sacados that already exist in the CRM. Nothing is read when
+	nothing is mapped."""
+	rules = settings.get("sacado_field_map") or []
+	if not rules:
+		return
+	since = settings.get("last_sacado_sync")
+	try:
+		_cooldown("sacado")
+		rows = list(erp.sacados(since=add_days(since, -1) if since else None, until=today()))
+	except ErpError as e:
+		# The títulos are already saved: a sacado registry that fails only waits for the next run
+		stats["sacado_error"] = user_message(e)
+		return
+	stats["sacados_read"] = len(rows)
+	stats.setdefault("columns", {})[import_map.SACADO] = _distinct_shapes(rows)
+	org_types = _fieldtypes("CRM Organization")
+	contact_types = _fieldtypes("Contact")
+	for row in rows:
+		_savepoint(stats, fill_sacado, row, rules, org_types, contact_types, stats)
+	if not frappe.flags.get("cred_hub_erp_dry_run"):
+		frappe.db.set_single_value("Cred Hub ERP Settings", "last_sacado_sync", today())
+
+
+def _fieldtypes(doctype) -> dict:
+	return {df.fieldname: df.fieldtype for df in frappe.get_meta(doctype).fields if df.fieldtype in import_map.VALUE_TYPES}
+
+
+def fill_sacado(row, rules, org_types, contact_types, stats):
+	from cred_hub.cnpj.mapping import format_cnpj, only_digits
+	from cred_hub.party.document import CPF, format_cpf
+
+	document = only_digits(import_map.value_of(row, "CPF/CNPJ"))
+	kind = document_kind(document)
+	contact_values = import_map.sacado_values(row, rules, "contact", contact_types)
+	if kind == CNPJ:
+		found = frappe.get_all("CRM Organization", {"cnpj": ("in", (format_cnpj(document), document))}, pluck="name", limit=1)
+		if not found:
+			return
+		org = found[0]
+		changed = _fill_empty("CRM Organization", org, import_map.sacado_values(row, rules, "organization", org_types))
+		if contact_values:
+			contact = frappe.db.get_value("Contact", {"company_name": org}, "name", order_by="creation asc")
+			if contact:
+				changed = _fill_empty("Contact", contact, contact_values) or changed
+			else:
+				# The company has nobody yet: the ERP's phone/e-mail become its first contact (the régua uses it)
+				name = str(import_map.value_of(row, "Nome") or "").strip() or org
+				doc = frappe.get_doc({"doctype": "Contact", "first_name": name[:140], "company_name": org})
+				_contact_channels(doc, contact_values)
+				doc.update(contact_values)
+				doc.insert(ignore_permissions=True)
+				changed = True
+	elif kind == CPF:
+		found = frappe.get_all("Contact", {"cpf": ("in", (format_cpf(document), document))}, pluck="name", limit=1)
+		if not found:
+			return
+		changed = _fill_empty("Contact", found[0], contact_values)
+	else:
+		return
+	if changed:
+		stats["sacados_updated"] = stats.get("sacados_updated", 0) + 1
+		_plan(stats, f"~ {_('sacado')} {document}")
+
+
+def _contact_channels(contact, values: dict):
+	"""A Contact recomputes mobile_no, phone and email_id from its phone and e-mail tables on save: they go there."""
+	if values.get("mobile_no"):
+		contact.append("phone_nos", {"phone": values.pop("mobile_no"), "is_primary_mobile_no": 1})
+	if values.get("phone"):
+		contact.append("phone_nos", {"phone": values.pop("phone"), "is_primary_phone": 1})
+	if values.get("email_id"):
+		contact.append("email_ids", {"email_id": values.pop("email_id"), "is_primary": 1})
+
+
+def _fill_empty(doctype, name, values) -> bool:
+	"""Only empty fields: what the user or the Localizar wrote is never overwritten."""
+	if not values:
+		return False
+	doc = frappe.get_doc(doctype, name)
+	empty = {k: v for k, v in values.items() if doc.get(k) in (None, "")}
+	if not empty:
+		return False
+	if doctype == "Contact":
+		_contact_channels(doc, empty)
+	doc.update(empty)
+	doc.flags.cred_hub_enriching = True
+	doc.save(ignore_permissions=True)
+	return True
 
 
 def _cooldown(report: str):
@@ -295,6 +414,14 @@ def to_import_title(title: dict) -> dict | None:
 	}
 
 
+def mapped_title_values(title: dict) -> dict:
+	"""{título field: value} from the ERP columns the company mapped (cred_hub.erp.import_map)."""
+	rules = get_settings().get("title_field_map") or []
+	if not rules or not title.get("raw"):
+		return {}
+	return import_map.title_values(title["raw"], rules, _fieldtypes(TITLE_ROW))
+
+
 def count_left_overdue(source: str, seen: set) -> int:
 	"""Open títulos linked to the ERP that are no longer in today's overdue list: the due date was extended or the
 	título was written off without a settlement. They stay open here (closing them is a decision for the client)."""
@@ -332,6 +459,7 @@ def upsert_overdue(pipeline: str, titles: list[dict], stats: dict):
 		if converted is None:
 			stats["skipped"] += 1
 			continue
+		converted["extra"] = mapped_title_values(title)
 		new_titles.append(converted)
 		_plan(
 			stats,
@@ -368,6 +496,14 @@ def update_open_row(found, title: dict, stats: dict):
 	row.erp_amount = amount or row.erp_amount
 	if title.get("digitable_line") and not row.digitable_line:
 		row.digitable_line = title["digitable_line"][:140]
+	# The company's título de-para runs on every sync (the ERP owns the título), except on a título already sent
+	# to the registry: what went to the cartório does not change
+	if not row.get("sent_at"):
+		values = mapped_title_values(title)
+		if flt(row.get("paid_amount")):
+			# A row adopted with payments booked here: its balance is what is left after them, never the ERP's value
+			values.pop("updated_amount", None)
+		row.update(values)
 	deal.save(ignore_permissions=True)
 	stats["titles_update"] += 1
 
