@@ -76,3 +76,22 @@ class TestErpSettings(IntegrationTestCase):
 		frappe.set_user("Guest")
 		with self.assertRaises(frappe.PermissionError):
 			erp_settings.test_connection()
+
+	def test_lists_of_names_for_the_screen(self):
+		"""The settings screen shows the ERP's managers and sectors by name (no id is typed in the CRM)."""
+		configure("Smart Securities")
+		erp_settings.forget_token()
+
+		class FakeErp:
+			def lookup(self, resource):
+				return {
+					"gerente": [{"idGerente": "2", "descricao": "Gilberto Pilla"}, {"idGerente": "1", "descricao": "Ana Souza"}],
+					"setor": [{"idSetor": "264", "descricao": "Serviços"}],
+				}[resource]
+
+		with patch.object(erp_settings, "client", return_value=FakeErp()):
+			data = erp_settings.erp_lists()
+		self.assertEqual(data, {"managers": ["Ana Souza", "Gilberto Pilla"], "sectors": ["Serviços"]})
+		frappe.set_user("Guest")
+		with self.assertRaises(frappe.PermissionError):
+			erp_settings.erp_lists()
