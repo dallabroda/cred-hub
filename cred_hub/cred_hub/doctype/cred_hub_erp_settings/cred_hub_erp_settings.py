@@ -27,8 +27,15 @@ class CredHubERPSettings(Document):
 		if self.has_value_changed("erp_provider"):
 			# Rules are ERP-specific: switching ERP starts from that ERP's defaults
 			self.set("cedente_field_map", [])
+			self.set("title_field_map", [])
+			self.set("sacado_field_map", [])
+			self.set("cedente_registry_map", [])
+			self.erp_columns = None
 		if self.erp_provider and not self.cedente_field_map:
 			settings.load_default_rules(self)
+		if self.erp_provider and self.has_value_changed("erp_provider"):
+			settings.load_default_import_maps(self)
+		settings.validate_maps(self)
 		self.validate_cedente_trigger()
 
 	def validate_cedente_trigger(self):

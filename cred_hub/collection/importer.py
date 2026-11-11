@@ -467,6 +467,8 @@ def _row_values(title, cedente, debtor=None) -> dict:
 	for fieldname in ERP_FIELDS:
 		if title.get(fieldname) not in (None, ""):
 			values[fieldname] = title[fieldname]
+	# De-para de títulos do ERP escolhido pela empresa (credtech#367): colunas do ERP -> campos do título
+	values.update(title.get("extra") or {})
 	return values
 
 

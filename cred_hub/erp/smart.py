@@ -129,6 +129,19 @@ class SmartClient(BaseClient):
 			params.setdefault(f"{prefix}Fim", OPEN_RANGE_END)
 		yield from self._pages(f"{API}/titulo", "titulo", params)
 
+	# Sacados
+	def sacados(self, since=None, until=None):
+		"""Yields raw rows of the sacado registry (/sacado) registered between the two dates (all when no date)."""
+		params = {
+			"dataIniSacado": br_date(since) if since else OPEN_RANGE_START,
+			"dataFimSacado": br_date(until) if until else OPEN_RANGE_END,
+		}
+		yield from self._pages(f"{API}/sacado", "sacado", params)
+
+	def cedentes(self):
+		"""Yields raw rows of the cedente registry (/cedente, all of them)."""
+		yield from self._pages(f"{API}/cedente", "cedente", {})
+
 	# Cedente
 	def find_cedente(self, document) -> dict | None:
 		wanted = digits(document)
@@ -205,4 +218,6 @@ def normalize_title(row: dict) -> dict:
 		"digitable_line": digits(row.get("LINHA_DIGITAVEL")),
 		"paid_date": to_date(row.get("QUITACAO")),
 		"paid_amount": to_decimal(row.get("VALOR_LIQUIDADO")),
+		# Every column, for the título de-para chosen by the company (cred_hub.erp.import_map)
+		"raw": row,
 	}

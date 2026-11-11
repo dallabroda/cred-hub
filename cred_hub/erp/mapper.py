@@ -8,6 +8,7 @@ Sources are "<entity>.<fieldname>": deal, organization, contact, address (the or
 "a.x|b.y" falls back to the next source when the first is empty. Special sources:
   "today"   -> today's date
   "auto"    -> filled by the ERP step itself (e.g. Smart's next master contract number)
+  "erp_list"-> a name of one of the ERP's lists (the default value); the sending step looks up its id
   ""        -> only the default value is used
 ERP fields are dotted paths into the payload; "telefones[0].ddd" builds lists.
 """
@@ -19,6 +20,7 @@ from datetime import date
 from . import formats
 
 AUTO = "auto"
+ERP_LIST = "erp_list"
 
 TRANSFORMS = {
 	"": lambda v: v,
@@ -73,6 +75,8 @@ class Result:
 	payload: dict = field(default_factory=dict)
 	missing: list[Rule] = field(default_factory=list)
 	auto: list[str] = field(default_factory=list)
+	# (erp_field, name picked from the ERP list): the id is looked up by the sending step
+	lists: list[tuple[str, str]] = field(default_factory=list)
 	errors: list[str] = field(default_factory=list)
 
 	@property
@@ -96,7 +100,7 @@ def resolve(source: str, records: dict, today: date | None = None):
 		return None
 	if source == "today":
 		return today or date.today()
-	if source == AUTO:
+	if source in (AUTO, ERP_LIST):
 		return None
 	entity, _sep, fieldname = source.partition(".")
 	record = records.get(entity) or {}
@@ -145,6 +149,13 @@ def build(rules, records: dict, today: date | None = None) -> Result:
 			continue
 		if rule.source == AUTO:
 			result.auto.append(rule.erp_field)
+			continue
+		if rule.source == ERP_LIST:
+			name = str(rule.default or "").strip()
+			if name:
+				result.lists.append((rule.erp_field, name))
+			elif rule.required:
+				result.missing.append(rule)
 			continue
 		value = resolve(rule.source, records, today)
 		if _empty(value) and not _empty(rule.default):
@@ -264,10 +275,11 @@ def finalize(provider: str, payload: dict) -> dict | list:
 			payload["telefones"] = phones
 		else:
 			payload.pop("telefones", None)
-		for key in ("logradouroEnderecoPrincipal", "numeroEnderecoPrincipal"):
-			if key in payload:
-				payload[key] = formats.ascii_text(payload[key]) or ("1" if key.startswith("numero") else "")
-		if "numeroEnderecoPrincipal" in payload and not formats.digits(payload["numeroEnderecoPrincipal"]):
-			payload["numeroEnderecoPrincipal"] = "1"
+		for suffix in ("Principal", "Cobranca"):
+			for key in (f"logradouroEndereco{suffix}", f"numeroEndereco{suffix}"):
+				if key in payload:
+					payload[key] = formats.ascii_text(payload[key]) or ("1" if key.startswith("numero") else "")
+			if f"numeroEndereco{suffix}" in payload and not formats.digits(payload[f"numeroEndereco{suffix}"]):
+				payload[f"numeroEndereco{suffix}"] = "1"
 		return payload
 	raise ValueError(f"Unknown ERP: {provider}")

@@ -20,6 +20,7 @@ open until the ERP settles it.
 Smart Securities only in this version; WBA has no overdue filter nor settlement data (next PR).
 """
 
+import json
 import time
 
 import frappe
@@ -32,7 +33,7 @@ from cred_hub.integrations import protest
 from cred_hub.integrations.bureau_log import ERROR, SUCCESS
 from cred_hub.party.document import CNPJ, document_kind
 
-from . import SMART
+from . import SMART, import_map
 from .base import ErpError
 from .fields import PAID, REPURCHASED
 from .settings import client, get_settings, log, user_message
@@ -145,6 +146,10 @@ def run(session=None, dry_run: bool | None = None) -> dict:
 		if dry:
 			# Throw away everything the run wrote, keep only the report
 			frappe.db.rollback()
+		_save_columns(stats)
+		# Raw ERP rows (names, documents) are not kept anywhere else
+		stats.pop("columns", None)
+		if dry:
 			frappe.db.set_single_value(
 				"Cred Hub ERP Settings",
 				{
@@ -181,13 +186,25 @@ def run(session=None, dry_run: bool | None = None) -> dict:
 
 
 def _loggable(stats: dict) -> dict:
-	return {key: value for key, value in stats.items() if key != "plan"}
+	return {key: value for key, value in stats.items() if key not in ("plan", "columns")}
+
+
+def _save_columns(stats: dict):
+	"""Columns the ERP returned in this run, offered in the de-para screen (kept after a simulation too)."""
+	raw = frappe.db.get_single_value("Cred Hub ERP Settings", "erp_columns")
+	changed = False
+	for kind, rows in (stats.get("columns") or {}).items():
+		raw, new = import_map.merge_columns(raw, kind, rows)
+		changed = changed or new
+	if changed:
+		frappe.db.set_single_value("Cred Hub ERP Settings", "erp_columns", raw)
 
 
 # Smart Securities -----------------------------------------------------------------------------------------------
 
 
 def _sync_smart(erp, settings, stats):
+	started = now_datetime()
 	pipeline = _collection_pipeline()
 	overdue_until = add_days(today(), -max(int(settings.overdue_days or 0), 0))
 	# Read both reports before writing anything: the database transaction is open only for the (short) write phase
@@ -197,6 +214,7 @@ def _sync_smart(erp, settings, stats):
 		for row in erp.titles(OPEN, vencimentoIni=OPEN_RANGE_START, vencimentoFim=getdate(overdue_until))
 	]
 	stats["overdue_read"] = len(overdue)
+	stats["columns"] = {import_map.TITLE: _distinct_shapes(t["raw"] for t in overdue)}
 	lookback = max(int(settings.paid_lookback_days or 7), 1)
 	since = add_days(settings.last_paid_sync or today(), -lookback)
 	_cooldown(SETTLED)
@@ -208,6 +226,170 @@ def _sync_smart(erp, settings, stats):
 	close_settled(settled, stats)
 	# After the settlements: a título just closed is not "no longer overdue"
 	stats["left_overdue"] = count_left_overdue(SMART, {t["erp_id"] for t in overdue})
+	_commit()
+	sync_parties(erp, settings, stats, overdue, started)
+
+
+def _distinct_shapes(rows) -> list[dict]:
+	"""One sample row per distinct set of columns: enough to learn the columns of a report with thousands of rows."""
+	shapes = {}
+	for row in rows:
+		shapes.setdefault(tuple(row), row)
+	return list(shapes.values())
+
+
+# Sacado registry: the de-para fills the empty fields of the sacados the CRM already has -------------------------
+
+
+# Cedente and sacado registry ---------------------------------------------------------------------------------
+# Owner, 11/11/2026: a título always comes with its cedente and its sacado (the card is linked to both). Their
+# registration is read ONCE: only a cedente/sacado that this run created gets the columns the company mapped from
+# the ERP registry; one that already existed is never read again. The rest (address, Receita data) comes from the
+# CNPJ enrichment the HubTech already runs on every new organization.
+PARTIES = (
+	# kind, de-para table, document of the título, ERP reader
+	(import_map.SACADO, "sacado_field_map", "sacado_document", "sacados"),
+	(import_map.CEDENTE, "cedente_registry_map", "cedente_document", "cedentes"),
+)
+
+
+# A new cedente/sacado whose registry could not be read (ERP down, cooldown, an error filling it) is kept pending
+# and tried again on the next runs, up to this many times
+PENDING_TRIES = 5
+
+
+def sync_parties(erp, settings, stats, titles, since):
+	pending = _load_pending()
+	for kind, table, document_key, reader in PARTIES:
+		rules = settings.get(table) or []
+		waiting = pending.get(kind) or {}
+		if not rules:
+			pending.pop(kind, None)
+			continue
+		todo = {doc: (doctype, name) for doc, (doctype, name, _tries) in waiting.items() if frappe.db.exists(doctype, name)}
+		todo.update(_created_since({t[document_key] for t in titles if t.get(document_key)}, since))
+		stats[f"{kind}s_new"] = len(todo)
+		if not todo:
+			pending.pop(kind, None)
+			continue
+		started = time.time()
+		try:
+			_cooldown(kind)
+			rows = list(getattr(erp, reader)())
+		except ErpError as e:
+			# The títulos are already saved; these records wait for the next run (the CNPJ enrichment runs anyway)
+			stats[f"{kind}_error"] = user_message(e)
+			pending[kind] = _retry(waiting, todo, todo)
+			continue
+		stats[f"{kind}_seconds"] = round(time.time() - started, 1)
+		stats.setdefault("columns", {})[kind] = _distinct_shapes(rows)
+		org_types, contact_types = _fieldtypes("CRM Organization"), _fieldtypes("Contact")
+		from cred_hub.cnpj.mapping import only_digits
+
+		failed = {}
+		for row in rows:
+			document = only_digits(import_map.value_of(row, "CPF/CNPJ"))
+			if document in todo:
+				before = stats["failed"]
+				_savepoint(stats, fill_party, kind, row, todo[document], rules, org_types, contact_types, stats)
+				if stats["failed"] > before:
+					failed[document] = todo[document]
+		# Read: done, even when the registry did not have it (the registration is read once)
+		pending[kind] = _retry(waiting, failed, todo)
+	if not frappe.flags.get("cred_hub_erp_dry_run"):
+		frappe.db.set_single_value("Cred Hub ERP Settings", "erp_pending_parties", json.dumps(pending) if any(pending.values()) else None)
+
+
+def _load_pending() -> dict:
+	try:
+		return json.loads(frappe.db.get_single_value("Cred Hub ERP Settings", "erp_pending_parties") or "{}")
+	except ValueError:
+		return {}
+
+
+def _retry(waiting: dict, again: dict, todo: dict) -> dict:
+	"""The ones to try again on the next run, each with one more try (given up after PENDING_TRIES)."""
+	result = {}
+	for document, (doctype, name) in again.items():
+		tries = (waiting.get(document) or [None, None, 0])[2] + 1
+		if tries < PENDING_TRIES:
+			result[document] = [doctype, name, tries]
+	return result
+
+
+def _created_since(documents, since) -> dict:
+	"""{document: (doctype, name)} of the organizations (CNPJ) and contacts (CPF) created by this run."""
+	from cred_hub.cnpj.mapping import format_cnpj
+	from cred_hub.party.document import CPF, format_cpf
+
+	created = {}
+	for document in documents:
+		kind = document_kind(document)
+		if kind == CNPJ:
+			doctype, field, values = "CRM Organization", "cnpj", (format_cnpj(document), document)
+		elif kind == CPF:
+			doctype, field, values = "Contact", "cpf", (format_cpf(document), document)
+		else:
+			continue
+		found = frappe.get_all(doctype, {field: ("in", values), "creation": (">=", since)}, pluck="name", limit=1)
+		if found:
+			created[document] = (doctype, found[0])
+	return created
+
+
+def _fieldtypes(doctype) -> dict:
+	return {df.fieldname: df.fieldtype for df in frappe.get_meta(doctype).fields if df.fieldtype in import_map.VALUE_TYPES}
+
+
+def fill_party(kind, row, record, rules, org_types, contact_types, stats):
+	"""Fills the EMPTY fields of a new cedente/sacado (organization or person) and its contact with the mapped ERP
+	columns. A company with nobody yet gets its first contact from the ERP's phone and e-mail."""
+	doctype, name = record
+	contact_values = import_map.sacado_values(row, rules, "contact", contact_types)
+	if doctype == "CRM Organization":
+		changed = _fill_empty(doctype, name, import_map.sacado_values(row, rules, "organization", org_types))
+		if contact_values:
+			contact = frappe.db.get_value("Contact", {"company_name": name}, "name", order_by="creation asc")
+			if contact:
+				changed = _fill_empty("Contact", contact, contact_values) or changed
+			else:
+				person = str(import_map.value_of(row, "Nome") or "").strip() or name
+				doc = frappe.get_doc({"doctype": "Contact", "first_name": person[:140], "company_name": name})
+				_contact_channels(doc, contact_values)
+				doc.update(contact_values)
+				doc.insert(ignore_permissions=True)
+				changed = True
+	else:
+		changed = _fill_empty("Contact", name, contact_values)
+	if changed:
+		stats[f"{kind}s_updated"] = stats.get(f"{kind}s_updated", 0) + 1
+		_plan(stats, f"~ {_(kind)} {name}")
+
+
+def _contact_channels(contact, values: dict):
+	"""A Contact recomputes mobile_no, phone and email_id from its phone and e-mail tables on save: they go there."""
+	if values.get("mobile_no"):
+		contact.append("phone_nos", {"phone": values.pop("mobile_no"), "is_primary_mobile_no": 1})
+	if values.get("phone"):
+		contact.append("phone_nos", {"phone": values.pop("phone"), "is_primary_phone": 1})
+	if values.get("email_id"):
+		contact.append("email_ids", {"email_id": values.pop("email_id"), "is_primary": 1})
+
+
+def _fill_empty(doctype, name, values) -> bool:
+	"""Only empty fields: what the user or the Localizar wrote is never overwritten."""
+	if not values:
+		return False
+	doc = frappe.get_doc(doctype, name)
+	empty = {k: v for k, v in values.items() if doc.get(k) in (None, "")}
+	if not empty:
+		return False
+	if doctype == "Contact":
+		_contact_channels(doc, empty)
+	doc.update(empty)
+	doc.flags.cred_hub_enriching = True
+	doc.save(ignore_permissions=True)
+	return True
 
 
 def _cooldown(report: str):
@@ -234,6 +416,11 @@ def _new_stats() -> dict:
 
 def _summary(stats) -> str:
 	text = _summary_base(stats)
+	for kind, label in ((import_map.SACADO, _("sacado")), (import_map.CEDENTE, _("cedente"))):
+		if stats.get(f"{kind}_error"):
+			text += " " + _("The ERP {0} registry could not be read ({1}); the new ones are tried again on the next run.").format(
+				label, stats[f"{kind}_error"]
+			)
 	if stats.get("protests_to_withdraw"):
 		text += " " + _(
 			"{0} títulos settled in the ERP still have a protest at the registry: withdraw or cancel it."
@@ -295,6 +482,14 @@ def to_import_title(title: dict) -> dict | None:
 	}
 
 
+def mapped_title_values(title: dict) -> dict:
+	"""{título field: value} from the ERP columns the company mapped (cred_hub.erp.import_map)."""
+	rules = get_settings().get("title_field_map") or []
+	if not rules or not title.get("raw"):
+		return {}
+	return import_map.title_values(title["raw"], rules, _fieldtypes(TITLE_ROW))
+
+
 def count_left_overdue(source: str, seen: set) -> int:
 	"""Open títulos linked to the ERP that are no longer in today's overdue list: the due date was extended or the
 	título was written off without a settlement. They stay open here (closing them is a decision for the client)."""
@@ -332,6 +527,7 @@ def upsert_overdue(pipeline: str, titles: list[dict], stats: dict):
 		if converted is None:
 			stats["skipped"] += 1
 			continue
+		converted["extra"] = mapped_title_values(title)
 		new_titles.append(converted)
 		_plan(
 			stats,
@@ -368,6 +564,14 @@ def update_open_row(found, title: dict, stats: dict):
 	row.erp_amount = amount or row.erp_amount
 	if title.get("digitable_line") and not row.digitable_line:
 		row.digitable_line = title["digitable_line"][:140]
+	# The company's título de-para runs on every sync (the ERP owns the título), except on a título already sent
+	# to the registry: what went to the cartório does not change
+	if not row.get("sent_at"):
+		values = mapped_title_values(title)
+		if flt(row.get("paid_amount")):
+			# A row adopted with payments booked here: its balance is what is left after them, never the ERP's value
+			values.pop("updated_amount", None)
+		row.update(values)
 	deal.save(ignore_permissions=True)
 	stats["titles_update"] += 1
 

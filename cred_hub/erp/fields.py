@@ -36,6 +36,14 @@ TITLE_FIELDS = [
 	{"fieldname": "erp_operation", "fieldtype": "Data", "label": "ERP operation", "read_only": 1, "insert_after": "erp_title_id"},
 	{"fieldname": "erp_situation", "fieldtype": "Data", "label": "ERP situation", "read_only": 1, "insert_after": "erp_operation"},
 	{
+		"fieldname": "erp_title_type",
+		"fieldtype": "Data",
+		"label": "Type in the ERP",
+		"read_only": 1,
+		"insert_after": "erp_situation",
+		"description": "The ERP's own type of título (e.g. DMR, NPP). Not the protest species, which the operator picks.",
+	},
+	{
 		"fieldname": "erp_amount",
 		"fieldtype": "Currency",
 		"label": "Face value in the ERP",

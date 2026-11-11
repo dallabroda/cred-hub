@@ -3552,3 +3552,177 @@ msgstr "Não enviado"
 
 msgid "Sending"
 msgstr "Enviando"
+
+msgid "State registration"
+msgstr "Inscrição estadual"
+
+msgid "Birth date (person)"
+msgstr "Data de nascimento (pessoa física)"
+
+msgid "Marital status (person)"
+msgstr "Estado civil (pessoa física)"
+
+msgid "Acquisition source"
+msgstr "Fonte de captação"
+
+msgid "Vadu analysis group"
+msgstr "Grupo de análise Vadu"
+
+msgid "Operator"
+msgstr "Operador"
+
+msgid "Operator CPF/CNPJ"
+msgstr "CPF/CNPJ do operador"
+
+msgid "Originator"
+msgstr "Captador"
+
+msgid "Originator CPF/CNPJ"
+msgstr "CPF/CNPJ do captador"
+
+msgid "Controller"
+msgstr "Controlador"
+
+msgid "Controller CPF/CNPJ"
+msgstr "CPF/CNPJ do controlador"
+
+msgid "Collection officer"
+msgstr "Responsável pela cobrança"
+
+msgid "Collection officer CPF/CNPJ"
+msgstr "CPF/CNPJ do responsável pela cobrança"
+
+msgid "ZIP code (main)"
+msgstr "CEP (principal)"
+
+msgid "Street (main)"
+msgstr "Logradouro (principal)"
+
+msgid "Number (main)"
+msgstr "Número (principal)"
+
+msgid "Complement (main)"
+msgstr "Complemento (principal)"
+
+msgid "District (main)"
+msgstr "Bairro (principal)"
+
+msgid "IBGE city code (main)"
+msgstr "Código IBGE do município (principal)"
+
+msgid "ZIP code (billing)"
+msgstr "CEP (cobrança)"
+
+msgid "Street (billing)"
+msgstr "Logradouro (cobrança)"
+
+msgid "Number (billing)"
+msgstr "Número (cobrança)"
+
+msgid "Complement (billing)"
+msgstr "Complemento (cobrança)"
+
+msgid "District (billing)"
+msgstr "Bairro (cobrança)"
+
+msgid "IBGE city code (billing)"
+msgstr "Código IBGE do município (cobrança)"
+
+msgid "Phone 1 area code"
+msgstr "DDD do telefone 1"
+
+msgid "Phone 1"
+msgstr "Telefone 1"
+
+msgid "Phone 1 contact name"
+msgstr "Contato do telefone 1"
+
+msgid "Phone 2 area code"
+msgstr "DDD do telefone 2"
+
+msgid "Phone 2"
+msgstr "Telefone 2"
+
+msgid "Phone 2 contact name"
+msgstr "Contato do telefone 2"
+
+msgid "Sacado company"
+msgstr "Empresa do sacado"
+
+msgid "Sacado person or contact"
+msgstr "Pessoa ou contato do sacado"
+
+msgid "Credit committee"
+msgstr "Comitê de crédito"
+
+msgid "Approved limit"
+msgstr "Limite aprovado"
+
+msgid "Date of the registration"
+msgstr "Data do cadastro"
+
+msgid "The CRM field {0} does not exist."
+msgstr "O campo {0} não existe no CRM."
+
+msgid "The ERP field {0} is required: choose where it comes from."
+msgstr "O campo {0} é obrigatório no ERP: escolha de onde ele vem."
+
+msgid "The column {0} is mapped twice to the same field."
+msgstr "A coluna {0} está ligada duas vezes ao mesmo campo."
+
+msgid "{0}: \"{1}\" is not in the Smart list"
+msgstr "{0}: \"{1}\" não está na lista da Smart"
+
+msgid "Type in the ERP"
+msgstr "Tipo no ERP"
+
+msgid "The ERP's own type of título (e.g. DMR, NPP). Not the protest species, which the operator picks."
+msgstr "O tipo do título no próprio ERP (ex.: DMR, NPP). Não é a espécie do protesto, que o operador escolhe."
+
+msgid "sacado"
+msgstr "sacado"
+
+msgid "Título field mapping"
+msgstr "De-para dos títulos"
+
+msgid "Sacado field mapping"
+msgstr "De-para dos sacados"
+
+msgid "Issue Date"
+msgstr "Data de emissão"
+
+msgid "Updated Amount"
+msgstr "Valor atualizado"
+
+msgid "Original Amount"
+msgstr "Valor original"
+
+msgid "Title Number"
+msgstr "Número do título"
+
+msgid "Our Number"
+msgstr "Nosso número"
+
+msgid "Digitable Line"
+msgstr "Linha digitável"
+
+msgid "Cedente company"
+msgstr "Empresa do cedente"
+
+msgid "Cedente contact"
+msgstr "Contato do cedente"
+
+msgid "Cedente registry mapping"
+msgstr "De-para do cadastro de cedentes"
+
+msgid "The column {0} was left out: {1} cannot receive ERP data."
+msgstr "A coluna {0} ficou de fora: {1} não pode receber dados do ERP."
+
+msgid "cedente"
+msgstr "cedente"
+
+msgid "The ERP {0} registry could not be read ({1}); the new ones are tried again on the next run."
+msgstr "O cadastro de {0} do ERP não pôde ser lido ({1}); os novos são lidos de novo na próxima execução."
+
+msgid "Registries to read again"
+msgstr "Cadastros a ler de novo"
