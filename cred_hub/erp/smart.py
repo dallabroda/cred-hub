@@ -138,6 +138,10 @@ class SmartClient(BaseClient):
 		}
 		yield from self._pages(f"{API}/sacado", "sacado", params)
 
+	def cedentes(self):
+		"""Yields raw rows of the cedente registry (/cedente, all of them)."""
+		yield from self._pages(f"{API}/cedente", "cedente", {})
+
 	# Cedente
 	def find_cedente(self, document) -> dict | None:
 		wanted = digits(document)

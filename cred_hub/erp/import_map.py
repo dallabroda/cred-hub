@@ -17,7 +17,7 @@ import unicodedata
 
 from .formats import digits, to_date, to_decimal
 
-TITLE, SACADO = "title", "sacado"
+TITLE, SACADO, CEDENTE = "title", "sacado", "cedente"
 TITLE_ROW = "CRM Deal Title"
 ORG, CONTACT = "CRM Organization", "Contact"
 
@@ -41,6 +41,14 @@ SMART_TITLE_FIXED = {
 	"CEDENTE": "cedente",
 }
 SMART_SACADO_FIXED = {"CPF/CNPJ": "document", "Nome": "name"}
+# GET /cedente (documented columns; the real ones are added by each sync)
+SMART_CEDENTE_COLUMNS = [
+	"ID_CEDENTE", "NOME", "CPF_CNPJ", "ENDERECO", "CEP", "CIDADE", "UF", "EMAIL", "TELEFONE", "GERENTE", "OPERADOR",
+	"CAPTADOR", "CONTROLADOR", "RESPONSAVEL_CONFIRMACAO", "RESPONSAVEL_COBRANCA", "FATOR_%", "ADVALOREM_%", "SETOR",
+	"FONTE_CAPTACAO", "GRUPO_ECONOMICO", "ID_GRUPO_ECONOMICO", "DATA_CADASTRO", "PRIMEIRA_OPERACAO",
+	"VENCIMENTO_CONTRATO", "BLOQUEADO", "LIMITE_GLOBAL", "RISCO_ATUAL", "SALDO",
+]
+SMART_CEDENTE_FIXED = {"CPF_CNPJ": "document", "NOME": "name"}
 
 # Starting point; each company edits it (the sync already fills number, issue date, amounts, digitable line...)
 DEFAULT_TITLE_MAP = {"Smart Securities": [("TIPO", "erp_title_type")]}
@@ -51,7 +59,8 @@ DEFAULT_SACADO_MAP = {}
 # picked by the operator, never read from the ERP's "type" of título: owner rule)
 PROTECTED_TITLE_FIELDS = {
 	"erp_source", "erp_title_id", "erp_run_id", "due_date", "sacado", "sacado_contact", "cedente", "closed_reason",
-	"closed_on", "paid_amount", "species", "sent_at", "promise_date", "promise_amount",
+	"closed_on", "paid_amount", "species", "sent_at", "promise_date", "promise_amount", "erp_amount", "erp_situation",
+	"erp_operation", "requires_attachment", "attachment",
 }
 PROTECTED_PREFIXES = ("protest_", "cenprot_")
 VALUE_TYPES = {
@@ -147,7 +156,8 @@ def columns(raw, kind: str, provider: str) -> list[str]:
 		seen = (json.loads(raw) if raw else {}).get(kind) or []
 	except ValueError:
 		seen = []
-	base = (SMART_TITLE_COLUMNS if kind == TITLE else SMART_SACADO_COLUMNS) if provider == "Smart Securities" else []
+	documented = {TITLE: SMART_TITLE_COLUMNS, SACADO: SMART_SACADO_COLUMNS, CEDENTE: SMART_CEDENTE_COLUMNS}
+	base = documented.get(kind, []) if provider == "Smart Securities" else []
 	result, keys = [], set()
 	for column in [*base, *seen]:
 		if column_key(column) not in keys:

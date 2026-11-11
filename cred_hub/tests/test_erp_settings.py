@@ -116,6 +116,11 @@ class TestErpFullMapping(IntegrationTestCase):
 		self.assertIn("updated_amount", targets)
 		self.assertNotIn("species", targets)
 		self.assertIn("E-mail", options["sacado"]["columns"])
+		self.assertIn("TELEFONE", options["cedente_registry"]["columns"])
+		self.assertNotIn("lists", options)  # the ERP lists come apart (mapping_lists): the screen never waits for the ERP
+		# every source of the default de-para has a name on the screen (e.g. Contact › Full Name)
+		sources = {s["value"] for s in options["cedente"]["sources"]}
+		self.assertIn("contact.full_name", sources)
 
 	def test_a_new_field_and_an_erp_list_name_are_kept(self):
 		doc = configure("Smart Securities")

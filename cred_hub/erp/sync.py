@@ -146,6 +146,8 @@ def run(session=None, dry_run: bool | None = None) -> dict:
 			# Throw away everything the run wrote, keep only the report
 			frappe.db.rollback()
 		_save_columns(stats)
+		# Raw ERP rows (names, documents) are not kept anywhere else
+		stats.pop("columns", None)
 		if dry:
 			frappe.db.set_single_value(
 				"Cred Hub ERP Settings",
@@ -201,6 +203,7 @@ def _save_columns(stats: dict):
 
 
 def _sync_smart(erp, settings, stats):
+	started = now_datetime()
 	pipeline = _collection_pipeline()
 	overdue_until = add_days(today(), -max(int(settings.overdue_days or 0), 0))
 	# Read both reports before writing anything: the database transaction is open only for the (short) write phase
@@ -223,7 +226,7 @@ def _sync_smart(erp, settings, stats):
 	# After the settlements: a título just closed is not "no longer overdue"
 	stats["left_overdue"] = count_left_overdue(SMART, {t["erp_id"] for t in overdue})
 	_commit()
-	sync_sacados(erp, settings, stats)
+	sync_parties(erp, settings, stats, overdue, started)
 
 
 def _distinct_shapes(rows) -> list[dict]:
@@ -237,70 +240,91 @@ def _distinct_shapes(rows) -> list[dict]:
 # Sacado registry: the de-para fills the empty fields of the sacados the CRM already has -------------------------
 
 
-def sync_sacados(erp, settings, stats):
-	"""Reads the ERP's sacado registry (only the newly registered ones after the first read) and fills, with the
-	columns the company mapped, the EMPTY fields of the sacados that already exist in the CRM. Nothing is read when
-	nothing is mapped."""
-	rules = settings.get("sacado_field_map") or []
-	if not rules:
-		return
-	since = settings.get("last_sacado_sync")
-	try:
-		_cooldown("sacado")
-		rows = list(erp.sacados(since=add_days(since, -1) if since else None, until=today()))
-	except ErpError as e:
-		# The títulos are already saved: a sacado registry that fails only waits for the next run
-		stats["sacado_error"] = user_message(e)
-		return
-	stats["sacados_read"] = len(rows)
-	stats.setdefault("columns", {})[import_map.SACADO] = _distinct_shapes(rows)
-	org_types = _fieldtypes("CRM Organization")
-	contact_types = _fieldtypes("Contact")
-	for row in rows:
-		_savepoint(stats, fill_sacado, row, rules, org_types, contact_types, stats)
-	if not frappe.flags.get("cred_hub_erp_dry_run"):
-		frappe.db.set_single_value("Cred Hub ERP Settings", "last_sacado_sync", today())
+# Cedente and sacado registry ---------------------------------------------------------------------------------
+# Owner, 11/11/2026: a título always comes with its cedente and its sacado (the card is linked to both). Their
+# registration is read ONCE: only a cedente/sacado that this run created gets the columns the company mapped from
+# the ERP registry; one that already existed is never read again. The rest (address, Receita data) comes from the
+# CNPJ enrichment the HubTech already runs on every new organization.
+PARTIES = (
+	# kind, de-para table, document of the título, ERP reader
+	(import_map.SACADO, "sacado_field_map", "sacado_document", "sacados"),
+	(import_map.CEDENTE, "cedente_registry_map", "cedente_document", "cedentes"),
+)
+
+
+def sync_parties(erp, settings, stats, titles, since):
+	for kind, table, document_key, reader in PARTIES:
+		rules = settings.get(table) or []
+		if not rules:
+			continue
+		created = _created_since({t[document_key] for t in titles if t.get(document_key)}, since)
+		stats[f"{kind}s_new"] = len(created)
+		if not created:
+			continue
+		try:
+			_cooldown(kind)
+			rows = list(getattr(erp, reader)())
+		except ErpError as e:
+			# The títulos are already saved; these records keep what the CNPJ enrichment brings
+			stats[f"{kind}_error"] = user_message(e)
+			continue
+		stats.setdefault("columns", {})[kind] = _distinct_shapes(rows)
+		org_types, contact_types = _fieldtypes("CRM Organization"), _fieldtypes("Contact")
+		from cred_hub.cnpj.mapping import only_digits
+
+		for row in rows:
+			document = only_digits(import_map.value_of(row, "CPF/CNPJ"))
+			if document in created:
+				_savepoint(stats, fill_party, kind, row, created[document], rules, org_types, contact_types, stats)
+
+
+def _created_since(documents, since) -> dict:
+	"""{document: (doctype, name)} of the organizations (CNPJ) and contacts (CPF) created by this run."""
+	from cred_hub.cnpj.mapping import format_cnpj
+	from cred_hub.party.document import CPF, format_cpf
+
+	created = {}
+	for document in documents:
+		kind = document_kind(document)
+		if kind == CNPJ:
+			doctype, field, values = "CRM Organization", "cnpj", (format_cnpj(document), document)
+		elif kind == CPF:
+			doctype, field, values = "Contact", "cpf", (format_cpf(document), document)
+		else:
+			continue
+		found = frappe.get_all(doctype, {field: ("in", values), "creation": (">=", since)}, pluck="name", limit=1)
+		if found:
+			created[document] = (doctype, found[0])
+	return created
 
 
 def _fieldtypes(doctype) -> dict:
 	return {df.fieldname: df.fieldtype for df in frappe.get_meta(doctype).fields if df.fieldtype in import_map.VALUE_TYPES}
 
 
-def fill_sacado(row, rules, org_types, contact_types, stats):
-	from cred_hub.cnpj.mapping import format_cnpj, only_digits
-	from cred_hub.party.document import CPF, format_cpf
-
-	document = only_digits(import_map.value_of(row, "CPF/CNPJ"))
-	kind = document_kind(document)
+def fill_party(kind, row, record, rules, org_types, contact_types, stats):
+	"""Fills the EMPTY fields of a new cedente/sacado (organization or person) and its contact with the mapped ERP
+	columns. A company with nobody yet gets its first contact from the ERP's phone and e-mail."""
+	doctype, name = record
 	contact_values = import_map.sacado_values(row, rules, "contact", contact_types)
-	if kind == CNPJ:
-		found = frappe.get_all("CRM Organization", {"cnpj": ("in", (format_cnpj(document), document))}, pluck="name", limit=1)
-		if not found:
-			return
-		org = found[0]
-		changed = _fill_empty("CRM Organization", org, import_map.sacado_values(row, rules, "organization", org_types))
+	if doctype == "CRM Organization":
+		changed = _fill_empty(doctype, name, import_map.sacado_values(row, rules, "organization", org_types))
 		if contact_values:
-			contact = frappe.db.get_value("Contact", {"company_name": org}, "name", order_by="creation asc")
+			contact = frappe.db.get_value("Contact", {"company_name": name}, "name", order_by="creation asc")
 			if contact:
 				changed = _fill_empty("Contact", contact, contact_values) or changed
 			else:
-				# The company has nobody yet: the ERP's phone/e-mail become its first contact (the régua uses it)
-				name = str(import_map.value_of(row, "Nome") or "").strip() or org
-				doc = frappe.get_doc({"doctype": "Contact", "first_name": name[:140], "company_name": org})
+				person = str(import_map.value_of(row, "Nome") or "").strip() or name
+				doc = frappe.get_doc({"doctype": "Contact", "first_name": person[:140], "company_name": name})
 				_contact_channels(doc, contact_values)
 				doc.update(contact_values)
 				doc.insert(ignore_permissions=True)
 				changed = True
-	elif kind == CPF:
-		found = frappe.get_all("Contact", {"cpf": ("in", (format_cpf(document), document))}, pluck="name", limit=1)
-		if not found:
-			return
-		changed = _fill_empty("Contact", found[0], contact_values)
 	else:
-		return
+		changed = _fill_empty("Contact", name, contact_values)
 	if changed:
-		stats["sacados_updated"] = stats.get("sacados_updated", 0) + 1
-		_plan(stats, f"~ {_('sacado')} {document}")
+		stats[f"{kind}s_updated"] = stats.get(f"{kind}s_updated", 0) + 1
+		_plan(stats, f"~ {_(kind)} {name}")
 
 
 def _contact_channels(contact, values: dict):

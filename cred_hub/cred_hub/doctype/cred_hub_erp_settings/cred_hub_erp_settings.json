@@ -42,7 +42,8 @@
   "title_field_map",
   "sacado_map_section",
   "sacado_field_map",
-  "last_sacado_sync",
+  "cedente_registry_section",
+  "cedente_registry_map",
   "erp_columns"
  ],
  "fields": [
@@ -251,7 +252,7 @@
    "fieldtype": "Section Break",
    "label": "Sacado field mapping",
    "collapsible": 1,
-   "description": "Which field of the sacado (company or person) receives each column of the ERP's sacado registry. Only empty fields are filled."
+   "description": "Which field of a NEW sacado (company or person) receives each column of the ERP's sacado registry. Read once, when the sync creates the sacado; empty fields only."
   },
   {
    "fieldname": "sacado_field_map",
@@ -260,10 +261,17 @@
    "options": "Cred Hub ERP Import Map"
   },
   {
-   "fieldname": "last_sacado_sync",
-   "fieldtype": "Date",
-   "label": "Sacado registry read until",
-   "read_only": 1
+   "fieldname": "cedente_registry_section",
+   "fieldtype": "Section Break",
+   "label": "Cedente registry mapping",
+   "collapsible": 1,
+   "description": "Which field of a NEW cedente (company) or its contact receives each column of the ERP's cedente registry. Read once, when the sync creates the cedente; empty fields only."
+  },
+  {
+   "fieldname": "cedente_registry_map",
+   "fieldtype": "Table",
+   "label": "Cedente Registry Mapping",
+   "options": "Cred Hub ERP Import Map"
   },
   {
    "fieldname": "erp_columns",

@@ -3688,5 +3688,35 @@ msgstr "De-para dos títulos"
 msgid "Sacado field mapping"
 msgstr "De-para dos sacados"
 
-msgid "Sacado registry read until"
-msgstr "Cadastro de sacados lido até"
+msgid "Issue Date"
+msgstr "Data de emissão"
+
+msgid "Updated Amount"
+msgstr "Valor atualizado"
+
+msgid "Original Amount"
+msgstr "Valor original"
+
+msgid "Title Number"
+msgstr "Número do título"
+
+msgid "Our Number"
+msgstr "Nosso número"
+
+msgid "Digitable Line"
+msgstr "Linha digitável"
+
+msgid "Cedente company"
+msgstr "Empresa do cedente"
+
+msgid "Cedente contact"
+msgstr "Contato do cedente"
+
+msgid "Cedente registry mapping"
+msgstr "De-para do cadastro de cedentes"
+
+msgid "The column {0} was left out: {1} cannot receive ERP data."
+msgstr "A coluna {0} ficou de fora: {1} não pode receber dados do ERP."
+
+msgid "cedente"
+msgstr "cedente"

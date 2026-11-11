@@ -512,17 +512,18 @@ class TestErpSync(IntegrationTestCase):
 
 
 class FakeSmartWithSacados(FakeSmart):
-	"""Also answers the sacado registry (/sacado), with the inconsistent key spelling of the real API."""
+	"""Also answers the sacado (/sacado) and cedente (/cedente) registries, with the real API's key spelling."""
 
-	def __init__(self, *args, sacados=(), **kwargs):
+	def __init__(self, *args, sacados=(), cedentes=(), **kwargs):
 		super().__init__(*args, **kwargs)
-		self.sacados = list(sacados)
+		self.sacados, self.cedentes = list(sacados), list(cedentes)
 
 	def request(self, method, url, headers=None, timeout=None, **kwargs):
-		if "/sacado?" in url:
-			self.queries.append(url.split("?", 1)[1])
-			rows = self.sacados
-			return Response(200, {"_embedded": {"sacado": rows}, "page": 1, "page_count": 1, "total_items": len(rows)})
+		for path, key in (("/sacado?", "sacado"), ("/cedente?", "cedente")):
+			if path in url:
+				self.queries.append(url.split("?", 1)[1])
+				rows = getattr(self, key + "s")
+				return Response(200, {"_embedded": {key: rows}, "page": 1, "page_count": 1, "total_items": len(rows)})
 		return super().request(method, url, headers=headers, timeout=timeout, **kwargs)
 
 
@@ -531,17 +532,19 @@ class TestErpImportMap(TestErpSync):
 
 	def setUp(self):
 		super().setUp()
-		frappe.cache.delete_value("cred_hub_erp_report:sacado")
+		self.maps()
 
-	def maps(self, title=(), sacado=()):
+	def maps(self, title=(), sacado=(), cedente=()):
 		erp = frappe.get_single(erp_settings.SETTINGS)
 		erp.set("title_field_map", [{"erp_column": c, "crm_field": f} for c, f in title])
 		erp.set("sacado_field_map", [{"erp_column": c, "crm_field": f} for c, f in sacado])
+		erp.set("cedente_registry_map", [{"erp_column": c, "crm_field": f} for c, f in cedente])
 		erp.save()
 		frappe.clear_document_cache(erp_settings.SETTINGS, erp_settings.SETTINGS)
 
 	def run_sync(self, fake):
-		frappe.cache.delete_value("cred_hub_erp_report:sacado")
+		for kind in ("sacado", "cedente"):
+			frappe.cache.delete_value(f"cred_hub_erp_report:{kind}")
 		return super().run_sync(fake)
 
 	def test_titulo_columns_fill_the_fields_the_company_chose(self):
@@ -563,23 +566,37 @@ class TestErpImportMap(TestErpSync):
 		self.assertIn("PRAZO_MEDIO", columns)
 		self.assertFalse(sync.find_row("Smart Securities", "2011"))
 
-	def test_nothing_mapped_never_reads_the_sacado_registry(self):
+	def test_nothing_mapped_never_reads_the_registries(self):
 		self.maps()
 		fake = FakeSmartWithSacados([open_row(2021, "NF-22", DEBTOR_A, CEDENTE_A)])
 		self.run_sync(fake)
-		self.assertFalse([q for q in fake.queries if "dataIniSacado" in q])
+		self.assertFalse([q for q in fake.queries if "tipo=" not in q])
 
-	def test_sacado_registry_fills_only_empty_fields(self):
-		self.maps(sacado=[("E-mail", "organization.registry_email"), ("Telefone", "contact.mobile_no")])
-		self.run_sync(FakeSmartWithSacados([open_row(2031, "NF-23", DEBTOR_A, CEDENTE_A)]))
-		org = self.org(DEBTOR_A)
-		frappe.db.set_value("CRM Organization", org, "registry_email", "")
+	def test_new_sacado_and_cedente_get_the_registry_once(self):
+		self.maps(
+			sacado=[("E-mail", "organization.registry_email"), ("Telefone", "contact.mobile_no")],
+			cedente=[("TELEFONE", "contact.mobile_no")],
+		)
 		sacados = [{"ID": "9", "Nome": "SACADO A LTDA", "CPF/CNPJ": masked(DEBTOR_A), "E-Mail": "fin@sacado.com.br", "Telefone": "(11) 98765-4321"}]
-		stats = self.run_sync(FakeSmartWithSacados([open_row(2031, "NF-23", DEBTOR_A, CEDENTE_A)], sacados=sacados))
-		self.assertEqual(stats.get("sacados_updated"), 1, stats)
+		cedentes = [{"ID_CEDENTE": "5", "NOME": "CEDENTE A", "CPF_CNPJ": masked(CEDENTE_A), "TELEFONE": "(21) 99876-5432"}]
+		stats = self.run_sync(FakeSmartWithSacados([open_row(2031, "NF-23", DEBTOR_A, CEDENTE_A)], sacados=sacados, cedentes=cedentes))
+		self.assertEqual((stats.get("sacados_updated"), stats.get("cedentes_updated")), (1, 1), stats)
+		org = self.org(DEBTOR_A)
 		self.assertEqual(frappe.db.get_value("CRM Organization", org, "registry_email"), "fin@sacado.com.br")
 		self.assertEqual(frappe.db.get_value("Contact", {"company_name": org}, "mobile_no"), "(11) 98765-4321")
-		# what the user wrote stays
-		frappe.db.set_value("CRM Organization", org, "registry_email", "cobranca@sacado.com.br")
-		self.run_sync(FakeSmartWithSacados([open_row(2031, "NF-23", DEBTOR_A, CEDENTE_A)], sacados=sacados))
-		self.assertEqual(frappe.db.get_value("CRM Organization", org, "registry_email"), "cobranca@sacado.com.br")
+		self.assertEqual(frappe.db.get_value("Contact", {"company_name": self.org(CEDENTE_A)}, "mobile_no"), "(21) 99876-5432")
+		self.assertNotIn("columns", stats)
+		# Registration data is read once: on the next run they already exist, the registries are not read
+		frappe.db.set_value("CRM Organization", org, "registry_email", "")
+		fake = FakeSmartWithSacados([open_row(2031, "NF-23", DEBTOR_A, CEDENTE_A)], sacados=sacados, cedentes=cedentes)
+		self.run_sync(fake)
+		self.assertFalse([q for q in fake.queries if "tipo=" not in q])
+		self.assertFalse(frappe.db.get_value("CRM Organization", org, "registry_email"))
+
+	def test_a_sacado_that_already_existed_is_not_read(self):
+		self.maps(sacado=[("E-mail", "organization.registry_email")])
+		importer.organization_for_cnpj(DEBTOR_A, "SACADO ANTIGO LTDA")
+		frappe.db.set_value("CRM Organization", self.org(DEBTOR_A), "creation", add_days(today(), -30))
+		fake = FakeSmartWithSacados([open_row(2041, "NF-24", DEBTOR_A, CEDENTE_A)], sacados=[{"CPF/CNPJ": masked(DEBTOR_A), "E-mail": "x@y.com"}])
+		self.run_sync(fake)
+		self.assertFalse([q for q in fake.queries if "dataIniSacado" in q])

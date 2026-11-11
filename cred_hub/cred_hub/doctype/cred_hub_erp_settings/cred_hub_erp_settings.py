@@ -29,6 +29,7 @@ class CredHubERPSettings(Document):
 			self.set("cedente_field_map", [])
 			self.set("title_field_map", [])
 			self.set("sacado_field_map", [])
+			self.set("cedente_registry_map", [])
 			self.erp_columns = None
 		if self.erp_provider and not self.cedente_field_map:
 			settings.load_default_rules(self)

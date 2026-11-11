@@ -121,6 +121,7 @@ def reset_field_map() -> list:
 	load_default_rules(settings)
 	settings.set("title_field_map", [])
 	settings.set("sacado_field_map", [])
+	settings.set("cedente_registry_map", [])
 	load_default_import_maps(settings)
 	settings.save()
 	return [row.as_dict() for row in settings.cedente_field_map]
@@ -164,6 +165,20 @@ def cedente_sources() -> list[dict]:
 		group = _(doctype.replace("CRM ", ""))
 		options += [{"value": f"{entity}.{f['fieldname']}", "label": f"{group} › {f['label']}"} for f in _fields_of(doctype)]
 	options.append({"value": "credit.approved_limit", "label": _("Credit committee") + " › " + _("Approved limit")})
+	# Fields the default de-para uses that the screen list leaves out (hidden or read-only, e.g. Contact.full_name)
+	from .mapper import DEFAULT_RULES
+
+	known = {o["value"] for o in options}
+	for rules in DEFAULT_RULES.values():
+		for rule in rules:
+			for source in (rule["source"] or "").split("|"):
+				entity, _sep, fieldname = source.partition(".")
+				doctype = CEDENTE_SOURCES.get(entity)
+				if source in known or not doctype or not frappe.get_meta(doctype).has_field(fieldname):
+					continue
+				label = frappe.get_meta(doctype).get_label(fieldname)
+				options.append({"value": source, "label": f"{_(doctype.replace('CRM ', ''))} › {_(label)}"})
+				known.add(source)
 	options.append({"value": "today", "label": _("Date of the registration")})
 	return options
 
@@ -174,9 +189,10 @@ def title_targets() -> list[dict]:
 	return [{"value": f["fieldname"], "label": f["label"]} for f in _fields_of(TITLE_ROW) if allowed_title_field(f["fieldname"])]
 
 
-def sacado_targets() -> list[dict]:
+def sacado_targets(kind="sacado") -> list[dict]:
 	options = []
-	for entity, doctype, group in (("organization", "CRM Organization", _("Sacado company")), ("contact", "Contact", _("Sacado person or contact"))):
+	groups = (_("Cedente company"), _("Cedente contact")) if kind == "cedente" else (_("Sacado company"), _("Sacado person or contact"))
+	for entity, doctype, group in (("organization", "CRM Organization", groups[0]), ("contact", "Contact", groups[1])):
 		options += [{"value": f"{entity}.{f['fieldname']}", "label": f"{group} › {f['label']}"} for f in _fields_of(doctype) if f["fieldname"] not in ("cnpj", "cpf")]
 	return options
 
@@ -205,8 +221,23 @@ def mapping_options() -> dict:
 			"fixed": import_map.SMART_SACADO_FIXED if provider == SMART else {},
 			"targets": sacado_targets(),
 		},
-		"lists": _list_names(settings, catalog.fields(provider)),
+		"cedente_registry": {
+			"columns": import_map.columns(settings.erp_columns, import_map.CEDENTE, provider),
+			"fixed": import_map.SMART_CEDENTE_FIXED if provider == SMART else {},
+			"targets": sacado_targets("cedente"),
+		},
 	}
+
+
+@frappe.whitelist()
+def mapping_lists() -> dict:
+	"""Names of the ERP lists the cedente fields use (operator, originator...). Apart from mapping_options because
+	it calls the ERP (slow the first time, then cached for an hour). Admins only."""
+	from . import catalog
+
+	frappe.only_for("System Manager")
+	settings = get_settings()
+	return _list_names(settings, catalog.fields(settings.erp_provider))
 
 
 def _list_names(settings, fields) -> dict:
@@ -272,11 +303,21 @@ def validate_maps(doc):
 			frappe.throw(_("The ERP field {0} is required: choose where it comes from.").format(_(missing[0]["label"])))
 	doc.set("cedente_field_map", kept)
 
-	targets = {o["value"] for o in title_targets()}
-	doc.set("title_field_map", [r for r in doc.get("title_field_map") or [] if r.erp_column and r.crm_field in targets])
-	targets = {o["value"] for o in sacado_targets()}
-	doc.set("sacado_field_map", [r for r in doc.get("sacado_field_map") or [] if r.erp_column and r.crm_field in targets])
-	for table in ("title_field_map", "sacado_field_map"):
+	for table, targets in (
+		("title_field_map", title_targets()),
+		("sacado_field_map", sacado_targets()),
+		("cedente_registry_map", sacado_targets("cedente")),
+	):
+		allowed = {o["value"] for o in targets}
+		kept = [r for r in doc.get(table) or [] if r.erp_column and r.crm_field in allowed]
+		for row in doc.get(table) or []:
+			if row.erp_column and row.crm_field and row.crm_field not in allowed:
+				frappe.msgprint(
+					_("The column {0} was left out: {1} cannot receive ERP data.").format(row.erp_column, row.crm_field),
+					alert=True,
+				)
+		doc.set(table, kept)
+	for table in ("title_field_map", "sacado_field_map", "cedente_registry_map"):
 		seen = set()
 		for row in doc.get(table):
 			key = (import_map.column_key(row.erp_column), row.crm_field)
