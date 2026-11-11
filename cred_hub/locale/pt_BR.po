@@ -3741,3 +3741,9 @@ msgstr "Crédito: fazer consultas pagas a bureaus"
 
 msgid "Lets the key run bureau queries that the company pays to the provider. Off by default."
 msgstr "Permite à chave fazer consultas a bureaus que a empresa paga ao provedor. Desligado por padrão."
+
+msgid "Too many failed authentications from this address. Wait a minute."
+msgstr "Muitas autenticações recusadas a partir deste endereço. Espere um minuto."
+
+msgid "Send the file in the multipart field file."
+msgstr "Envie o arquivo no campo multipart file."

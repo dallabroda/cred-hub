@@ -207,6 +207,8 @@ def authenticate():
 	# A key never gets a server traceback, whatever the site's allow_error_traceback says (audit M14)
 	frappe.local.flags.disable_traceback = True
 	_set_header("X-Request-Id", request_id)
+	# An IP that keeps failing authentication is stopped before any lookup or hashing
+	_check_auth_failures()
 	key_id, secret = _split_token(token.strip())
 	key = frappe.db.get_value(
 		KEY,
@@ -215,18 +217,18 @@ def authenticate():
 		as_dict=True,
 	)
 	if not key or not secret:
-		raise frappe.AuthenticationError
+		_refuse_auth(None)
 	expected_hash = _hash(secret)
 	legacy_hash = hashlib.sha256(secret.encode()).hexdigest()
 	stored_hash = key.secret_hash or ""
 	if not (hmac.compare_digest(stored_hash, expected_hash) or hmac.compare_digest(stored_hash, legacy_hash)):
-		_refuse(key, request_id, start_time, 401, frappe.AuthenticationError)
+		_refuse_auth(key.name)
 	if stored_hash == legacy_hash and stored_hash != expected_hash:
 		frappe.db.set_value(KEY, key.name, "secret_hash", expected_hash, update_modified=False)
 	if key.status != "Active" or (key.expires_on and getdate(key.expires_on) < getdate(nowdate())):
-		_refuse(key, request_id, start_time, 401, frappe.AuthenticationError)
+		_refuse_auth(key.name)
 	if not _ip_allowed(key.allowed_ips, frappe.local.request_ip):
-		_refuse(key, request_id, start_time, 401, frappe.AuthenticationError)
+		_refuse_auth(key.name)
 	try:
 		write = _check_route(key.name)
 	except KeyNotAllowed:
@@ -264,28 +266,62 @@ def _set_header(name: str, value: str):
 		pass
 
 
+# Falhas de autenticação por IP e por minuto antes do 429 (quem erra a chave não gasta o limite da integração real)
+AUTH_FAILURES_PER_MINUTE = 30
+
+
+def _auth_failures_key() -> str:
+	minute = now_datetime().strftime("%Y%m%d%H%M")
+	return frappe.cache.make_key(f"credhub_api_authfail:{frappe.local.request_ip}:{minute}")
+
+
+def _check_auth_failures():
+	if cint(frappe.cache.get(_auth_failures_key())) >= AUTH_FAILURES_PER_MINUTE:
+		_set_header("Retry-After", str(max(1, 60 - now_datetime().second)))
+		raise frappe.RateLimitExceededError(_("Too many failed authentications from this address. Wait a minute."))
+
+
+def _refuse_auth(key_name: str | None):
+	"""401: counted per IP (never in the key's own limit: knowing a key id must not lock the real integration out),
+	and logged at most once per key and IP a minute (review of #103)."""
+	try:
+		failures_key = _auth_failures_key()
+		if frappe.cache.incrby(failures_key, 1) == 1:
+			frappe.cache.expire(failures_key, 120)
+		once = frappe.cache.make_key(f"credhub_api_authlog:{key_name}:{frappe.local.request_ip}")
+		if key_name and frappe.cache.set(once, 1, nx=True, ex=60):
+			_log_refusal(key_name, 401)
+	except Exception:
+		frappe.log_error(title="Cred Hub API: falha ao registrar autenticação recusada")
+	raise frappe.AuthenticationError
+
+
+def _log_refusal(key_name: str, status: int, request_id: str | None = None, start_time: float | None = None):
+	kind, target, verb = _route()
+	frappe.get_doc(
+		{
+			"doctype": LOG,
+			"api_key": key_name,
+			"route": f"{verb} {frappe.request.path}"[:240],
+			"reference_doctype": target if kind == "resource" else None,
+			"status_code": status,
+			"ip_address": frappe.local.request_ip,
+			"called_on": now_datetime(),
+			"request_id": request_id,
+			"duration_ms": max(1, int((time.time() - (start_time or time.time())) * 1000)),
+		}
+	).insert(ignore_permissions=True)
+	frappe.db.commit()
+
+
 def _refuse(key, request_id: str, start_time: float, status: int, exc):
-	"""A refused call of a known key (wrong secret, expired, IP, route outside its scopes) is logged and counted in
-	its rate limit, so probing is visible and throttled (audit M13). The log is committed: the request fails."""
+	"""403 of a key whose secret was verified: logged and counted in its rate limit, so probing the scopes is visible
+	and throttled (audit M13). The log is committed: the request fails."""
 	try:
 		_rate_limit(key.name, False, key.custom_rate_limit)
 	finally:
 		try:
-			kind, target, verb = _route()
-			frappe.get_doc(
-				{
-					"doctype": LOG,
-					"api_key": key.name,
-					"route": f"{verb} {frappe.request.path}"[:240],
-					"reference_doctype": target if kind == "resource" else None,
-					"status_code": status,
-					"ip_address": frappe.local.request_ip,
-					"called_on": now_datetime(),
-					"request_id": request_id,
-					"duration_ms": max(1, int((time.time() - start_time) * 1000)),
-				}
-			).insert(ignore_permissions=True)
-			frappe.db.commit()
+			_log_refusal(key.name, status, request_id, start_time)
 		except Exception:
 			frappe.log_error(title="Cred Hub API: falha ao registrar chamada recusada")
 	if exc is KeyNotAllowed:

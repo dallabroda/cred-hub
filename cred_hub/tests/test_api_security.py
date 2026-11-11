@@ -26,6 +26,8 @@ class TestApiSecurity(IntegrationTestCase):
 		self.pipeline = save_pipeline({"pipeline_name": "Seg Liberado", "stages": [{"deal_status": "Novo"}]})["name"]
 		self.other = save_pipeline({"pipeline_name": "Seg Fechado", "stages": [{"deal_status": "Novo"}]})["name"]
 		suffix = frappe.generate_hash(length=6)
+		# one address per test: the per-IP failure counters live in Redis, outside the rolled back transaction
+		self.ip = f"198.51.100.{int(suffix, 16) % 250 + 1}"
 		self.org = frappe.get_doc(
 			{"doctype": "CRM Organization", "organization_name": f"Seg Org {suffix}", "cnpj": "11.222.333/0001-81"}
 		).insert(ignore_permissions=True)
@@ -56,12 +58,12 @@ class TestApiSecurity(IntegrationTestCase):
 		frappe.local.flags.disable_traceback = False
 		frappe.db.rollback()
 
-	def create(self, scopes):
+	def create(self, scopes, pipelines=None):
 		frappe.set_user("Administrator")
 		frappe.local.credhub_api_key = None
-		return api_keys.create_api_key("Seg", list(scopes), [self.pipeline])
+		return api_keys.create_api_key("Seg", list(scopes), [self.pipeline] if pipelines is None else pipelines)
 
-	def call(self, token, path, method="GET", form=None, files=None):
+	def call(self, token, path, method="GET", form=None, files=None, ip=None):
 		request = MagicMock(
 			path=path, method=method, headers=Headers({"Authorization": f"Bearer {token}"}), files=files or {}
 		)
@@ -72,7 +74,7 @@ class TestApiSecurity(IntegrationTestCase):
 			patch.object(frappe, "get_request_header", lambda name, default=None: request.headers.get(name, default)),
 			patch.dict(frappe.local.form_dict, form or {}, clear=True),
 		):
-			frappe.local.request_ip = "203.0.113.9"
+			frappe.local.request_ip = ip or self.ip
 			api_keys.authenticate()
 		return frappe.session.user
 
@@ -97,6 +99,15 @@ class TestApiSecurity(IntegrationTestCase):
 			self.call(token, f"/api/resource/{DEAL}", "POST", {"data": frappe.as_json({"pipeline": self.pipeline, "erp_run_id": "x"})})
 		# canais do contato são entrada legítima de integração
 		self.call(token, "/api/resource/Contact", "POST", {"first_name": "Caio", "email_id": "caio@example.com"})
+
+	def test_update_cannot_switch_doctype(self):
+		token = self.create(("contacts_read", "contacts_write"))["token"]
+		first_name = frappe.db.get_value("Contact", self.contact.name, "first_name")
+		for path in (f"/api/resource/Contact/{self.contact.name}", f"/api/v2/document/Contact/{self.contact.name}"):
+			for form in ({"doctype": "User", "first_name": "X"}, {"data": frappe.as_json({"doctype": "User"})}):
+				with self.subTest(path=path, form=form), self.assertRaises(api_guard.WriteRefused):
+					self.call(token, path, "PUT", form)
+		self.assertEqual(frappe.db.get_value("Contact", self.contact.name, "first_name"), first_name)
 
 	def test_child_rows_cannot_carry_internals_or_rows_of_another_record(self):
 		token = self.create(("cards_read", "cards_write"))["token"]
@@ -174,20 +185,32 @@ class TestApiSecurity(IntegrationTestCase):
 			{mine.name, other.name},
 		)
 
-	def test_upload_file_rules_for_keys(self):
-		token = self.create(("files_write", "cards_read"))["token"]
+	def test_key_without_pipelines_sees_no_card_files(self):
+		mine = self.file_on(self.deal.name)
+		self.call(self.create(("files_read",), pipelines=[])["token"], "/api/resource/File")
+		self.assertEqual(frappe.get_list("File", filters={"name": mine.name}, pluck="name"), [])
+		self.assertIn("!= 'CRM Deal'", api_guard.file_query_conditions())
 
-		def upload(name="contrato.pdf", **form):
-			files = {"file": FileStorage(io.BytesIO(b"x"), filename=name)}
-			return self.call(token, "/api/method/upload_file", "POST", form, files=files)
+	def test_upload_file_rules_for_keys(self):
+		token = self.create(("files_write", "cards_read", "cards_write"))["token"]
+
+		def upload(name="contrato.pdf", key=None, **form):
+			files = {"file": FileStorage(io.BytesIO(b"x"), filename=name)} if name else {}
+			return self.call(key or token, "/api/method/upload_file", "POST", form, files=files)
 
 		upload(doctype=DEAL, docname=self.deal.name)
 		upload()  # sem anexo: arquivo privado avulso
 		for name in ("pagina.html", "imagem.svg", "script.js", "sem_extensao"):
 			with self.subTest(name=name), self.assertRaises(api_guard.WriteRefused):
 				upload(name)
+		with self.assertRaises(api_guard.WriteRefused):  # no multipart file part: no content-less File row
+			upload(None, file_name="x.pdf")
+		read_only = self.create(("files_write", "cards_read"))["token"]
+		with self.assertRaises(frappe.PermissionError):  # reading the cards is not enough to attach to one
+			upload(key=read_only, doctype=DEAL, docname=self.deal.name)
 		for form in (
 			{"file_url": "/private/files/outro.pdf"},
+			{"doctype": DEAL, "docname": self.deal.name, "fieldname": "organization_logo"},
 			{"doctype": "User", "docname": "Administrator"},
 			{"doctype": DEAL},
 			{"doctype": DEAL, "docname": self.hidden.name},
@@ -204,10 +227,7 @@ class TestApiSecurity(IntegrationTestCase):
 		log = frappe.get_last_doc(api_keys.LOG, filters={"api_key": created["name"]})
 		self.assertEqual(log.status_code, 403)
 		self.assertTrue(log.request_id.startswith("req_"))
-		wrong = created["token"][:-4] + "zzzz"
-		with self.assertRaises(frappe.AuthenticationError):
-			self.call(wrong, "/api/resource/CRM Deal")
-		self.assertEqual(frappe.get_last_doc(api_keys.LOG, filters={"api_key": created["name"]}).status_code, 401)
+		# 403 after a verified secret counts in the key's own limit
 		with patch.object(api_keys, "CALLS_PER_MINUTE", 3), self.assertRaises(frappe.RateLimitExceededError):
 			for _ in range(5):
 				try:
@@ -216,6 +236,20 @@ class TestApiSecurity(IntegrationTestCase):
 					raise
 				except frappe.PermissionError:
 					pass
+
+	def test_wrong_secrets_are_limited_per_ip_not_per_key(self):
+		created = self.create(("cards_read",))
+		wrong = created["token"][:-4] + "zzzz"
+		attacker = f"{self.ip}0"[:15] if len(self.ip) < 15 else "192.0.2.77"
+		with patch.object(api_keys, "CALLS_PER_MINUTE", 3), patch.object(api_keys, "AUTH_FAILURES_PER_MINUTE", 4):
+			for _ in range(4):
+				with self.assertRaises(frappe.AuthenticationError):
+					self.call(wrong, "/api/resource/CRM Deal", ip=attacker)
+			with self.assertRaises(frappe.RateLimitExceededError):  # the address is stopped...
+				self.call(wrong, "/api/resource/CRM Deal", ip=attacker)
+			self.call(created["token"], "/api/resource/CRM Deal")  # ...the real integration is not
+		# at most one 401 row per key and address a minute
+		self.assertEqual(frappe.db.count(api_keys.LOG, {"api_key": created["name"], "status_code": 401}), 1)
 
 	def test_keys_never_get_tracebacks(self):
 		frappe.local.flags.disable_traceback = False

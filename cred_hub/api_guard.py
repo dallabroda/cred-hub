@@ -67,8 +67,9 @@ UPLOAD_EXTENSIONS = frozenset(
 		".ofx",
 	}
 )
-# upload_file arguments a key may not use: `file_url` re-points a File at an existing file
-UPLOAD_DENIED_ARGS = ("file_url",)
+# upload_file arguments a key may not use: `file_url` re-points a File at an existing file; `fieldname` writes the
+# file URL into a field of the record, around the write checks
+UPLOAD_DENIED_ARGS = ("file_url", "fieldname")
 
 
 class WriteRefused(frappe.ValidationError):
@@ -96,6 +97,8 @@ def refused_fields(doctype: str, data: dict, name: str | None = None) -> list[st
 	meta = frappe.get_meta(doctype)
 	allowed = WRITABLE_READ_ONLY.get(doctype, frozenset())
 	refused = [k for k in data if k in SYSTEM_FIELDS and not (k == "docstatus" and not data[k])]
+	if data.get("doctype") not in (None, "", doctype):
+		refused.append("doctype")
 	read_only = {
 		k: meta.get_field(k)
 		for k in data
@@ -153,7 +156,7 @@ def request_payload() -> dict:
 	form = frappe.local.form_dict or {}
 	data = form.get("data")
 	if data is None:
-		return {k: v for k, v in form.items() if k not in ("cmd", "doctype", "name")}
+		return {k: v for k, v in form.items() if k not in ("cmd", "name")}
 	try:
 		data = frappe.parse_json(data)
 	except Exception:
@@ -171,20 +174,23 @@ def upload_file_name() -> str:
 
 
 def check_upload(scopes: set, resources: dict):
-	"""upload_file through a key: a real file of an accepted type, attached (if at all) to a record whose doctype the
-	key covers. Runs before the user is set; the record itself is checked by `check_upload_record`."""
+	"""upload_file through a key: a real multipart file of an accepted type, attached (if at all) to a record whose
+	doctype the key may write. Runs before the user is set; the record itself is checked by `check_upload_record`."""
 	from cred_hub.api_keys import _deny
 
 	form = frappe.local.form_dict or {}
 	if any(form.get(arg) not in (None, "") for arg in UPLOAD_DENIED_ARGS):
 		_deny()
-	file_name = upload_file_name() or cstr(form.get("file_name"))
+	file_name = upload_file_name()
+	if not file_name:
+		raise WriteRefused(_("Send the file in the multipart field file."))
 	if os.path.splitext(file_name)[1].lower() not in UPLOAD_EXTENSIONS:
 		raise WriteRefused(_("File type not allowed through the API: {0}").format(file_name or "?"))
 	doctype = form.get("doctype")
 	if doctype or form.get("docname"):
-		read, write = resources.get(doctype, (None, None))
-		if not doctype or not form.get("docname") or not ({read, write} - {None}) & scopes:
+		# attaching changes the record: the key needs the WRITE scope of its doctype, reading is not enough
+		_read, write = resources.get(doctype, (None, None))
+		if not doctype or not form.get("docname") or not write or write not in scopes:
 			_deny()
 
 
@@ -213,7 +219,8 @@ def file_query_conditions(user=None) -> str:
 
 	deals = _visible_deals_sql(user)
 	if not deals:
-		return ""
+		# fail closed: an API user never sees files of cards it cannot list
+		return "ifnull(`tabFile`.`attached_to_doctype`, '') != 'CRM Deal'"
 	return (
 		"(ifnull(`tabFile`.`attached_to_doctype`, '') != 'CRM Deal' "
 		f"or `tabFile`.`attached_to_name` in ({deals}))"
