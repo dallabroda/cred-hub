@@ -300,6 +300,14 @@ def _deny():
 	raise KeyNotAllowed(_("This API key is not allowed to do that."))
 
 
+def _resource_has_name() -> bool:
+	path = unquote(frappe.request.path or "")
+	for prefix in ("/api/resource/", "/api/v2/document/"):
+		if path.startswith(prefix):
+			return len([p for p in path[len(prefix) :].split("/") if p]) >= 2
+	return False
+
+
 def _route():
 	"""(kind, target, verbo): kind é resource, method, file_download, other (barrado) ou None fora da API."""
 	path = unquote(frappe.request.path or "")
@@ -321,9 +329,19 @@ def _route():
 	return None, None, verb
 
 
+# Request arguments that make Frappe run ANOTHER whitelisted method than the one in the path: `cmd` is handled by
+# frappe.app before the path (any route), `method`/`library_file_name` by upload_file. A key must never reach them,
+# or the scope allow-list below is bypassed (audit 11/11/2026, C1/H1).
+DISPATCH_ARGS = ("cmd",)
+UPLOAD_DISPATCH_ARGS = ("method", "library_file_name")
+
+
 def _check_route(key_name: str) -> bool:
 	"""Confere a rota contra os escopos da chave e devolve se é escrita. Fora da lista: 403."""
 	kind, target, verb = _route()
+	form = frappe.local.form_dict or {}
+	if any(form.get(arg) not in (None, "") for arg in DISPATCH_ARGS):
+		_deny()
 	scopes = _scopes(key_name)
 	if kind == "file_download":
 		if "files_read" in scopes and verb in ("GET", "HEAD"):
@@ -335,6 +353,9 @@ def _check_route(key_name: str) -> bool:
 			if read and read in scopes:
 				return False
 		elif verb in ("POST", "PUT", "PATCH") and write and write in scopes:
+			# POST /api/resource/<doctype>/<name> runs a document method (Frappe v1): never through a key
+			if verb == "POST" and _resource_has_name():
+				_deny()
 			return True
 		elif verb == "DELETE":
 			if target not in PROTECTED_AGAINST_DELETE and write and write in scopes and "allow_delete" in scopes:
@@ -351,8 +372,6 @@ def _check_route(key_name: str) -> bool:
 			if scopes & {"organizations_read", "contacts_read", "cards_read", "credit_read"}:
 				return False
 			_deny()
-		if target == "cred_hub.api_keys.get_openapi_spec":
-			return False
 		if target == "cred_hub.credit_check.api.get_credit_onboarding":
 			if scopes & {"credit_read", "cards_read", "organizations_read"}:
 				return False
@@ -369,6 +388,11 @@ def _check_route(key_name: str) -> bool:
 			if target == "cred_hub.bulk.bulk_delete" and "allow_delete" not in scopes:
 				_deny()
 			return True
+		if target == "upload_file":
+			if any(form.get(arg) not in (None, "") for arg in UPLOAD_DISPATCH_ARGS):
+				_deny()
+			# Files sent by an integration are always private (a public .html/.svg would be served on our domain)
+			form["is_private"] = 1
 		scope = METHODS.get(target)
 		if scope and scope in scopes:
 			if target == "crm.api.pipeline.save_pipeline":
