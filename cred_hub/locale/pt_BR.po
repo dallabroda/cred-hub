@@ -3750,3 +3750,21 @@ msgstr "O card {0} é de outra organização."
 
 msgid "The file could not be read. Send a valid document."
 msgstr "Não foi possível ler o arquivo. Envie um documento válido."
+
+msgid "The webhook address must start with https://"
+msgstr "O endereço do webhook precisa começar com https://"
+
+msgid "This webhook address is not allowed (local or private network)."
+msgstr "Este endereço de webhook não é permitido (rede local ou privada)."
+
+msgid "Previous Secret"
+msgstr "Segredo anterior"
+
+msgid "Previous Secret Valid Until"
+msgstr "Segredo anterior vale até"
+
+msgid "Old secret, still signed until the date below (rotation overlap)"
+msgstr "Segredo antigo, ainda usado na assinatura até a data abaixo (troca de segredo)"
+
+msgid "Webhook deliveries waiting to be sent (written in the same transaction as the change; sent by the dispatcher)."
+msgstr "Entregas de webhook aguardando envio (gravadas na mesma transação da mudança; enviadas pelo despachante)."

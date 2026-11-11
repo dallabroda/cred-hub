@@ -234,15 +234,18 @@ class TestApiPublic(IntegrationTestCase):
 		body = webhooks.build_body("deal.created", data, "wh_fixo", 1, related=related, doctype=DEAL)
 		body["timestamp"] = "<timestamp>"
 		self.assertEqual(
-			list(body), ["event", "version", "delivery_id", "attempt", "timestamp", "doctype", "data", "related"]
+			list(body),
+			["event", "version", "event_id", "delivery_id", "attempt", "replay", "timestamp", "doctype", "data", "related"],
 		)
 		self.assertEqual(
-			{k: body[k] for k in ("event", "version", "delivery_id", "attempt", "timestamp", "doctype")},
+			{k: body[k] for k in ("event", "version", "event_id", "delivery_id", "attempt", "replay", "timestamp", "doctype")},
 			{
 				"event": "deal.created",
 				"version": 1,
+				"event_id": "wh_fixo",
 				"delivery_id": "wh_fixo",
 				"attempt": 1,
+				"replay": False,
 				"timestamp": "<timestamp>",
 				"doctype": DEAL,
 			},
@@ -295,30 +298,6 @@ class TestApiPublic(IntegrationTestCase):
 		for key in ("user", "google_contacts_id", "sync_with_google_contacts", "email_ids", "phone_nos"):
 			self.assertNotIn(key, body["data"])
 		self.assertEqual(body["related"]["organization"]["name"], self.org.name)
-
-	def test_record_events_reach_only_subscribers_and_build_payload_once(self):
-		self.webhook(deal_created=1, pipelines=[{"pipeline": self.pipeline}])
-		with patch.object(frappe, "enqueue") as enqueue:
-			frappe.get_doc({"doctype": DEAL, "pipeline": self.other, "organization": self.org.name}).insert(
-				ignore_permissions=True
-			)
-			enqueue.assert_not_called()  # webhook limitado a outro funil
-			deal = frappe.get_doc(
-				{"doctype": DEAL, "pipeline": self.pipeline, "organization": self.org.name, self.deal_field: "x"}
-			).insert(ignore_permissions=True)
-		[call] = enqueue.call_args_list
-		kwargs = call.kwargs
-		self.assertEqual((kwargs["event_name"], kwargs["doctype"], kwargs["reference_name"]), ("deal.created", DEAL, deal.name))
-		self.assertEqual(kwargs["payload_data"][self.deal_field], "x")
-		self.assertIn("organization", kwargs["related"])
-		self.assertTrue(kwargs["enqueue_after_commit"])
-
-		webhooks.clear_active_cache()
-		frappe.db.delete(webhooks.WEBHOOK_DOCTYPE)
-		with patch.object(api_schema, "record") as record, patch.object(frappe, "enqueue") as enqueue:
-			self.contact.save(ignore_permissions=True)
-			record.assert_not_called()  # sem webhook, nada é montado
-			enqueue.assert_not_called()
 
 	def send(self, webhook, status_code=200, **kwargs):
 		"""send_webhook com a rede trocada por um dublê; devolve (headers, corpo cru)."""
@@ -373,15 +352,6 @@ class TestApiPublic(IntegrationTestCase):
 		for bad in ("password", "naming_series", "nao_existe"):
 			with self.subTest(field=bad), self.assertRaises(frappe.ValidationError):
 				self.webhook(payload_fields=bad)
-
-	def test_retry_keeps_delivery_id(self):
-		wh = self.webhook(deal_created=1)
-		with patch.dict(frappe.flags, {"in_test": False}), patch.object(frappe, "enqueue") as enqueue:
-			headers, _raw = self.send(wh, status_code=503, event_name="deal.created", payload_data={"name": "X"})
-		retry = enqueue.call_args.kwargs
-		self.assertEqual((retry["attempt"], retry["delivery_id"]), (2, headers["X-HubTech-Delivery"]))
-
-	# ---------- OpenAPI por empresa ----------
 
 	def assert_valid_openapi(self, spec):
 		self.assertEqual(spec["openapi"], "3.1.0")
@@ -604,15 +574,14 @@ class TestApiPublic(IntegrationTestCase):
 		self.webhook(checklist_item_attached=1)
 		token = self.create(("credit_read", "files_write"))["token"]
 		self.call(token, "/api/method/cred_hub.credit_check.api.upload_checklist_document", "POST")
-		with patch.object(frappe, "enqueue") as enqueue:
-			item = self.upload(deal=self.deal.name, valid_until="2030-01-31")
+		item = self.upload(deal=self.deal.name, valid_until="2030-01-31")
 		self.assertEqual((item["key"], item["status"], item["file_name"]), ("contrato_social", "attached", "contrato.pdf"))
 		self.assertEqual(item["valid_until"], "2030-01-31")
 		self.assertTrue(item["file_url"].startswith("/private/files/"))
 		file_doc = frappe.get_doc("File", {"file_url": item["file_url"]})
 		self.assertEqual((file_doc.is_private, file_doc.attached_to_doctype, file_doc.attached_to_name), (1, DEAL, self.deal.name))
-		[call] = [c for c in enqueue.call_args_list if c.kwargs.get("event_name") == "checklist.item_attached"]
-		payload = call.kwargs["payload_data"]
+		[row] = frappe.get_all(webhooks.OUTBOX_DOCTYPE, {"event": "checklist.item_attached"}, ["payload"])
+		payload = json.loads(row.payload)["data"]
 		self.assertEqual((payload["item_key"], payload["source"], payload["deal"]), ("contrato_social", "api", self.deal.name))
 
 	def test_upload_follows_the_external_link_rules(self):

@@ -1,38 +1,60 @@
-"""Sistema de Webhooks de Saída do HubTech em Tempo Real (credtech#288, payload completo em credtech#375).
+"""Sistema de Webhooks de Saída do HubTech em Tempo Real (credtech#288, payload completo e outbox em credtech#375).
 
-Dispara eventos HTTP assíncronos (deal.created, deal.stage_changed, deal.won, deal.lost, deal.deleted,
-contact.created, contact.updated, checklist.item_rejected, checklist.item_attached, credit.limit_decided).
+Eventos: deal.created, deal.stage_changed, deal.won, deal.lost, deal.deleted, contact.created, contact.updated,
+checklist.item_rejected, checklist.item_attached, credit.limit_decided.
+
+Entrega (outbox transacional):
+- o evento grava uma linha por webhook em `Cred Hub Webhook Outbox` na MESMA transação da mudança: se a gravação
+  desfaz (erro, savepoint do lote), o evento some junto; a fila cheia nunca derruba a gravação do usuário ou da API;
+- `dispatch_outbox` envia (cron de minuto + um disparo logo após o commit, deduplicado), com tentativas em
+  1 min, 5 min, 30 min e 2 h, no máximo 50 por webhook por rodada e disjuntor depois de 10 falhas seguidas.
 
 Corpo (versão 1, documentado em credtech docs/sistemas/cred-hub-api.md):
-	{"event", "version": 1, "delivery_id", "attempt", "timestamp", "doctype", "data", "related"}
-- `data` é o registro inteiro pela política de campos de `cred_hub.api_schema` (campos da empresa `ch_*` incluídos;
-  senhas, tabelas, campos desativados e marcas internas nunca saem), ou os dados do evento (checklist, crédito);
+	{"event", "version": 1, "event_id", "delivery_id", "attempt", "replay", "timestamp", "doctype", "data", "related"}
+- `data` é o registro inteiro pela política de `cred_hub.api_schema` (campos `ch_*` incluídos; senhas, tabelas,
+  campos desativados e marcas internas nunca saem), ou os dados do evento (checklist, crédito);
 - `related` traz organização(ões) e contatos do card, ou a organização do contato;
-- cada webhook pode limitar os campos (`payload_fields`), sem nunca passar da política.
+- cada webhook pode limitar os campos (`payload_fields`), sem nunca passar da política;
+- `event_id` é um por evento; `delivery_id` um por webhook e evento, o mesmo em todas as tentativas e no reenvio
+  manual (que vem com `"replay": true`).
 
-Assinaturas (mesmo segredo):
-- X-HubTech-Signature: sha256=HMAC(segredo, corpo) — a de sempre, mantida para quem já integra;
-- X-HubTech-Signature-V2: sha256=HMAC(segredo, X-HubTech-Timestamp + "." + corpo) — com o horário assinado,
-  o receptor recusa entregas antigas (replay).
-O delivery_id é o mesmo em todas as tentativas de uma entrega (idempotência no receptor).
+Assinaturas:
+- X-HubTech-Signature: sha256=HMAC(segredo, corpo) — a de sempre;
+- X-HubTech-Signature-V2: sha256=HMAC(segredo, X-HubTech-Timestamp + "." + corpo); durante a troca de segredo vêm
+  as duas, separadas por vírgula (a nova primeiro).
 """
 
 import hashlib
 import hmac
+import json
 import secrets
 import time
+from datetime import datetime, timezone
 
 import frappe
-from frappe.utils import now_datetime
+from frappe.utils import add_days, add_to_date, get_datetime, now_datetime
 
 from cred_hub import api_schema
 
 WEBHOOK_DOCTYPE = "Cred Hub Webhook"
 LOG_DOCTYPE = "Cred Hub Webhook Log"
+OUTBOX_DOCTYPE = "Cred Hub Webhook Outbox"
 PAYLOAD_VERSION = 1
 # Webhooks ativos por evento, para não consultar o banco em cada gravação de card ou contato
 ACTIVE_CACHE_KEY = "credhub_webhooks_active"
 ACTIVE_CACHE_SECONDS = 300
+# Tentativas: a primeira na hora, depois estes intervalos (em segundos); depois da última, a entrega morre
+BACKOFF_SECONDS = (60, 5 * 60, 30 * 60, 2 * 60 * 60)
+MAX_ATTEMPTS = len(BACKOFF_SECONDS) + 1
+PER_WEBHOOK_PER_RUN = 50
+BATCH_SIZE = 200
+CIRCUIT_FAILURES = 10
+CIRCUIT_SECONDS = 15 * 60
+RESPONSE_BYTES = 2048
+LOG_DAYS = 30
+OUTBOX_DAYS = 7
+SECRET_OVERLAP_HOURS = 24
+DISPATCH_JOB_ID = "credhub_webhook_dispatch"
 
 EVENT_FIELD_MAP = {
 	"deal.created": "deal_created",
@@ -46,6 +68,7 @@ EVENT_FIELD_MAP = {
 	"checklist.item_attached": "checklist_item_attached",
 	"credit.limit_decided": "credit_limit_decided",
 }
+OUTCOME_EVENTS = {"Won": "deal.won", "Lost": "deal.lost"}
 
 
 def on_deal_insert(doc, method=None):
@@ -54,16 +77,18 @@ def on_deal_insert(doc, method=None):
 
 
 def on_deal_update(doc, method=None):
-	"""Disparado na atualização de um card (deal.stage_changed, deal.won, deal.lost)."""
-	if not doc.has_value_changed("status"):
+	"""Card alterado: deal.stage_changed quando a etapa muda; deal.won/deal.lost quando o status do card (outcome,
+	credtech#315) vira Ganho/Perdido — mover para uma etapa do tipo Ganho também muda o outcome. A criação já dispara
+	deal.created e não repete nada aqui."""
+	if doc.flags.in_insert:
 		return
-	events = ["deal.stage_changed"]
-	stage_type = frappe.db.get_value("CRM Deal Status", doc.status, "type")
-	if stage_type == "Won":
-		events.append("deal.won")
-	elif stage_type == "Lost":
-		events.append("deal.lost")
-	_trigger_record_event(events, doc, pipeline=doc.pipeline)
+	events = []
+	if doc.has_value_changed("status"):
+		events.append("deal.stage_changed")
+	if doc.has_value_changed("outcome") and doc.get("outcome") in OUTCOME_EVENTS:
+		events.append(OUTCOME_EVENTS[doc.outcome])
+	if events:
+		_trigger_record_event(events, doc, pipeline=doc.pipeline)
 
 
 def on_deal_trash(doc, method=None):
@@ -77,14 +102,27 @@ def on_contact_insert(doc, method=None):
 
 
 def on_contact_update(doc, method=None):
-	"""Disparado após alterar um contato (contact.updated)."""
+	"""contact.updated só quando algum campo que sai no corpo mudou (salvar sem mudar nada não dispara)."""
+	if doc.flags.in_insert:
+		return
+	before = doc.get_doc_before_save()
+	if before is not None and not _record_changed(before, doc):
+		return
 	_trigger_record_event("contact.updated", doc)
 
 
-def _deal_pipeline(deal_name: str | None) -> str | None:
-	if deal_name and frappe.db.exists("CRM Deal", deal_name):
-		return frappe.db.get_value("CRM Deal", deal_name, "pipeline")
-	return None
+def _record_changed(before, doc) -> bool:
+	for fieldname in api_schema.public_fieldnames(doc.doctype):
+		if fieldname in ("modified", "creation"):
+			continue
+		if _plain(before.get(fieldname)) != _plain(doc.get(fieldname)):
+			return True
+	return False
+
+
+def _plain(value) -> str:
+	"""Compare a value read from the database with one set in memory (0/None/"" and date vs text are the same)."""
+	return "" if value in (None, "", 0) else str(value)
 
 
 def trigger_checklist_rejected(
@@ -157,6 +195,12 @@ def trigger_credit_limit_decided(
 	)
 
 
+def _deal_pipeline(deal_name: str | None) -> str | None:
+	if deal_name and frappe.db.exists("CRM Deal", deal_name):
+		return frappe.db.get_value("CRM Deal", deal_name, "pipeline")
+	return None
+
+
 # ---------- Quem recebe ----------
 
 
@@ -195,53 +239,219 @@ def clear_active_cache():
 	frappe.cache.delete_value(ACTIVE_CACHE_KEY)
 
 
-def _subscribers(event_name: str, pipeline: str | None) -> list[str]:
-	"""Webhooks of the event; a webhook that lists pipelines only gets events of those pipelines."""
-	return [
-		wh["name"]
-		for wh in _active_webhooks()
-		if event_name in wh["events"] and not (wh["pipelines"] and pipeline and pipeline not in wh["pipelines"])
-	]
+def _record_pipelines(reference_doctype: str | None, reference_name: str | None) -> set[str]:
+	"""Pipelines an event without its own pipeline belongs to: the cards of the contact or of the organization."""
+	if not reference_name:
+		return set()
+	if reference_doctype == "CRM Deal":
+		return {p for p in [frappe.db.get_value("CRM Deal", reference_name, "pipeline")] if p}
+	if reference_doctype == "Contact":
+		deals = frappe.get_all("CRM Contacts", {"contact": reference_name, "parenttype": "CRM Deal"}, pluck="parent")
+		filters = {"name": ("in", deals)} if deals else None
+	elif reference_doctype == "CRM Organization":
+		filters = {"organization": reference_name}
+	else:
+		return set()
+	if not filters:
+		return set()
+	return set(frappe.get_all("CRM Deal", filters, pluck="pipeline", distinct=True)) - {None, ""}
 
 
-# ---------- Disparo ----------
+def _subscribers(event_name: str, pipeline: str | None, reference_doctype=None, reference_name=None) -> list[str]:
+	"""Webhooks of the event. A webhook that lists pipelines only gets events of those pipelines; an event without a
+	pipeline (contact, organization) reaches it only when a card of the record is in one of them (audit M3)."""
+	webhooks = [wh for wh in _active_webhooks() if event_name in wh["events"]]
+	if not webhooks:
+		return []
+	event_pipelines = None
+	names = []
+	for wh in webhooks:
+		if wh["pipelines"]:
+			if event_pipelines is None:
+				event_pipelines = {pipeline} if pipeline else _record_pipelines(reference_doctype, reference_name)
+			if not event_pipelines & set(wh["pipelines"]):
+				continue
+		names.append(wh["name"])
+	return names
+
+
+# ---------- Disparo: grava na outbox ----------
 
 
 def _trigger_record_event(events, doc, pipeline: str | None = None):
 	"""Record events: the payload (record + related, O(fields), two queries for related) is built only when some
 	webhook wants one of the events."""
 	events = [events] if isinstance(events, str) else events
-	targets = [(event, _subscribers(event, pipeline)) for event in events]
+	targets = [(event, _subscribers(event, pipeline, doc.doctype, doc.name)) for event in events]
 	if not any(names for _event, names in targets):
 		return
 	data = api_schema.record(doc)
 	related = api_schema.related(doc)
 	for event, names in targets:
-		_enqueue(names, event, data, doc.doctype, doc.name, related=related, doctype=doc.doctype)
+		_write_outbox(names, event, data, doc.doctype, doc.name, related=related, doctype=doc.doctype)
 
 
 def _trigger_event(event_name: str, payload_data: dict, pipeline: str | None, reference_doctype: str, reference_name: str):
 	if event_name not in EVENT_FIELD_MAP:
 		return
-	names = _subscribers(event_name, pipeline)
-	_enqueue(names, event_name, payload_data, reference_doctype, reference_name)
+	names = _subscribers(event_name, pipeline, reference_doctype, reference_name)
+	_write_outbox(names, event_name, payload_data, reference_doctype, reference_name)
 
 
-def _enqueue(names, event_name, payload_data, reference_doctype, reference_name, related=None, doctype=None):
-	# Disparo em fila assíncrona (não atrasa a thread do usuário nem da API)
+def _write_outbox(
+	names,
+	event_name,
+	payload_data,
+	reference_doctype,
+	reference_name,
+	related=None,
+	doctype=None,
+	event_id=None,
+	delivery_id=None,
+	replay=False,
+):
+	"""One outbox row per webhook, in the caller's transaction (rolled back with it). Nothing is sent here."""
+	if not names:
+		return
+	event_id = event_id or f"evt_{secrets.token_hex(12)}"
+	payload = frappe.as_json({"data": payload_data, "related": related, "doctype": doctype}, indent=None)
+	now = now_datetime()
 	for name in names:
-		frappe.enqueue(
-			"cred_hub.webhooks.send_webhook",
-			queue="short",
-			webhook_name=name,
-			event_name=event_name,
-			payload_data=payload_data,
-			reference_doctype=reference_doctype,
-			reference_name=reference_name,
-			related=related,
-			doctype=doctype,
-			enqueue_after_commit=True,
+		frappe.get_doc(
+			{
+				"doctype": OUTBOX_DOCTYPE,
+				"webhook": name,
+				"event": event_name,
+				"status": "Pending",
+				"attempts": 0,
+				"next_attempt_at": now,
+				"event_id": event_id,
+				"delivery_id": delivery_id or f"wh_{secrets.token_hex(12)}",
+				"replay": int(bool(replay)),
+				"reference_doctype": reference_doctype,
+				"reference_name": reference_name,
+				"payload": payload,
+			}
+		).insert(ignore_permissions=True)
+	_kick_dispatcher()
+
+
+def _kick_dispatcher():
+	"""After the commit, ask a worker to send now (one job, deduplicated). Any error is swallowed: the save already
+	happened and the minute cron sends anyway (audit H4: a full queue never breaks a save)."""
+	if getattr(frappe.flags, "in_test", False) or frappe.flags.get("credhub_webhook_kick"):
+		return
+	frappe.flags.credhub_webhook_kick = True
+
+	def kick():
+		frappe.flags.credhub_webhook_kick = False
+		try:
+			frappe.enqueue(
+				"cred_hub.webhooks.dispatch_outbox", queue="short", job_id=DISPATCH_JOB_ID, deduplicate=True
+			)
+		except Exception:
+			pass
+
+	frappe.db.after_commit.add(kick)
+	frappe.db.after_rollback.add(lambda: frappe.flags.pop("credhub_webhook_kick", None))
+
+
+# ---------- Envio ----------
+
+
+def _lock(name: str, seconds: int) -> bool:
+	try:
+		return bool(frappe.cache.set(frappe.cache.make_key(name), 1, nx=True, ex=seconds))
+	except Exception:
+		return True
+
+
+def _unlock(name: str):
+	try:
+		frappe.cache.delete(frappe.cache.make_key(name))
+	except Exception:
+		pass
+
+
+def _circuit_key(webhook: str) -> str:
+	return f"credhub_wh_circuit:{webhook}"
+
+
+def _note_result(webhook: str, ok: bool):
+	"""Disjuntor: 10 falhas seguidas pausam o webhook por 15 min (as entregas esperam na outbox)."""
+	fails_key = f"credhub_wh_fails:{webhook}"
+	if ok:
+		frappe.cache.delete_value(fails_key)
+		return
+	fails = frappe.cache.incrby(frappe.cache.make_key(fails_key), 1)
+	frappe.cache.expire(frappe.cache.make_key(fails_key), 3600)
+	if fails >= CIRCUIT_FAILURES:
+		frappe.cache.set_value(_circuit_key(webhook), 1, expires_in_sec=CIRCUIT_SECONDS)
+		frappe.cache.delete_value(fails_key)
+
+
+def dispatch_outbox(limit: int = BATCH_SIZE) -> dict:
+	"""Send what is due in the outbox (cron every minute and the kick after commit). One runner at a time."""
+	if not frappe.db.exists("DocType", OUTBOX_DOCTYPE) or not _lock("credhub_webhook_dispatch_lock", 300):
+		return {"sent": 0}
+	sent = failed = 0
+	try:
+		rows = frappe.get_all(
+			OUTBOX_DOCTYPE,
+			{"status": "Pending", "next_attempt_at": ("<=", now_datetime())},
+			["name", "webhook"],
+			order_by="next_attempt_at asc, creation asc",
+			limit_page_length=limit,
 		)
+		per_webhook: dict[str, int] = {}
+		for row in rows:
+			if frappe.cache.get_value(_circuit_key(row.webhook)):
+				continue
+			if per_webhook.get(row.webhook, 0) >= PER_WEBHOOK_PER_RUN:
+				continue
+			per_webhook[row.webhook] = per_webhook.get(row.webhook, 0) + 1
+			if deliver(row.name):
+				sent += 1
+			else:
+				failed += 1
+	finally:
+		_unlock("credhub_webhook_dispatch_lock")
+	return {"sent": sent, "failed": failed}
+
+
+def deliver(outbox_name: str) -> bool:
+	"""Send one outbox row and schedule its next attempt or close it."""
+	row = frappe.get_doc(OUTBOX_DOCTYPE, outbox_name)
+	if row.status != "Pending":
+		return row.status == "Delivered"
+	payload = json.loads(row.payload or "{}")
+	attempt = (row.attempts or 0) + 1
+	result = send_webhook(
+		webhook_name=row.webhook,
+		event_name=row.event,
+		payload_data=payload.get("data") or {},
+		reference_doctype=row.reference_doctype or "",
+		reference_name=row.reference_name or "",
+		attempt=attempt,
+		related=payload.get("related"),
+		doctype=payload.get("doctype"),
+		delivery_id=row.delivery_id,
+		event_id=row.event_id,
+		replay=bool(row.replay),
+	)
+	values = {"attempts": attempt, "last_error": "" if result["ok"] else (result["error"] or "")[:500]}
+	if result["ok"]:
+		values["status"] = "Delivered"
+	elif result["retryable"] and attempt < MAX_ATTEMPTS:
+		values["next_attempt_at"] = add_to_date(now_datetime(), seconds=BACKOFF_SECONDS[attempt - 1])
+	else:
+		values["status"] = "Dead"
+	frappe.db.set_value(OUTBOX_DOCTYPE, row.name, values, update_modified=False)
+	if result["sent"]:
+		_note_result(row.webhook, result["ok"])
+	if not getattr(frappe.flags, "in_test", False):
+		frappe.db.commit()
+	return result["ok"]
 
 
 # ---------- Corpo e assinatura ----------
@@ -275,15 +485,20 @@ def build_body(
 	related: dict | None = None,
 	doctype: str | None = None,
 	fields: list[str] | None = None,
+	event_id: str | None = None,
+	replay: bool = False,
 ) -> dict:
 	if doctype:
 		payload_data, related = _select(payload_data, related, fields or [])
 	body = {
 		"event": event_name,
 		"version": PAYLOAD_VERSION,
+		"event_id": event_id or delivery_id,
 		"delivery_id": delivery_id,
 		"attempt": attempt,
-		"timestamp": now_datetime().isoformat(),
+		"replay": bool(replay),
+		# UTC, with offset (audit L8)
+		"timestamp": datetime.now(timezone.utc).isoformat(),
 		"doctype": doctype,
 		"data": payload_data,
 	}
@@ -292,16 +507,42 @@ def build_body(
 	return body
 
 
-def sign(secret: str, payload_json: str, timestamp: int) -> dict:
-	"""Signature headers: V1 over the body (kept for current receivers) and V2 over "<timestamp>.<body>"."""
-	key = (secret or "").encode()
-	v1 = hmac.new(key, payload_json.encode(), hashlib.sha256).hexdigest()
-	v2 = hmac.new(key, f"{timestamp}.{payload_json}".encode(), hashlib.sha256).hexdigest()
+def sign(secret: str | list[str], payload_json: str, timestamp: int) -> dict:
+	"""Signature headers: V1 over the body with the current secret (kept for current receivers) and V2 over
+	"<timestamp>.<body>" with the current secret and, during a rotation, the previous one too."""
+	secrets_ = [s for s in ([secret] if isinstance(secret, str) else secret) if s is not None]
+	current = (secrets_[0] if secrets_ else "").encode()
+	v1 = hmac.new(current, payload_json.encode(), hashlib.sha256).hexdigest()
+	v2 = ",".join(
+		"sha256=" + hmac.new(s.encode(), f"{timestamp}.{payload_json}".encode(), hashlib.sha256).hexdigest()
+		for s in (secrets_ or [""])
+	)
 	return {
 		"X-HubTech-Signature": f"sha256={v1}",
-		"X-HubTech-Signature-V2": f"sha256={v2}",
+		"X-HubTech-Signature-V2": v2,
 		"X-HubTech-Timestamp": str(timestamp),
 	}
+
+
+def _signing_secrets(doc) -> list[str]:
+	secrets_ = [doc.get_password("secret", raise_exception=False) or ""]
+	until = doc.get("previous_secret_until")
+	if until and get_datetime(until) > now_datetime():
+		previous = doc.get_password("previous_secret", raise_exception=False)
+		if previous:
+			secrets_.append(previous)
+	return secrets_
+
+
+def _read_body(resp) -> str:
+	"""At most RESPONSE_BYTES of the answer (a huge or endless body never fills the worker)."""
+	try:
+		chunk = resp.raw.read(RESPONSE_BYTES, decode_content=True)
+	except Exception:
+		chunk = None
+	if isinstance(chunk, bytes):
+		return chunk.decode("utf-8", "replace")
+	return str(getattr(resp, "text", "") or "")[:RESPONSE_BYTES]
 
 
 def send_webhook(
@@ -314,14 +555,17 @@ def send_webhook(
 	related: dict | None = None,
 	doctype: str | None = None,
 	delivery_id: str | None = None,
-):
-	"""Executado pelo worker em segundo plano para envio HTTP com assinatura HMAC e retentativa automática."""
+	event_id: str | None = None,
+	replay: bool = False,
+) -> dict:
+	"""One HTTP delivery, signed, logged in Cred Hub Webhook Log. Returns {ok, retryable, sent, error}; retries are
+	the outbox's job (deliver)."""
 	if not frappe.db.exists(WEBHOOK_DOCTYPE, webhook_name):
-		return
+		return {"ok": False, "retryable": False, "sent": False, "error": "webhook not found"}
 
 	doc = frappe.get_doc(WEBHOOK_DOCTYPE, webhook_name)
 	if doc.status != "Active":
-		return
+		return {"ok": False, "retryable": False, "sent": False, "error": "webhook disabled"}
 
 	delivery_id = delivery_id or f"wh_{secrets.token_hex(12)}"
 	body = build_body(
@@ -332,10 +576,11 @@ def send_webhook(
 		related=related,
 		doctype=doctype,
 		fields=parse_payload_fields(doc.get("payload_fields")),
+		event_id=event_id,
+		replay=replay,
 	)
 	payload_json = frappe.as_json(body)
 
-	secret = doc.get_password("secret", raise_exception=False) or ""
 	headers = {
 		"Content-Type": "application/json",
 		"User-Agent": "HubTech-Webhooks/1.0",
@@ -343,7 +588,7 @@ def send_webhook(
 		"X-HubTech-Delivery": delivery_id,
 		"X-HubTech-Attempt": str(attempt),
 		"X-HubTech-Webhook-Version": str(PAYLOAD_VERSION),
-		**sign(secret, payload_json, int(time.time())),
+		**sign(_signing_secrets(doc), payload_json, int(time.time())),
 	}
 
 	start_time = time.time()
@@ -354,6 +599,7 @@ def send_webhook(
 
 	try:
 		from cred_hub.email_company import safe_http
+
 		host = safe_http.check_url(doc.webhook_url)
 		parts = safe_http.urlsplit(doc.webhook_url)
 		scheme = parts.scheme.lower()
@@ -361,27 +607,27 @@ def send_webhook(
 
 		session = safe_http._session()
 		try:
-			resp = session.post(doc.webhook_url, data=payload_json, headers=headers, timeout=10, allow_redirects=False)
-			status_code = resp.status_code
-			response_text = resp.text[:2000]
-			status = "Success" if resp.ok else "Failed"
-			retryable = status_code in (408, 429, 500, 502, 503, 504)
+			resp = session.post(
+				doc.webhook_url, data=payload_json, headers=headers, timeout=10, allow_redirects=False, stream=True
+			)
+			try:
+				status_code = resp.status_code
+				response_text = _read_body(resp)
+			finally:
+				resp.close()
+			status = "Success" if 200 <= (status_code or 0) < 300 else "Failed"
+			retryable = status_code in (408, 425, 429, 500, 502, 503, 504)
 		finally:
 			session.close()
 	except safe_http.BlockedAddress as exc:
 		response_text = f"Security error: Destination blocked ({exc})"
 		status_code = 0
-		status = "Failed"
-		retryable = False
 	except Exception as exc:
 		response_text = f"Connection error: {str(exc)[:1500]}"
 		status_code = 0
-		status = "Failed"
 		retryable = True
-	finally:
-		duration_ms = int((time.time() - start_time) * 1000)
+	duration_ms = int((time.time() - start_time) * 1000)
 
-	# Atualiza o status de entrega no webhook
 	try:
 		frappe.db.set_value(
 			WEBHOOK_DOCTYPE,
@@ -393,7 +639,6 @@ def send_webhook(
 			},
 			update_modified=False,
 		)
-
 		if frappe.db.exists("DocType", LOG_DOCTYPE):
 			frappe.get_doc(
 				{
@@ -412,26 +657,13 @@ def send_webhook(
 					"dispatched_on": now_datetime(),
 				}
 			).insert(ignore_permissions=True)
-		if not getattr(frappe.flags, "in_test", False):
-			frappe.db.commit()
 	except Exception:
 		frappe.log_error(title="Cred Hub Webhook: falha ao gravar log de entrega")
 
-	# Auto-retry até 3 tentativas em falhas transitórias (5xx / timeout / 429), com o mesmo delivery_id
-	if status == "Failed" and retryable and attempt < 3 and not getattr(frappe.flags, "in_test", False):
-		frappe.enqueue(
-			"cred_hub.webhooks.send_webhook",
-			queue="short",
-			webhook_name=webhook_name,
-			event_name=event_name,
-			payload_data=payload_data,
-			reference_doctype=reference_doctype,
-			reference_name=reference_name,
-			attempt=attempt + 1,
-			related=related,
-			doctype=doctype,
-			delivery_id=delivery_id,
-		)
+	return {"ok": status == "Success", "retryable": retryable, "sent": True, "error": response_text if status != "Success" else ""}
+
+
+# ---------- Telas do Desk (System Manager) ----------
 
 
 @frappe.whitelist(methods=["POST"])
@@ -456,19 +688,56 @@ def send_test_ping(webhook_name: str) -> dict:
 
 @frappe.whitelist(methods=["POST"])
 def replay_webhook_log(log_name: str) -> dict:
-	"""Reenvia (Replay) uma entrega anterior a partir do registro em Cred Hub Webhook Log (nova entrega, novo id)."""
+	"""Reenvia uma entrega do registro: mesma delivery_id e event_id, `"replay": true`, pela outbox."""
 	frappe.only_for("System Manager")
 	log_doc = frappe.get_doc(LOG_DOCTYPE, log_name)
 	raw_payload = frappe.parse_json(log_doc.request_payload or "{}")
 	raw_payload = raw_payload if isinstance(raw_payload, dict) else {}
-	send_webhook(
-		webhook_name=log_doc.webhook,
-		event_name=log_doc.event,
-		payload_data=raw_payload.get("data") or {},
-		reference_doctype=log_doc.reference_doctype or "",
-		reference_name=log_doc.reference_name or "",
-		attempt=1,
+	_write_outbox(
+		[log_doc.webhook],
+		log_doc.event,
+		raw_payload.get("data") or {},
+		log_doc.reference_doctype or "",
+		log_doc.reference_name or "",
 		related=raw_payload.get("related"),
 		doctype=raw_payload.get("doctype"),
+		event_id=raw_payload.get("event_id"),
+		delivery_id=log_doc.delivery_id,
+		replay=True,
 	)
-	return {"replayed": True, "webhook": log_doc.webhook, "event": log_doc.event}
+	return {"replayed": True, "webhook": log_doc.webhook, "event": log_doc.event, "delivery_id": log_doc.delivery_id}
+
+
+@frappe.whitelist(methods=["POST"])
+def rotate_secret(webhook_name: str) -> dict:
+	"""Novo segredo, mostrado UMA vez; o antigo continua assinando (segunda assinatura V2) por 24 h para o receptor
+	trocar sem perder entregas (audit L8)."""
+	frappe.only_for("System Manager")
+	doc = frappe.get_doc(WEBHOOK_DOCTYPE, webhook_name)
+	doc.previous_secret = doc.get_password("secret", raise_exception=False)
+	doc.previous_secret_until = add_to_date(now_datetime(), hours=SECRET_OVERLAP_HOURS)
+	new_secret = secrets.token_hex(24)
+	doc.secret = new_secret
+	doc.save(ignore_permissions=True)
+	return {"secret": new_secret, "previous_valid_until": doc.previous_secret_until}
+
+
+# ---------- Limpeza (diária) ----------
+
+
+def delete_old_records():
+	"""Registro de entregas por 30 dias (traz dados pessoais do corpo) e outbox encerrada por 7 dias, em lotes."""
+	for doctype, filters in (
+		(LOG_DOCTYPE, {"dispatched_on": ("<", add_days(now_datetime(), -LOG_DAYS))}),
+		(OUTBOX_DOCTYPE, {"status": ("in", ("Delivered", "Dead")), "modified": ("<", add_days(now_datetime(), -OUTBOX_DAYS))}),
+	):
+		if not frappe.db.exists("DocType", doctype):
+			continue
+		while True:
+			names = frappe.get_all(doctype, filters, pluck="name", limit_page_length=5000)
+			if not names:
+				break
+			frappe.db.delete(doctype, {"name": ("in", names)})
+			frappe.db.commit()
+			if len(names) < 5000:
+				break

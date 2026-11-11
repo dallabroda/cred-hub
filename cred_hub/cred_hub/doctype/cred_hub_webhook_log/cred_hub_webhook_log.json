@@ -4,7 +4,7 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "links": [],
- "modified": "2026-10-30 16:30:00.000000",
+ "modified": "2026-11-11 23:00:00.000000",
  "modified_by": "Administrator",
  "module": "Cred Hub",
  "owner": "Administrator",
@@ -32,7 +32,8 @@
    "in_list_view": 1,
    "label": "Webhook",
    "options": "Cred Hub Webhook",
-   "reqd": 1
+   "reqd": 1,
+   "search_index": 1
   },
   {
    "fieldname": "event",
@@ -68,7 +69,8 @@
    "fieldname": "delivery_id",
    "fieldtype": "Data",
    "label": "Delivery ID",
-   "read_only": 1
+   "read_only": 1,
+   "search_index": 1
   },
   {
    "fieldname": "reference_doctype",
@@ -85,7 +87,8 @@
    "fieldtype": "Datetime",
    "in_list_view": 1,
    "label": "Dispatched On",
-   "read_only": 1
+   "read_only": 1,
+   "search_index": 1
   },
   {
    "fieldname": "section_payload",

@@ -1,0 +1,125 @@
+{
+ "actions": [],
+ "creation": "2026-11-11 23:00:00.000000",
+ "description": "Webhook deliveries waiting to be sent (written in the same transaction as the change; sent by the dispatcher).",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "webhook",
+  "event",
+  "status",
+  "attempts",
+  "next_attempt_at",
+  "column_break_ids",
+  "event_id",
+  "delivery_id",
+  "replay",
+  "reference_doctype",
+  "reference_name",
+  "section_payload",
+  "payload",
+  "last_error"
+ ],
+ "fields": [
+  {
+   "fieldname": "webhook",
+   "fieldtype": "Link",
+   "label": "Webhook",
+   "options": "Cred Hub Webhook",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "event",
+   "fieldtype": "Data",
+   "label": "Event",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "Pending\nDelivered\nDead",
+   "default": "Pending",
+   "in_list_view": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "attempts",
+   "fieldtype": "Int",
+   "label": "Attempts",
+   "default": "0"
+  },
+  {
+   "fieldname": "next_attempt_at",
+   "fieldtype": "Datetime",
+   "label": "Next Attempt At",
+   "search_index": 1
+  },
+  {
+   "fieldname": "column_break_ids",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "event_id",
+   "fieldtype": "Data",
+   "label": "Event ID",
+   "search_index": 1
+  },
+  {
+   "fieldname": "delivery_id",
+   "fieldtype": "Data",
+   "label": "Delivery ID"
+  },
+  {
+   "fieldname": "replay",
+   "fieldtype": "Check",
+   "label": "Replay",
+   "default": "0"
+  },
+  {
+   "fieldname": "reference_doctype",
+   "fieldtype": "Data",
+   "label": "Reference DocType"
+  },
+  {
+   "fieldname": "reference_name",
+   "fieldtype": "Data",
+   "label": "Reference Name"
+  },
+  {
+   "fieldname": "section_payload",
+   "fieldtype": "Section Break",
+   "label": "Payload"
+  },
+  {
+   "fieldname": "payload",
+   "fieldtype": "Long Text",
+   "label": "Payload (JSON)"
+  },
+  {
+   "fieldname": "last_error",
+   "fieldtype": "Small Text",
+   "label": "Last Error"
+  }
+ ],
+ "in_create": 1,
+ "links": [],
+ "modified": "2026-11-11 23:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Cred Hub",
+ "name": "Cred Hub Webhook Outbox",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "delete": 1,
+   "export": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager"
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

@@ -18,12 +18,16 @@ scheduler_events = {
 		"cred_hub.cnpj.enrich.update_years_in_business",
 		"cred_hub.billing.daily_check",
 		"cred_hub.api_keys.delete_old_logs",
+		# Webhooks: registro de entregas por 30 dias e outbox encerrada por 7 (credtech#375)
+		"cred_hub.webhooks.delete_old_records",
 	],
 	# Status dos títulos em protesto no cartório (CENPROT, credtech#290)
 	"daily_long": ["cred_hub.integrations.protest.sync_all"],
 	# Rede de segurança dos leads da Meta: o que o webhook não trouxe (credtech#51)
 	"cron": {
 		"*/10 * * * *": ["cred_hub.meta_leads.catch_up"],
+		# Webhooks: envia o que está na outbox (o disparo logo após o commit adianta; credtech#375)
+		"* * * * *": ["cred_hub.webhooks.dispatch_outbox"],
 		# Inadimplentes do ERP no funil de Cobrança (credtech#367): de manhã, depois da liquidação do dia
 		"30 7 * * *": ["cred_hub.erp.sync.scheduled"],
 		# Régua de cobrança (credtech#367): o passo do dia de cada título aberto, pelo WhatsApp do SmartChat
