@@ -1,0 +1,59 @@
+{
+ "actions": [],
+ "creation": "2026-11-11 12:00:00.000000",
+ "description": "One step of the collection reminders: days from the due date (negative = before it) and the template sent (credtech#367).",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "days",
+  "template_name",
+  "template_language",
+  "template_category",
+  "variables"
+ ],
+ "fields": [
+  {
+   "fieldname": "days",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Days from the due date",
+   "description": "-2 = two days before the due date, 0 = on the due date, 5 = five days after it"
+  },
+  {
+   "fieldname": "template_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Template",
+   "reqd": 1
+  },
+  {
+   "fieldname": "template_language",
+   "fieldtype": "Data",
+   "label": "Template Language"
+  },
+  {
+   "fieldname": "template_category",
+   "fieldtype": "Data",
+   "label": "Template Category",
+   "read_only": 1
+  },
+  {
+   "fieldname": "variables",
+   "fieldtype": "Small Text",
+   "label": "Variables",
+   "description": "JSON list: the título information of each template variable, in order"
+  }
+ ],
+ "istable": 1,
+ "links": [],
+ "modified": "2026-11-11 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Cred Hub",
+ "name": "Cred Hub Collection Reminder Step",
+ "owner": "Administrator",
+ "permissions": [],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

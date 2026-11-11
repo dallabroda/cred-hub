@@ -1,0 +1,103 @@
+{
+ "actions": [],
+ "autoname": "field:key",
+ "creation": "2026-11-11 12:00:00.000000",
+ "description": "Each collection reminder of a título and step, sent or not (credtech#367). The key makes the same step go only once per título.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "key",
+  "deal",
+  "title_row",
+  "title_number",
+  "days",
+  "status",
+  "phone",
+  "template_name",
+  "conversation",
+  "error"
+ ],
+ "fields": [
+  {
+   "fieldname": "key",
+   "fieldtype": "Data",
+   "label": "Key",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "deal",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Card",
+   "options": "CRM Deal",
+   "search_index": 1
+  },
+  {
+   "fieldname": "title_row",
+   "fieldtype": "Data",
+   "label": "Título row"
+  },
+  {
+   "fieldname": "title_number",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Título"
+  },
+  {
+   "fieldname": "days",
+   "fieldtype": "Int",
+   "in_list_view": 1,
+   "label": "Days from the due date"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Sending\nSent\nNot sent\nFailed"
+  },
+  {
+   "fieldname": "phone",
+   "fieldtype": "Data",
+   "label": "WhatsApp"
+  },
+  {
+   "fieldname": "template_name",
+   "fieldtype": "Data",
+   "label": "Template"
+  },
+  {
+   "fieldname": "conversation",
+   "fieldtype": "Data",
+   "label": "SmartChat Conversation"
+  },
+  {
+   "fieldname": "error",
+   "fieldtype": "Small Text",
+   "label": "Reason"
+  }
+ ],
+ "in_create": 1,
+ "links": [],
+ "modified": "2026-11-11 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Cred Hub",
+ "name": "Cred Hub Collection Reminder Log",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "read": 1,
+   "role": "System Manager"
+  },
+  {
+   "read": 1,
+   "role": "Sales Manager"
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

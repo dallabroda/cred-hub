@@ -26,6 +26,8 @@ scheduler_events = {
 		"*/10 * * * *": ["cred_hub.meta_leads.catch_up"],
 		# Inadimplentes do ERP no funil de Cobrança (credtech#367): de manhã, depois da liquidação do dia
 		"30 7 * * *": ["cred_hub.erp.sync.scheduled"],
+		# Régua de cobrança (credtech#367): o passo do dia de cada título aberto, pelo WhatsApp do SmartChat
+		"0 9 * * *": ["cred_hub.collection.reminders.scheduled"],
 	},
 }
 
