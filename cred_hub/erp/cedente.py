@@ -182,6 +182,12 @@ def send_for_deal(deal: str) -> dict:
 	doc = frappe.get_doc("CRM Deal", deal)
 	org = frappe.get_doc("CRM Organization", doc.organization)
 	provider = settings.erp_provider
+	# One registration at a time per site: two cards sent together would otherwise take the same master contract
+	# number from the Smart, or send the same company twice
+	if not _acquire_lock(frappe):
+		_note(doc, org, frappe._("Another cedente registration is running. Send this card again in a minute."))
+		frappe.db.commit()
+		return {"ok": False, "busy": True}
 	try:
 		ensure_enriched(org)
 		records = _records(doc, org)
@@ -201,6 +207,15 @@ def send_for_deal(deal: str) -> dict:
 		frappe.db.commit()
 		_safe_log(log, provider, ERROR, org, doc, http_status=e.http_status, error=str(e))
 		return {"ok": False, "error": str(e)}
+	except Exception as e:
+		# Not an ERP answer (a bug, a lookup that changed shape): the card still says it did not go, then it fails loudly
+		frappe.db.rollback()
+		_note(doc, org, frappe._("The cedente registration stopped because of an unexpected error. Support was notified."))
+		frappe.db.commit()
+		_safe_log(log, provider, ERROR, org, doc, error=f"{type(e).__name__}: {e}")
+		raise
+	finally:
+		_release_lock(frappe)
 	# The ERP write is irreversible (Smart has no update/delete): the note is saved first and never depends on the
 	# audit log; a failing log is reported to the error log, not to the card
 	_note(doc, org, outcome["note"])
@@ -213,10 +228,24 @@ def _safe_log(log, provider, status, org, doc, **kwargs):
 	import frappe
 
 	try:
-		log(provider, "Cedente registration", status, document=org.get("cnpj") or "", reference=doc, **kwargs)
+		# Bureau Query keeps the document as digits only (14 characters at most), like the other integrations
+		log(provider, "Cedente registration", status, document=digits(org.get("cnpj")), reference=doc, **kwargs)
 		frappe.db.commit()
 	except Exception:  # noqa: BLE001 - the audit log must never undo or hide what happened in the ERP
 		frappe.log_error(title="Cred Hub: ERP cedente registration log")
+
+
+def _lock_name(frappe) -> str:
+	return f"cred_hub_erp_cedente:{frappe.conf.db_name}"[:64]
+
+
+def _acquire_lock(frappe) -> bool:
+	"""MariaDB named lock, waiting up to 2 minutes (a registration takes a few Smart calls at 3 s each)."""
+	return bool(frappe.db.sql("select get_lock(%s, 120)", (_lock_name(frappe),))[0][0])
+
+
+def _release_lock(frappe):
+	frappe.db.sql("select release_lock(%s)", (_lock_name(frappe),))
 
 
 def ensure_enriched(org):
@@ -343,7 +372,16 @@ def _send_wba(erp, org, result) -> dict:
 		return {"status": "already", "id": existing.get("codigo"), "note": _(
 			"The cedente was already registered in WBA (code {0}). Nothing was sent."
 		).format(existing.get("codigo") or "-")}
+	import frappe
+
+	# WBA answers "Requisição Recebida." and registers later: until it shows up, never send the same CNPJ again
+	marker = f"cred_hub_erp_cedente_sent:{cnpj}"
+	if frappe.cache.get_value(marker):
+		return {"status": "pending", "id": None, "note": _(
+			"The cedente was already sent to WBA and is waiting for WBA to register it. Nothing was sent again."
+		)}
 	erp.send_people(finalize("WBA", result.payload))
+	frappe.cache.set_value(marker, 1, expires_in_sec=24 * 3600)
 	return {"status": "sent", "id": None, "note": _(
 		"Cedente registration sent to WBA. WBA confirms it later; the registration appears in WBA in a few minutes."
 	)}

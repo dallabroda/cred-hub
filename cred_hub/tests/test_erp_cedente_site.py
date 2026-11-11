@@ -131,6 +131,23 @@ class TestCedenteRegistration(IntegrationTestCase):
 		self.send(FakeSmart())
 		log = frappe.get_last_doc("Cred Hub Bureau Query", filters={"operation": "Cedente registration"})
 		self.assertEqual((log.reference_doctype, log.reference_name), ("CRM Deal", self.deal.name))
+		# Digits only: the field takes 14 characters and the company's CNPJ is formatted
+		self.assertEqual(log.document, "60098673000158")
+
+	def test_unexpected_error_still_leaves_a_note(self):
+		fake = FakeSmart()
+		fake.lookup = lambda resource: (_ for _ in ()).throw(KeyError("setor changed shape"))
+		with self.assertRaises(KeyError):
+			self.send(fake)
+		self.assertTrue(self.comments("CRM Deal", self.deal.name))
+		self.assertEqual(fake.sent, [])
+
+	def test_busy_lock_is_noted_and_nothing_is_sent(self):
+		fake = FakeSmart()
+		with patch.object(cedente, "_acquire_lock", return_value=False):
+			self.assertTrue(self.send(fake).get("busy"))
+		self.assertEqual(fake.sent, [])
+		self.assertTrue(self.comments("CRM Deal", self.deal.name))
 
 	def test_already_registered_is_never_resent(self):
 		fake = FakeSmart(existing={"ID_CEDENTE": "1966"})

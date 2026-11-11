@@ -3450,3 +3450,12 @@ msgstr "Lucro Presumido"
 
 msgid "Simples Nacional"
 msgstr "Simples Nacional"
+
+msgid "Another cedente registration is running. Send this card again in a minute."
+msgstr "Outro cadastro de cedente está em andamento. Envie este card de novo em um minuto."
+
+msgid "The cedente registration stopped because of an unexpected error. Support was notified."
+msgstr "O cadastro do cedente parou por um erro inesperado. O suporte foi avisado."
+
+msgid "The cedente was already sent to WBA and is waiting for WBA to register it. Nothing was sent again."
+msgstr "O cedente já foi enviado à WBA e está aguardando a WBA cadastrar. Nada foi reenviado."
