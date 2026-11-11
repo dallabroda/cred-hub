@@ -13,7 +13,7 @@ from cred_hub.tests.test_erp_clients import SMART_TOKEN, Clock, FakeResponse, Fa
 
 # Capability -> the contract methods a connector declaring it must implement
 REQUIRED = {
-	"register_cedente": ("register_cedente",),
+	"register_cedente": ("register_cedente", "finalize_cedente"),
 	"overdue_titles": ("overdue_titles",),
 	"settled_titles": ("settled_titles",),
 	"sacado_registry": ("sacados",),

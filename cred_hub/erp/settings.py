@@ -347,11 +347,14 @@ def _custom_source(source) -> bool:
 
 
 def load_default_import_maps(settings):
-	from .import_map import DEFAULT_SACADO_MAP, DEFAULT_TITLE_MAP
+	from . import import_map
 
-	for column, field in DEFAULT_TITLE_MAP.get(settings.erp_provider) or []:
+	cls = connector_class(settings)
+	if not cls:
+		return
+	for column, field in cls.default_import_rules(import_map.TITLE):
 		settings.append("title_field_map", {"erp_column": column, "crm_field": field})
-	for column, field in DEFAULT_SACADO_MAP.get(settings.erp_provider) or []:
+	for column, field in cls.default_import_rules(import_map.SACADO):
 		settings.append("sacado_field_map", {"erp_column": column, "crm_field": field})
 
 

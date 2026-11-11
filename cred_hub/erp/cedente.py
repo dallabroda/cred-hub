@@ -306,11 +306,11 @@ def _build(settings, records):
 	return build([Rule.from_row(r) for r in rows], records, today=date.today())
 
 
-def _send_smart(erp, settings, doc, org, result) -> dict:
+def _send_smart(conn, settings, doc, org, result) -> dict:
+	erp = conn.client
 	import frappe
 	from frappe import _
 
-	from .mapper import finalize
 
 	cnpj = digits(org.cnpj)
 	existing = erp.find_cedente(cnpj)
@@ -319,7 +319,7 @@ def _send_smart(erp, settings, doc, org, result) -> dict:
 			"The cedente was already registered in Smart Securities (code {0}). Nothing was sent: the Smart does not "
 			"accept updates by API."
 		).format(existing.get("ID_CEDENTE") or "-")}
-	payload = finalize("Smart Securities", result.payload)
+	payload = conn.finalize_cedente(result.payload)
 	missing = []
 	sector = smart_sector(org.get("main_cnae"), erp.lookup("setor"), parse_overrides(settings.get("sector_by_cnae")))
 	if sector:
@@ -385,10 +385,9 @@ def _smart_lists(erp, payload, picked) -> list[str]:
 	return missing
 
 
-def _send_wba(erp, org, result) -> dict:
+def _send_wba(conn, org, result) -> dict:
+	erp = conn.client
 	from frappe import _
-
-	from .mapper import finalize
 
 	cnpj = digits(org.cnpj)
 	existing = erp.find_person(cnpj)
@@ -404,7 +403,7 @@ def _send_wba(erp, org, result) -> dict:
 		return {"status": "pending", "id": None, "note": _(
 			"The cedente was already sent to WBA and is waiting for WBA to register it. Nothing was sent again."
 		)}
-	erp.send_people(finalize("WBA", result.payload))
+	erp.send_people(conn.finalize_cedente(result.payload))
 	frappe.cache.set_value(marker, 1, expires_in_sec=24 * 3600)
 	return {"status": "sent", "id": None, "note": _(
 		"Cedente registration sent to WBA. WBA confirms it later; the registration appears in WBA in a few minutes."

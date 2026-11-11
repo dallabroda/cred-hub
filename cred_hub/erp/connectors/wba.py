@@ -53,6 +53,5 @@ class WbaConnector(Connector):
 
 	def register_cedente(self, context) -> RegisterOutcome:
 		from ..cedente import _send_wba
-		from .smart import _outcome
 
-		return _outcome(_send_wba(self.client, context.organization, context.result))
+		return RegisterOutcome.from_dict(_send_wba(self, context.organization, context.result))

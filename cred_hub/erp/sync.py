@@ -36,7 +36,7 @@ from cred_hub.party.document import CNPJ, document_kind
 from . import import_map
 from .base import ErpError
 from .fields import PAID, REPURCHASED
-from .settings import connector, get_settings, log, user_message
+from .settings import connector, connector_class, get_settings, log, user_message
 
 DEAL, TITLE_ROW = "CRM Deal", "CRM Deal Title"
 LOCK_SECONDS = 3 * 3600
@@ -133,10 +133,13 @@ def run(session=None, dry_run: bool | None = None) -> dict:
 	stats["dry_run"] = dry
 	stats["run_id"] = run_id
 	try:
-		erp = connector(settings, session=session)
-		if not (erp.capabilities.overdue_titles and erp.capabilities.settled_titles):
+		cls = connector_class(settings)
+		caps = cls.capabilities if cls else None
+		if not (caps and caps.overdue_titles and caps.settled_titles):
+			# Decided before touching credentials, as before the connector contract
 			stats["message"] = _("The collection sync for {0} comes in the next version.").format(settings.erp_provider)
 			return stats
+		erp = connector(settings, session=session)
 		_sync_titles(erp, settings, stats)
 		stats["seconds"] = round(time.time() - started, 1)
 		if dry:
@@ -404,7 +407,7 @@ def _cooldown(erp, report: str):
 	last = frappe.cache.get_value(key)
 	if last and time.time() - float(last) < cooldown:
 		raise ErpError(
-			f"The '{report}' report was requested less than {cooldown // 60} minutes ago.", "rate_limited", 429
+			f"The '{report}' report was requested less than {max(cooldown // 60 - 1, 1)} minutes ago.", "rate_limited", 429
 		)
 	frappe.cache.set_value(key, time.time(), expires_in_sec=cooldown)
 

@@ -73,7 +73,12 @@ class RegisterOutcome:
 			raise ValueError(f"unknown register outcome {self.status!r}")
 
 	def as_dict(self) -> dict:
-		return {"status": self.status, "id": self.code, "note": self.note, **self.extra}
+		return {**self.extra, "status": self.status, "id": self.code, "note": self.note}
+
+	@classmethod
+	def from_dict(cls, answer: dict) -> "RegisterOutcome":
+		extra = {k: v for k, v in answer.items() if k not in ("status", "id", "note")}
+		return cls(answer["status"], answer.get("id"), answer.get("note") or "", extra)
 
 
 class Connector:
@@ -117,6 +122,11 @@ class Connector:
 	@classmethod
 	def documented_columns(cls, kind: str) -> list[str]:
 		"""Columns the system documents for títulos / sacados / cedentes (the de-para also learns the real ones)."""
+		return []
+
+	@classmethod
+	def default_import_rules(cls, kind: str) -> list[tuple[str, str]]:
+		"""Suggested de-para for what comes from the system ([(column, CRM field)]), per kind (title / sacado)."""
 		return []
 
 	@classmethod

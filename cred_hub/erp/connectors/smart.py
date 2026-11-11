@@ -59,6 +59,12 @@ class SmartConnector(Connector):
 		}.get(kind, [])
 
 	@classmethod
+	def default_import_rules(cls, kind: str) -> list[tuple[str, str]]:
+		from .. import import_map
+
+		return {TITLE: import_map.DEFAULT_TITLE_MAP.get(SMART), SACADO: import_map.DEFAULT_SACADO_MAP.get(SMART)}.get(kind) or []
+
+	@classmethod
 	def fixed_columns(cls, kind: str) -> dict:
 		from .. import import_map
 
@@ -96,10 +102,5 @@ class SmartConnector(Connector):
 	def register_cedente(self, context) -> RegisterOutcome:
 		from ..cedente import _send_smart
 
-		answer = _send_smart(self.client, context.settings, context.deal, context.organization, context.result)
-		return _outcome(answer)
-
-
-def _outcome(answer: dict) -> RegisterOutcome:
-	extra = {k: v for k, v in answer.items() if k not in ("status", "id", "note")}
-	return RegisterOutcome(answer["status"], answer.get("id"), answer.get("note") or "", extra)
+		answer = _send_smart(self, context.settings, context.deal, context.organization, context.result)
+		return RegisterOutcome.from_dict(answer)
