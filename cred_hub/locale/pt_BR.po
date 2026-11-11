@@ -3726,3 +3726,15 @@ msgstr "O cadastro de {0} do ERP não pôde ser lido ({1}); os novos são lidos 
 
 msgid "Registries to read again"
 msgstr "Cadastros a ler de novo"
+
+msgid "fields must be a list of field names."
+msgstr "fields precisa ser uma lista de nomes de campos."
+
+msgid "Unknown fields: {0}"
+msgstr "Campos desconhecidos: {0}"
+
+msgid "updated_since must be a date and time like 2026-11-01 00:00:00."
+msgstr "updated_since precisa ser uma data e hora como 2026-11-01 00:00:00."
+
+msgid "filters must be JSON."
+msgstr "filters precisa ser JSON."
