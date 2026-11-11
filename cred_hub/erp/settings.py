@@ -151,6 +151,10 @@ def erp_lists() -> dict:
 			"sectors": [s.get("descricao") for s in erp.lookup("setor") if s.get("descricao")],
 		}
 	except ErpError as e:
-		return {"managers": [], "sectors": [], "error": user_message(e)}
+		# Wrong credentials or ERP under maintenance: keep the error a minute, so each screen opening does not call
+		# the ERP again (and spend its per-minute quota)
+		data = {"managers": [], "sectors": [], "error": user_message(e)}
+		frappe.cache.set_value(LISTS_KEY, data, expires_in_sec=60)
+		return data
 	frappe.cache.set_value(LISTS_KEY, data, expires_in_sec=3600)
 	return data
