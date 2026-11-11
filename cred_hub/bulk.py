@@ -37,6 +37,13 @@ def _abort_batch(index: int):
 	)
 
 
+# Keys a record never sets through the batch API (identity, ownership, workflow and tree internals)
+SYSTEM_KEYS = frozenset({
+	"doctype", "name", "owner", "creation", "modified", "modified_by", "docstatus", "idx", "parent", "parentfield",
+	"parenttype", "lft", "rgt", "_user_tags", "_comments", "_assign", "_liked_by",
+})
+
+
 @frappe.whitelist(methods=["POST"])
 def bulk_upsert(doctype: str, records: list[dict] | str) -> dict:
 	"""Cria ou atualiza até 50 registros em lote sob uma única chamada de API.
@@ -78,7 +85,13 @@ def bulk_upsert(doctype: str, records: list[dict] | str) -> dict:
 			failed_count += 1
 			continue
 
+		if item.get("doctype") not in (None, "", doctype):
+			# A record cannot switch to another doctype than the one the key's scope was checked for (audit H2)
+			results.append({"index": index, "status": "error", "error": _("Record doctype must be {0}.").format(doctype)})
+			failed_count += 1
+			continue
 		name = item.get("name")
+		item = {k: v for k, v in item.items() if k not in SYSTEM_KEYS}
 		savepoint = f"bulk_item_{index}"
 		try:
 			frappe.db.savepoint(savepoint)

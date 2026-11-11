@@ -823,3 +823,70 @@ class TestApiKeys(IntegrationTestCase):
 			self.assertTrue(headers["X-HubTech-Signature"].startswith("sha256="))
 			self.assertEqual(headers["X-HubTech-Event"], "deal.created")
 			self.assertIn("X-HubTech-Delivery", headers)
+
+
+class TestApiKeyDispatchBypass(IntegrationTestCase):
+	"""Audit 11/11/2026: a key could run ANY whitelisted method by adding `cmd` (C1) or upload_file `method` (H1),
+	and switch doctype inside a batch record (H2). Every one must be refused."""
+
+	setUp = TestApiKeys.setUp
+	tearDown = TestApiKeys.tearDown
+	create = TestApiKeys.create
+	call = TestApiKeys.call
+
+	def test_cmd_argument_is_refused_on_any_route(self):
+		token = self.create(("pipelines_read",))["token"]
+		for path in (
+			"/api/method/cred_hub.api_keys.get_openapi_spec",
+			"/api/method/crm.api.pipeline.get_pipelines",
+			"/api/resource/CRM Deal",
+		):
+			with self.subTest(path), self.assertRaises(frappe.PermissionError):
+				self.call(token, path, form={"cmd": "frappe.client.get_list", "doctype": "User"})
+
+	def test_openapi_needs_its_scope_like_any_method(self):
+		token = self.create(("contacts_read",))["token"]
+		with self.assertRaises(frappe.PermissionError):
+			self.call(token, "/api/method/cred_hub.api_keys.get_openapi_spec")
+		token = self.create(("pipelines_read",))["token"]
+		self.call(token, "/api/method/cred_hub.api_keys.get_openapi_spec")
+
+	def test_upload_cannot_dispatch_another_method(self):
+		token = self.create(("files_write", "cards_read"))["token"]
+		for arg in ("method", "library_file_name"):
+			with self.subTest(arg), self.assertRaises(frappe.PermissionError):
+				self.call(token, "/api/method/upload_file", "POST", form={arg: "frappe.client.get_list"})
+
+	def test_upload_through_a_key_is_always_private(self):
+		token = self.create(("files_write", "cards_read"))["token"]
+		request = MagicMock(path="/api/method/upload_file", method="POST", headers=Headers({"Authorization": f"Bearer {token}"}))
+		frappe.set_user("Guest")
+		frappe.local.credhub_api_key = None
+		with (
+			patch.object(frappe, "request", request),
+			patch.object(frappe, "get_request_header", lambda name, default=None: request.headers.get(name, default)),
+			patch.dict(frappe.local.form_dict, {"is_private": 0, "doctype": "CRM Deal"}, clear=True),
+		):
+			frappe.local.request_ip = "203.0.113.9"
+			api_keys.authenticate()
+			self.assertEqual(frappe.local.form_dict.get("is_private"), 1)
+
+	def test_document_method_post_is_refused(self):
+		token = self.create(("cards_read", "cards_write"))["token"]
+		with self.assertRaises(frappe.PermissionError):
+			self.call(token, "/api/resource/CRM Deal/CRM-DEAL-0001", "POST", form={"run_method": "get_onload"})
+		self.call(token, "/api/resource/CRM Deal", "POST")
+
+	def test_batch_record_cannot_switch_doctype_or_set_system_keys(self):
+		from cred_hub import bulk
+
+		token = self.create(("contacts_write", "contacts_read"))["token"]
+		self.call(token, "/api/method/cred_hub.bulk.bulk_upsert", "POST", form={"doctype": "Contact"})
+		res = bulk.bulk_upsert("Contact", [{"doctype": "CRM Task", "title": "x"}, {"doctype": "CRM Lead", "first_name": "x"}])
+		self.assertEqual(res["failed"], 2)
+		self.assertFalse(frappe.db.exists("CRM Task", {"title": "x"}))
+		res = bulk.bulk_upsert("Contact", [{"first_name": "Ana Bulk", "owner": "someone@else.com", "docstatus": 1}])
+		self.assertEqual(res["success"], 1, res)
+		contact = frappe.get_doc("Contact", res["results"][0]["name"])
+		self.assertNotEqual(contact.owner, "someone@else.com")
+		self.assertEqual(contact.docstatus, 0)
