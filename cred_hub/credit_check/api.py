@@ -1096,6 +1096,13 @@ def _checklist_context(organization: str | None, deal: str | None) -> tuple[str,
 	deal_doc = ctx["deal"]
 	if deal_doc and organization and deal_doc.organization and deal_doc.organization != organization:
 		frappe.throw(_("The card {0} belongs to another organization.").format(deal_doc.name))
+	if getattr(frappe.local, "credhub_api_key", None):
+		# a key works on the cards of its pipelines: the card must be writable by it, and an organization alone
+		# must have a card in one of them (organizations are company-wide records)
+		if deal_doc and not frappe.has_permission("CRM Deal", "write", doc=deal_doc):
+			frappe.throw(_("You do not have permission to access this deal."), frappe.PermissionError)
+		if not deal_doc and not frappe.get_list("CRM Deal", {"organization": ctx["organization"]}, pluck="name", limit=1):
+			frappe.throw(_("You do not have permission to access this organization."), frappe.PermissionError)
 	return ctx["organization"], deal_doc.name if deal_doc else None
 
 

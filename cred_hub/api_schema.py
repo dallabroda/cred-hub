@@ -51,6 +51,10 @@ HIDDEN_ALLOWED = {CONTACT: frozenset({"full_name"})}
 # Short views of the records linked to a card or a contact (webhook `related`)
 ORGANIZATION_SUMMARY = ("name", "organization_name", "cnpj", "legal_name", "trade_name", "website", "industry")
 CONTACT_SUMMARY = ("name", "full_name", "first_name", "last_name", "email_id", "mobile_no", "phone", "cpf")
+# Credit verdict fields are not sent by a webhook unless its field list names them (owner decision pending,
+# credtech#375): flip this switch to send them by default
+CREDIT_FIELDS_IN_WEBHOOKS_BY_DEFAULT = False
+WEBHOOK_OPT_IN_FIELDS = frozenset({"credit_verdict", "credit_report"})
 # Keys of `related` for each record
 RELATED_KEYS = {DEAL: ("organization", "second_organization", "contacts"), CONTACT: ("organization",)}
 
@@ -565,8 +569,34 @@ def openapi_spec() -> dict:
 	if not spec:
 		spec = build_openapi_spec()
 		frappe.cache.set_value(OPENAPI_CACHE_KEY, spec, expires_in_sec=OPENAPI_CACHE_SECONDS)
-	spec = copy.copy(spec)
+	spec = _visible_enums(copy.copy(spec))
 	spec["servers"] = [{"url": frappe.utils.get_url()}]
+	return spec
+
+
+def _visible_enums(spec: dict) -> dict:
+	"""Pipelines and stages in the enums only as far as the caller sees them (a key: its pipelines), from the cached
+	base, with two permission-checked queries. Field names stay company-wide: pipelines_read shows the field
+	structure of the company (documented)."""
+	from crm.permissions.pipeline import is_admin
+
+	if is_admin():
+		return spec
+	pipelines = set(frappe.get_list("CRM Pipeline", pluck="name"))
+	stages = set(frappe.get_all("CRM Deal Status", {"pipeline": ("in", list(pipelines) or [""])}, pluck="name"))
+	schemas = dict(spec["components"]["schemas"])
+	card = dict(schemas["Card"])
+	properties = dict(card["properties"])
+	for field, visible in (("pipeline", pipelines), ("status", stages)):
+		prop = properties.get(field)
+		if prop and "enum" in prop:
+			prop = dict(prop)
+			prop["enum"] = [v for v in prop["enum"] if v in visible]
+			prop["x-enum-labels"] = {k: v for k, v in (prop.get("x-enum-labels") or {}).items() if k in visible}
+			properties[field] = prop
+	card["properties"] = properties
+	schemas["Card"] = card
+	spec["components"] = {**spec["components"], "schemas": schemas}
 	return spec
 
 

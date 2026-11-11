@@ -257,6 +257,8 @@ def _select(data: dict, related: dict | None, fields: list[str]) -> tuple[dict, 
 	"""Only the listed keys of the record and of `related` (name always goes). The record already passed the field
 	policy, so a list can only narrow it."""
 	if not fields:
+		if not api_schema.CREDIT_FIELDS_IN_WEBHOOKS_BY_DEFAULT:
+			data = {k: v for k, v in data.items() if k not in api_schema.WEBHOOK_OPT_IN_FIELDS}
 		return data, related
 	wanted = set(fields) | {"name"}
 	data = {k: v for k, v in data.items() if k in wanted}

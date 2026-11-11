@@ -248,7 +248,8 @@ class TestApiPublic(IntegrationTestCase):
 			},
 		)
 		# o registro inteiro pela política, nem mais nem menos
-		self.assertEqual(list(body["data"]), api_schema.public_fieldnames(DEAL))
+		expected = [f for f in api_schema.public_fieldnames(DEAL) if f not in api_schema.WEBHOOK_OPT_IN_FIELDS]
+		self.assertEqual(list(body["data"]), expected)
 		self.assertEqual(body["data"][self.deal_field], "valor do card")
 		self.assertEqual(body["data"][self.deal_select], "Alfa")
 		for key in ("name", "pipeline", "status", "organization", "organization_name", "annual_revenue", "deal_owner"):
@@ -265,6 +266,19 @@ class TestApiPublic(IntegrationTestCase):
 		self.assertEqual((contact["name"], contact["first_name"], contact["is_primary"]), (self.contact.name, first_name, 1))
 		self.assertTrue(set(contact) <= {*api_schema.CONTACT_SUMMARY, "is_primary"})
 		json.loads(frappe.as_json(body))  # serializa
+
+	def test_credit_fields_only_when_the_webhook_lists_them(self):
+		frappe.db.set_value(DEAL, self.deal.name, "credit_verdict", "Warning")
+		self.deal.reload()
+		data = api_schema.record(self.deal)
+		body = webhooks.build_body("deal.created", data, "wh", 1, related={}, doctype=DEAL)
+		self.assertNotIn("credit_verdict", body["data"])
+		self.assertNotIn("credit_report", body["data"])
+		body = webhooks.build_body("deal.created", data, "wh", 1, related={}, doctype=DEAL, fields=["credit_verdict"])
+		self.assertEqual(body["data"]["credit_verdict"], "Warning")
+		with patch.object(api_schema, "CREDIT_FIELDS_IN_WEBHOOKS_BY_DEFAULT", True):  # the owner's switch
+			body = webhooks.build_body("deal.created", data, "wh", 1, related={}, doctype=DEAL)
+		self.assertIn("credit_verdict", body["data"])
 
 	def test_contact_payload_has_custom_field_and_organization(self):
 		body = webhooks.build_body(
@@ -466,6 +480,21 @@ class TestApiPublic(IntegrationTestCase):
 		self.call(token, "/api/method/cred_hub.api_keys.get_openapi_spec")
 		self.assertIn("paths", api_keys.get_openapi_spec())
 
+	def test_openapi_enums_show_only_the_key_pipelines(self):
+		api_schema.openapi_spec()  # base cached with every pipeline
+		token = self.create(("pipelines_read",))["token"]
+		self.call(token, "/api/method/cred_hub.api_keys.get_openapi_spec")
+		card = api_keys.get_openapi_spec()["components"]["schemas"]["Card"]["properties"]
+		self.assertIn(self.pipeline, card["pipeline"]["enum"])
+		self.assertNotIn(self.other, card["pipeline"]["enum"])
+		self.assertNotIn(self.other, card["pipeline"]["x-enum-labels"])
+		other_stages = set(frappe.get_all("CRM Deal Status", {"pipeline": self.other}, pluck="name"))
+		self.assertFalse(other_stages & set(card["status"]["enum"]))
+		frappe.set_user("Administrator")
+		frappe.local.credhub_api_key = None
+		admin = api_schema.openapi_spec()["components"]["schemas"]["Card"]["properties"]
+		self.assertIn(self.other, admin["pipeline"]["enum"])  # the cached base was not changed
+
 	# ---------- Campos e formulários pela chave (fields_admin) ----------
 
 	def test_fields_admin_routes_need_the_scope(self):
@@ -478,6 +507,15 @@ class TestApiPublic(IntegrationTestCase):
 			with self.subTest(route=route):
 				self.call(admin, f"/api/method/{route}", "POST")
 				self.assertTrue(frappe.local.credhub_api_key["write"])
+
+	def test_fields_admin_key_cannot_create_forbidden_field_types(self):
+		from crm.api import forms
+
+		self.call(self.create(("cards_read", "fields_admin"))["token"], "/api/method/crm.api.forms.create_field", "POST")
+		for args in (("Tabela", "Table", None), ("Usuario", "Link", "User"), ("Senha", "Password", None), ("Lista", "Select", "")):
+			with self.subTest(args=args), self.assertRaises(frappe.ValidationError):
+				forms.create_field(*args)
+			self.assertFalse(frappe.db.exists("Custom Field", {"dt": DEAL, "label": args[0]}))
 
 	def test_fields_admin_hook_only_for_keys_with_the_scope(self):
 		self.call(self.create(("cards_read", "cards_write"))["token"], "/api/resource/CRM Deal")
@@ -611,6 +649,11 @@ class TestApiPublic(IntegrationTestCase):
 			self.upload(deal=hidden.name)
 		with self.assertRaises(frappe.ValidationError):  # card de outra organização
 			self.upload(deal=self.deal.name, organization=other_org.name)
+		with self.assertRaises(frappe.PermissionError):  # organização só com card no outro funil
+			self.upload(organization=other_org.name)
+		with self.assertRaises(frappe.PermissionError):  # ler o checklist também
+			credit_api.get_document_checklist(organization=other_org.name)
+		self.assertEqual(self.upload(organization=self.org.name)["status"], "attached")  # tem card no funil da chave
 
 
 class TestFieldsAdminKeyCreatesField(IntegrationTestCase):
