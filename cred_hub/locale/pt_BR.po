@@ -3726,3 +3726,18 @@ msgstr "O cadastro de {0} do ERP não pôde ser lido ({1}); os novos são lidos 
 
 msgid "Registries to read again"
 msgstr "Cadastros a ler de novo"
+
+msgid "These fields are filled by the system and cannot be changed by the API: {0}"
+msgstr "Estes campos são preenchidos pelo sistema e não podem ser alterados pela API: {0}"
+
+msgid "Rows of {0} cannot set doctype, parent or the name of a row of another record."
+msgstr "Linhas de {0} não podem definir doctype, parent nem o nome de uma linha de outro registro."
+
+msgid "File type not allowed through the API: {0}"
+msgstr "Tipo de arquivo não permitido pela API: {0}"
+
+msgid "Credit: run paid bureau queries"
+msgstr "Crédito: fazer consultas pagas a bureaus"
+
+msgid "Lets the key run bureau queries that the company pays to the provider. Off by default."
+msgstr "Permite à chave fazer consultas a bureaus que a empresa paga ao provedor. Desligado por padrão."
