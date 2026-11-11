@@ -99,7 +99,7 @@ class TestErpSync(IntegrationTestCase):
 		frappe.clear_document_cache(erp_settings.SETTINGS, erp_settings.SETTINGS)
 
 	def reset_cache(self):
-		for key in ("cred_hub_erp_report:emaberto", "cred_hub_erp_report:quitados", erp_settings.TOKEN_KEY):
+		for key in (*(f"cred_hub_erp_report:Smart Securities:{r}" for r in ("overdue", "settled")), erp_settings.TOKEN_KEY):
 			frappe.cache.delete_value(key)
 
 	def grouping(self, value):
@@ -263,7 +263,7 @@ class TestErpSync(IntegrationTestCase):
 
 	def test_unexpected_error_leaves_a_trace_and_still_raises(self):
 		with (
-			patch.object(sync, "_sync_smart", side_effect=KeyError("boom")),
+			patch.object(sync, "_sync_titles", side_effect=KeyError("boom")),
 			patch.object(frappe.db, "set_single_value", wraps=frappe.db.set_single_value) as writes,
 			self.assertRaises(KeyError),
 		):
@@ -544,7 +544,7 @@ class TestErpImportMap(TestErpSync):
 
 	def run_sync(self, fake):
 		for kind in ("sacado", "cedente"):
-			frappe.cache.delete_value(f"cred_hub_erp_report:{kind}")
+			frappe.cache.delete_value(f"cred_hub_erp_report:Smart Securities:{kind}")
 		return super().run_sync(fake)
 
 	def test_titulo_columns_fill_the_fields_the_company_chose(self):

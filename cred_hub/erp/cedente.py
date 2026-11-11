@@ -175,6 +175,7 @@ def send_for_deal(deal: str) -> dict:
 
 	from cred_hub.integrations.bureau_log import ERROR, SUCCESS
 
+	from . import connectors
 	from .base import ErpError
 	from .settings import client, get_settings, log, user_message
 
@@ -194,11 +195,8 @@ def send_for_deal(deal: str) -> dict:
 		result = _build(settings, records)
 		if not result.ok:
 			return _missing(doc, org, provider, [r.label or r.erp_field for r in result.missing], result.errors)
-		erp = client(settings)
-		if provider == "Smart Securities":
-			outcome = _send_smart(erp, settings, doc, org, result)
-		else:
-			outcome = _send_wba(erp, org, result)
+		conn = connectors.get(provider)(client(settings))
+		outcome = conn.register_cedente(RegisterContext(settings, doc, org, result)).as_dict()
 	except _Missing as e:
 		return _missing(doc, org, provider, e.items)
 	except ErpError as e:
@@ -300,9 +298,11 @@ def _records(doc, org) -> dict:
 def _build(settings, records):
 	from datetime import date
 
-	from .mapper import DEFAULT_RULES, Rule, build
+	from . import connectors
+	from .mapper import Rule, build
 
-	rows = settings.get("cedente_field_map") or DEFAULT_RULES.get(settings.erp_provider) or []
+	cls = connectors.get(settings.erp_provider)
+	rows = settings.get("cedente_field_map") or (cls.default_rules() if cls else [])
 	return build([Rule.from_row(r) for r in rows], records, today=date.today())
 
 
@@ -409,6 +409,16 @@ def _send_wba(erp, org, result) -> dict:
 	return {"status": "sent", "id": None, "note": _(
 		"Cedente registration sent to WBA. WBA confirms it later; the registration appears in WBA in a few minutes."
 	)}
+
+
+class RegisterContext:
+	"""What a connector needs to register the cedente of a card (ADR 0007)."""
+
+	def __init__(self, settings, deal, organization, result):
+		self.settings = settings
+		self.deal = deal
+		self.organization = organization
+		self.result = result
 
 
 class _Missing(Exception):
