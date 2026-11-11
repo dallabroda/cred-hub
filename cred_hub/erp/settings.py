@@ -29,6 +29,8 @@ def _secret(settings, fieldname: str) -> str:
 
 def forget_token():
 	frappe.cache.delete_value(TOKEN_KEY)
+	# New credentials or another ERP: the lists of names come from the new account
+	frappe.cache.delete_value("cred_hub_erp_lists")
 
 
 def _cached_token() -> Token:
@@ -126,3 +128,29 @@ def send_cedente(deal: str) -> dict:
 	from .cedente import send_now
 
 	return send_now(deal)
+
+
+LISTS_KEY = "cred_hub_erp_lists"
+
+
+@frappe.whitelist()
+def erp_lists() -> dict:
+	"""Names of the ERP's own managers and sectors, for the settings screen: the admin picks a name, never an id
+	(credtech#367). Admins only; cached for an hour (each list is one paid-by-quota call to the ERP)."""
+	frappe.only_for("System Manager")
+	settings = get_settings()
+	if settings.erp_provider != SMART or not settings.erp_enabled:
+		return {"managers": [], "sectors": []}
+	cached = frappe.cache.get_value(LISTS_KEY)
+	if cached:
+		return cached
+	try:
+		erp = client(settings)
+		data = {
+			"managers": sorted({m.get("descricao") for m in erp.lookup("gerente") if m.get("descricao")}),
+			"sectors": [s.get("descricao") for s in erp.lookup("setor") if s.get("descricao")],
+		}
+	except ErpError as e:
+		return {"managers": [], "sectors": [], "error": user_message(e)}
+	frappe.cache.set_value(LISTS_KEY, data, expires_in_sec=3600)
+	return data
