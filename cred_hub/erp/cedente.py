@@ -210,7 +210,7 @@ def send_for_deal(deal: str) -> dict:
 	except Exception as e:
 		# Not an ERP answer (a bug, a lookup that changed shape): the card still says it did not go, then it fails loudly
 		frappe.db.rollback()
-		_note(doc, org, frappe._("The cedente registration stopped because of an unexpected error. Support was notified."))
+		_note(doc, org, frappe._("The cedente registration stopped because of an unexpected error. Support was notified. Check in the ERP whether the cedente was created before sending again."))
 		frappe.db.commit()
 		_safe_log(log, provider, ERROR, org, doc, error=f"{type(e).__name__}: {e}")
 		raise

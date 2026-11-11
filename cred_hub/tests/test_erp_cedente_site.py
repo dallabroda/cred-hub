@@ -137,7 +137,8 @@ class TestCedenteRegistration(IntegrationTestCase):
 	def test_unexpected_error_still_leaves_a_note(self):
 		fake = FakeSmart()
 		fake.lookup = lambda resource: (_ for _ in ()).throw(KeyError("setor changed shape"))
-		with self.assertRaises(KeyError):
+		# rollback patched: in production the card is committed; here it only exists in the test transaction
+		with patch.object(frappe.db, "rollback"), self.assertRaises(KeyError):
 			self.send(fake)
 		self.assertTrue(self.comments("CRM Deal", self.deal.name))
 		self.assertEqual(fake.sent, [])
