@@ -33,18 +33,14 @@ from cred_hub.integrations import protest
 from cred_hub.integrations.bureau_log import ERROR, SUCCESS
 from cred_hub.party.document import CNPJ, document_kind
 
-from . import SMART, import_map
+from . import import_map
 from .base import ErpError
 from .fields import PAID, REPURCHASED
-from .settings import client, get_settings, log, user_message
-from .smart import OPEN, OPEN_RANGE_START, normalize_title
-from .smart import PAID as SETTLED
+from .settings import connector, connector_class, get_settings, log, user_message
 
 DEAL, TITLE_ROW = "CRM Deal", "CRM Deal Title"
 LOCK_SECONDS = 3 * 3600
 PLAN_LINES = 300
-# Smart: asking the same report again within 10 minutes restarts its cooldown, so never reopen it sooner
-REPORT_COOLDOWN = 11 * 60
 CENT = 0.005
 OUTCOME_REASON = {"paid": PAID, "repurchased": REPURCHASED}
 
@@ -137,11 +133,14 @@ def run(session=None, dry_run: bool | None = None) -> dict:
 	stats["dry_run"] = dry
 	stats["run_id"] = run_id
 	try:
-		if settings.erp_provider != SMART:
+		cls = connector_class(settings)
+		caps = cls.capabilities if cls else None
+		if not (caps and caps.overdue_titles and caps.settled_titles):
+			# Decided before touching credentials, as before the connector contract
 			stats["message"] = _("The collection sync for {0} comes in the next version.").format(settings.erp_provider)
 			return stats
-		erp = client(settings, session=session)
-		_sync_smart(erp, settings, stats)
+		erp = connector(settings, session=session)
+		_sync_titles(erp, settings, stats)
 		stats["seconds"] = round(time.time() - started, 1)
 		if dry:
 			# Throw away everything the run wrote, keep only the report
@@ -200,32 +199,29 @@ def _save_columns(stats: dict):
 		frappe.db.set_single_value("Cred Hub ERP Settings", "erp_columns", raw)
 
 
-# Smart Securities -----------------------------------------------------------------------------------------------
+# Títulos from the connector (ADR 0007: any system that declares overdue + settled títulos) -------------------
 
 
-def _sync_smart(erp, settings, stats):
+def _sync_titles(erp, settings, stats):
 	started = now_datetime()
 	pipeline = _collection_pipeline()
 	overdue_until = add_days(today(), -max(int(settings.overdue_days or 0), 0))
 	# Read both reports before writing anything: the database transaction is open only for the (short) write phase
-	_cooldown(OPEN)
-	overdue = [
-		normalize_title(row)
-		for row in erp.titles(OPEN, vencimentoIni=OPEN_RANGE_START, vencimentoFim=getdate(overdue_until))
-	]
+	_cooldown(erp, "overdue")
+	overdue = list(erp.overdue_titles(getdate(overdue_until)))
 	stats["overdue_read"] = len(overdue)
 	stats["columns"] = {import_map.TITLE: _distinct_shapes(t["raw"] for t in overdue)}
 	lookback = max(int(settings.paid_lookback_days or 7), 1)
 	since = add_days(settings.last_paid_sync or today(), -lookback)
-	_cooldown(SETTLED)
-	settled = [normalize_title(row) for row in erp.titles(SETTLED, quitacaoIni=getdate(since), quitacaoFim=getdate(today()))]
+	_cooldown(erp, "settled")
+	settled = list(erp.settled_titles(getdate(since), getdate(today())))
 	stats["settled_read"] = len(settled)
 
 	upsert_overdue(pipeline, overdue, stats)
 	_commit()
 	close_settled(settled, stats)
 	# After the settlements: a título just closed is not "no longer overdue"
-	stats["left_overdue"] = count_left_overdue(SMART, {t["erp_id"] for t in overdue})
+	stats["left_overdue"] = count_left_overdue(erp.key, {t["erp_id"] for t in overdue})
 	_commit()
 	sync_parties(erp, settings, stats, overdue, started)
 
@@ -248,8 +244,8 @@ def _distinct_shapes(rows) -> list[dict]:
 # CNPJ enrichment the HubTech already runs on every new organization.
 PARTIES = (
 	# kind, de-para table, document of the título, ERP reader
-	(import_map.SACADO, "sacado_field_map", "sacado_document", "sacados"),
-	(import_map.CEDENTE, "cedente_registry_map", "cedente_document", "cedentes"),
+	(import_map.SACADO, "sacado_field_map", "sacado_document"),
+	(import_map.CEDENTE, "cedente_registry_map", "cedente_document"),
 )
 
 
@@ -260,7 +256,7 @@ PENDING_TRIES = 5
 
 def sync_parties(erp, settings, stats, titles, since):
 	pending = _load_pending()
-	for kind, table, document_key, reader in PARTIES:
+	for kind, table, document_key in PARTIES:
 		rules = settings.get(table) or []
 		waiting = pending.get(kind) or {}
 		if not rules:
@@ -274,8 +270,12 @@ def sync_parties(erp, settings, stats, titles, since):
 			continue
 		started = time.time()
 		try:
-			_cooldown(kind)
-			rows = list(getattr(erp, reader)())
+			if not _reads_registry(erp, kind):
+				# This system has no registry of this kind: nothing to read, nothing to wait for
+				pending.pop(kind, None)
+				continue
+			_cooldown(erp, kind)
+			rows = list(erp.reader(kind)())
 		except ErpError as e:
 			# The títulos are already saved; these records wait for the next run (the CNPJ enrichment runs anyway)
 			stats[f"{kind}_error"] = user_message(e)
@@ -392,15 +392,24 @@ def _fill_empty(doctype, name, values) -> bool:
 	return True
 
 
-def _cooldown(report: str):
-	"""Never reopen the same ERP report within its cooldown (also protects against two runs back to back)."""
-	key = f"cred_hub_erp_report:{report}"
+def _reads_registry(erp, kind: str) -> bool:
+	caps = erp.capabilities
+	return caps.sacado_registry if kind == import_map.SACADO else caps.cedente_registry
+
+
+def _cooldown(erp, report: str):
+	"""Never reopen the same report within the system's cooldown (its `pace`), shared by every worker of the site
+	(also protects against two runs back to back)."""
+	cooldown = erp.pace.report_cooldown
+	if not cooldown:
+		return
+	key = f"cred_hub_erp_report:{erp.key}:{report}"
 	last = frappe.cache.get_value(key)
-	if last and time.time() - float(last) < REPORT_COOLDOWN:
+	if last and time.time() - float(last) < cooldown:
 		raise ErpError(
-			f"The '{report}' report was requested less than 10 minutes ago.", "rate_limited", 429
+			f"The '{report}' report was requested less than {max(cooldown // 60 - 1, 1)} minutes ago.", "rate_limited", 429
 		)
-	frappe.cache.set_value(key, time.time(), expires_in_sec=REPORT_COOLDOWN)
+	frappe.cache.set_value(key, time.time(), expires_in_sec=cooldown)
 
 
 # Títulos --------------------------------------------------------------------------------------------------------

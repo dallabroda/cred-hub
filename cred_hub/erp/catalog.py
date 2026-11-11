@@ -103,7 +103,10 @@ CATALOG = {SMART: SMART_FIELDS, WBA: _from_rules(DEFAULT_RULES[WBA])}
 
 
 def fields(provider) -> list[dict]:
-	return CATALOG.get(provider) or []
+	from . import connectors
+
+	cls = connectors.get(provider)
+	return cls.catalog() if cls else []
 
 
 def field(provider, erp_field) -> dict | None:

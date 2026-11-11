@@ -156,8 +156,10 @@ def columns(raw, kind: str, provider: str) -> list[str]:
 		seen = (json.loads(raw) if raw else {}).get(kind) or []
 	except ValueError:
 		seen = []
-	documented = {TITLE: SMART_TITLE_COLUMNS, SACADO: SMART_SACADO_COLUMNS, CEDENTE: SMART_CEDENTE_COLUMNS}
-	base = documented.get(kind, []) if provider == "Smart Securities" else []
+	from . import connectors
+
+	cls = connectors.get(provider)
+	base = cls.documented_columns(kind) if cls else []
 	result, keys = [], set()
 	for column in [*base, *seen]:
 		if column_key(column) not in keys:

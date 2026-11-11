@@ -9,11 +9,8 @@ import time
 import frappe
 from frappe import _
 
-from . import PROVIDERS, SMART, WBA
+from . import connectors
 from .base import ErpError, Token
-from .mapper import DEFAULT_RULES
-from .smart import SmartClient
-from .wba import WbaClient
 
 SETTINGS = "Cred Hub ERP Settings"
 TOKEN_KEY = "cred_hub_erp_token"
@@ -46,27 +43,40 @@ def _store_token(token: Token):
 
 
 def load_default_rules(settings):
-	for rule in DEFAULT_RULES.get(settings.erp_provider) or []:
+	cls = connectors.get(settings.erp_provider)
+	for rule in cls.default_rules() if cls else []:
 		settings.append("cedente_field_map", rule)
+
+
+def connector_class(settings=None):
+	"""The connector of the chosen system (ADR 0007), or None when none is chosen."""
+	settings = settings or get_settings()
+	return connectors.get(settings.erp_provider)
+
+
+def credential_values(settings, cls) -> dict:
+	"""{fieldname: value} of the credentials the connector declares; secrets decrypted only here."""
+	return {
+		c.fieldname: (_secret(settings, c.fieldname) if c.secret else (settings.get(c.fieldname) or ""))
+		for c in cls.credentials
+	}
 
 
 def client(settings=None, session=None):
 	"""The configured ERP client, reusing the token cached in Redis so each job does not log in again."""
 	settings = settings or get_settings()
-	provider = settings.erp_provider
-	if provider == WBA:
-		erp = WbaClient(
-			settings.wba_tenant_id, settings.wba_username, _secret(settings, "wba_password"),
-			base_url=settings.wba_base_url, session=session, token=_cached_token(), on_token=_store_token,
-		)
-	elif provider == SMART:
-		erp = SmartClient(
-			settings.smart_client_id, _secret(settings, "smart_client_secret"),
-			base_url=settings.smart_base_url, session=session, token=_cached_token(), on_token=_store_token,
-		)
-	else:
+	cls = connector_class(settings)
+	if not cls:
 		frappe.throw(_("Choose the ERP in the ERP integration settings."))
-	return erp
+	return cls.make_client(
+		credential_values(settings, cls), session=session, token=_cached_token(), on_token=_store_token
+	)
+
+
+def connector(settings=None, session=None):
+	"""The connector of the chosen system bound to its client: the only way shared code talks to an ERP."""
+	settings = settings or get_settings()
+	return connector_class(settings)(client(settings, session=session))
 
 
 def user_message(error: ErpError) -> str:
@@ -98,13 +108,13 @@ def test_connection() -> dict:
 	"""Logs in with the saved credentials and runs the cheapest read. Admins only."""
 	frappe.only_for("System Manager")
 	settings = get_settings()
-	if settings.erp_provider not in PROVIDERS:
+	if not connector_class(settings):
 		return {"ok": False, "message": _("Choose the ERP and save the credentials first.")}
 	forget_token()
 	from cred_hub.integrations.bureau_log import ERROR, SUCCESS
 
 	try:
-		result = client(settings).ping()
+		result = connector(settings).ping()
 	except ErpError as e:
 		log(settings.erp_provider, "Test connection", ERROR, http_status=e.http_status, error=str(e))
 		return {"ok": False, "message": user_message(e)}
@@ -166,10 +176,8 @@ def cedente_sources() -> list[dict]:
 		options += [{"value": f"{entity}.{f['fieldname']}", "label": f"{group} › {f['label']}"} for f in _fields_of(doctype)]
 	options.append({"value": "credit.approved_limit", "label": _("Credit committee") + " › " + _("Approved limit")})
 	# Fields the default de-para uses that the screen list leaves out (hidden or read-only, e.g. Contact.full_name)
-	from .mapper import DEFAULT_RULES
-
 	known = {o["value"] for o in options}
-	for rules in DEFAULT_RULES.values():
+	for rules in (cls.default_rules() for cls in connectors.all_connectors()):
 		for rule in rules:
 			for source in (rule["source"] or "").split("|"):
 				entity, _sep, fieldname = source.partition(".")
@@ -206,6 +214,8 @@ def mapping_options() -> dict:
 	frappe.only_for("System Manager")
 	settings = get_settings()
 	provider = settings.erp_provider
+	cls = connector_class(settings)
+	fixed = cls.fixed_columns if cls else (lambda kind: {})
 	return {
 		"cedente": {
 			"fields": [{**f, "label": _(f["label"])} for f in catalog.fields(provider)],
@@ -213,17 +223,17 @@ def mapping_options() -> dict:
 		},
 		"title": {
 			"columns": import_map.columns(settings.erp_columns, import_map.TITLE, provider),
-			"fixed": import_map.SMART_TITLE_FIXED if provider == SMART else {},
+			"fixed": fixed(import_map.TITLE),
 			"targets": title_targets(),
 		},
 		"sacado": {
 			"columns": import_map.columns(settings.erp_columns, import_map.SACADO, provider),
-			"fixed": import_map.SMART_SACADO_FIXED if provider == SMART else {},
+			"fixed": fixed(import_map.SACADO),
 			"targets": sacado_targets(),
 		},
 		"cedente_registry": {
 			"columns": import_map.columns(settings.erp_columns, import_map.CEDENTE, provider),
-			"fixed": import_map.SMART_CEDENTE_FIXED if provider == SMART else {},
+			"fixed": fixed(import_map.CEDENTE),
 			"targets": sacado_targets("cedente"),
 		},
 	}
@@ -243,7 +253,8 @@ def mapping_lists() -> dict:
 def _list_names(settings, fields) -> dict:
 	"""Names of the ERP lists used by the cedente fields (operator, originator...), cached for an hour."""
 	resources = sorted({f["resource"] for f in fields if f.get("resource")})
-	if not resources or not settings.erp_enabled or settings.erp_provider != SMART:
+	cls = connector_class(settings)
+	if not resources or not settings.erp_enabled or not cls or not cls.capabilities.lists:
 		return {}
 	key = "cred_hub_erp_field_lists"
 	cached = frappe.cache.get_value(key)
@@ -251,12 +262,12 @@ def _list_names(settings, fields) -> dict:
 		return cached
 	names = {}
 	try:
-		erp = client(settings)
+		erp = connector(settings)
 	except ErpError:
 		return {}
 	for resource in resources:
 		try:
-			names[resource] = sorted({row.get("descricao") for row in erp.lookup(resource) if row.get("descricao")})
+			names[resource] = sorted(set(erp.lists(resource)))
 		except ErpError:
 			# A list this ERP account does not have (or a different name): offered empty, the rest still works
 			names[resource] = []
@@ -336,11 +347,14 @@ def _custom_source(source) -> bool:
 
 
 def load_default_import_maps(settings):
-	from .import_map import DEFAULT_SACADO_MAP, DEFAULT_TITLE_MAP
+	from . import import_map
 
-	for column, field in DEFAULT_TITLE_MAP.get(settings.erp_provider) or []:
+	cls = connector_class(settings)
+	if not cls:
+		return
+	for column, field in cls.default_import_rules(import_map.TITLE):
 		settings.append("title_field_map", {"erp_column": column, "crm_field": field})
-	for column, field in DEFAULT_SACADO_MAP.get(settings.erp_provider) or []:
+	for column, field in cls.default_import_rules(import_map.SACADO):
 		settings.append("sacado_field_map", {"erp_column": column, "crm_field": field})
 
 
@@ -353,17 +367,15 @@ def erp_lists() -> dict:
 	(credtech#367). Admins only; cached for an hour (each list is one paid-by-quota call to the ERP)."""
 	frappe.only_for("System Manager")
 	settings = get_settings()
-	if settings.erp_provider != SMART or not settings.erp_enabled:
+	cls = connector_class(settings)
+	if not cls or not cls.capabilities.lists or not settings.erp_enabled:
 		return {"managers": [], "sectors": []}
 	cached = frappe.cache.get_value(LISTS_KEY)
 	if cached:
 		return cached
 	try:
-		erp = client(settings)
-		data = {
-			"managers": sorted({m.get("descricao") for m in erp.lookup("gerente") if m.get("descricao")}),
-			"sectors": [s.get("descricao") for s in erp.lookup("setor") if s.get("descricao")],
-		}
+		erp = connector(settings)
+		data = {"managers": sorted(set(erp.lists("gerente"))), "sectors": erp.lists("setor")}
 	except ErpError as e:
 		# Wrong credentials or ERP under maintenance: keep the error a minute, so each screen opening does not call
 		# the ERP again (and spend its per-minute quota)
