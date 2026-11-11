@@ -38,6 +38,8 @@ after_request = ["cred_hub.api_keys.after_request"]
 on_session_creation = "cred_hub.api_keys.block_login"
 # O crm esconde o usuário técnico das listas, dos membros dos funis e da distribuição
 crm_hidden_users = ["cred_hub.api_keys.technical_users"]
+# Chave com "Campos e regras" (fields_admin) cria e altera campos e formulários pela API (credtech#375)
+crm_field_admin = ["cred_hub.api_keys.is_fields_admin_call"]
 
 # Quem chega sem conta vai para o cadastro de empresa nova (credtech#25)
 oauth_without_account = "cred_hub.signup_access.oauth_without_account"
@@ -48,6 +50,8 @@ crm_system_email_accounts = ["HubTech CRM", "Cred Hub"]
 # Linha do tempo do card: o lead automático aparece com o nome da origem, não como Guest (credtech#188)
 crm_automatic_entries = ["cred_hub.lead_intake.automatic_entries"]
 login_signup_url = "cred_hub.signup_access.login_signup_url"
+
+_OPENAPI = "cred_hub.api_schema.clear_openapi_cache"
 
 doc_events = {
 	# Limite de usuários do plano (2 grátis + extras pagos pelo Asaas, credtech#25)
@@ -87,6 +91,11 @@ doc_events = {
 		"on_update": "cred_hub.integrations.google_calendar.sync_task_to_google_calendar",
 		"on_trash": "cred_hub.integrations.google_calendar.on_task_trash",
 	},
+	# OpenAPI por empresa (credtech#375): campos, funis e etapas mudaram, a especificação é gerada de novo
+	"Custom Field": {"on_update": _OPENAPI, "on_trash": _OPENAPI},
+	"Property Setter": {"on_update": _OPENAPI, "on_trash": _OPENAPI},
+	"CRM Pipeline": {"on_update": _OPENAPI, "on_trash": _OPENAPI},
+	"CRM Deal Status": {"on_update": _OPENAPI, "on_trash": _OPENAPI},
 	"CRM Lead": {
 		# Empresa pelo domínio do e-mail (credtech#183): em fila, nunca atrasa a entrada do lead
 		"after_insert": "cred_hub.email_company.finder.on_lead_insert",

@@ -1064,6 +1064,90 @@ def get_credit_onboarding(
 	return credit_onboarding.get_onboarding(ctx["organization"], ctx["deal"].name if ctx["deal"] else None)
 
 
+# Item do checklist como a API mostra (credtech#375): sem o resumo interno da leitura do documento
+CHECKLIST_ITEM_FIELDS = (
+	"key",
+	"label",
+	"category",
+	"required",
+	"is_custom",
+	"status",
+	"notes",
+	"file_name",
+	"file_url",
+	"valid_until",
+	"is_expired",
+	"expiring_soon",
+	"updated_by",
+	"updated_on",
+)
+ONBOARDING_ROLES = ["System Manager", "Sales Manager", "Sales User"]
+
+
+def _public_checklist_item(item: dict[str, Any]) -> dict[str, Any]:
+	public = {field: item.get(field) for field in CHECKLIST_ITEM_FIELDS}
+	public["reason"] = (item.get("notes") or "") if item.get("status") == "rejected" else None
+	return public
+
+
+def _checklist_context(organization: str | None, deal: str | None) -> tuple[str, str | None]:
+	"""Organization and card the caller can see; a card of another organization is refused."""
+	ctx = _onboarding_context(deal_name=deal, organization_name=organization)
+	deal_doc = ctx["deal"]
+	if deal_doc and organization and deal_doc.organization and deal_doc.organization != organization:
+		frappe.throw(_("The card {0} belongs to another organization.").format(deal_doc.name))
+	return ctx["organization"], deal_doc.name if deal_doc else None
+
+
+def _uploaded_file():
+	"""The multipart part `file` of the request, if any."""
+	request = getattr(frappe.local, "request", None)
+	return (getattr(request, "files", None) or {}).get("file") if request else None
+
+
+@frappe.whitelist()
+def get_document_checklist(organization: str | None = None, deal: str | None = None) -> dict[str, Any]:
+	"""Digital Folder checklist of an organization or card, item by item: status (pending, attached, verified,
+	rejected), the reason of a rejection, file and validity (credtech#375)."""
+	frappe.only_for(ONBOARDING_ROLES)
+	organization, deal = _checklist_context(organization, deal)
+	data = credit_onboarding.get_onboarding(organization, deal)
+	return {
+		"organization": organization,
+		"deal": deal,
+		"summary": data["summary"],
+		"items": [_public_checklist_item(item) for item in data["checklist"]],
+	}
+
+
+@frappe.whitelist(methods=["POST"])
+def upload_checklist_document(
+	item_key: str,
+	organization: str | None = None,
+	deal: str | None = None,
+	valid_until: str | None = None,
+) -> dict[str, Any]:
+	"""Upload a document (multipart field `file`) straight into a checklist item, with the rules of the client's
+	external link: allowed types, 15 MB, private file, verified items locked. Answers with the updated item and fires
+	checklist.item_attached (credtech#375)."""
+	frappe.only_for(ONBOARDING_ROLES)
+	organization, deal = _checklist_context(organization, deal)
+	upload = _uploaded_file()
+	if not upload:
+		frappe.throw(_("Send the document in the multipart field file."))
+	# never more than the limit in memory: one byte past it is enough to refuse
+	raw_bytes = upload.stream.read(credit_onboarding.MAX_UPLOAD_BYTES + 1)
+	item = credit_onboarding.receive_document(
+		organization_name=organization,
+		item_key=item_key,
+		file_name=upload.filename,
+		raw_bytes=raw_bytes,
+		deal_name=deal,
+		valid_until=valid_until,
+	)
+	return _public_checklist_item(item)
+
+
 @frappe.whitelist()
 def update_checklist_item(
 	organization_name: str | None = None,

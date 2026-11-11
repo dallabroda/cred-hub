@@ -254,12 +254,18 @@ class TestApiKeys(IntegrationTestCase):
 		with self.assertRaises(frappe.PermissionError):
 			self.call(token, "/api/method/crm.api.pipeline.save_pipeline", "POST", doc)
 
-	def test_catalog_changes_stay_admin_only(self):
-		# create/update/disable_field exigem admin no crm: nem com "Campos e regras" a chave chega lá
-		token = self.create(scopes=("cards_read", "fields_admin"))["token"]
+	def test_catalog_changes_need_fields_admin(self):
+		# Decisão do dono 11/11/2026 (credtech#375): create/update/disable_field liberados só com "Campos e regras";
+		# o resto do catálogo (excluir, reativar) segue fora da API
+		token = self.create(scopes=("cards_read", "cards_write"))["token"]
+		admin = self.create(scopes=("cards_read", "fields_admin"))["token"]
 		for method in ("create_field", "update_field", "disable_field"):
 			with self.subTest(method=method), self.assertRaises(frappe.PermissionError):
 				self.call(token, f"/api/method/crm.api.pipeline.{method}", "POST")
+			self.call(admin, f"/api/method/crm.api.pipeline.{method}", "POST")
+		for method in ("delete_field", "enable_field", "field_usage"):
+			with self.subTest(method=method), self.assertRaises(frappe.PermissionError):
+				self.call(admin, f"/api/method/crm.api.forms.{method}", "POST")
 
 	def test_rate_limit(self):
 		token = self.create()["token"]
@@ -809,7 +815,11 @@ class TestApiKeys(IntegrationTestCase):
 			}
 		).insert(ignore_permissions=True)
 
-		with patch("requests.post") as mock_post:
+		from cred_hub.email_company import safe_http
+
+		session = MagicMock()
+		mock_post = session.post
+		with patch.object(safe_http, "resolve_public"), patch.object(safe_http, "_session", return_value=session):
 			mock_post.return_value.ok = True
 			mock_post.return_value.status_code = 200
 			mock_post.return_value.text = "OK"

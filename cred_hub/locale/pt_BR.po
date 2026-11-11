@@ -3726,3 +3726,27 @@ msgstr "O cadastro de {0} do ERP não pôde ser lido ({1}); os novos são lidos 
 
 msgid "Registries to read again"
 msgstr "Cadastros a ler de novo"
+
+msgid "These fields cannot be sent by a webhook: {0}"
+msgstr "Estes campos não podem ser enviados por um webhook: {0}"
+
+msgid "Payload Fields"
+msgstr "Campos do envio"
+
+msgid "Fields Sent"
+msgstr "Campos enviados"
+
+msgid "One field per line (e.g. name, status, ch_my_field, organization, contacts). Empty: every field. Passwords and internal fields are never sent."
+msgstr "Um campo por linha (ex.: name, status, ch_meu_campo, organization, contacts). Vazio: todos os campos. Senhas e campos internos nunca são enviados."
+
+msgid "What a fields admin call changed (arguments sent)"
+msgstr "O que uma chamada de Campos e regras mudou (argumentos enviados)"
+
+msgid "Send the document in the multipart field file."
+msgstr "Envie o documento no campo multipart file."
+
+msgid "The card {0} belongs to another organization."
+msgstr "O card {0} é de outra organização."
+
+msgid "The file could not be read. Send a valid document."
+msgstr "Não foi possível ler o arquivo. Envie um documento válido."
