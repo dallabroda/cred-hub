@@ -49,46 +49,6 @@ WALLET = "Cred Hub Credit Wallet"
 # Recarga mínima de créditos de bureaus Premium (mesmo piso do Asaas que MIN_CHARGE, decisão do dono 30/10/2026)
 MIN_CREDIT_TOPUP = 10
 UNLIMITED = 1_000_000
-# Catálogo de planos em 3 níveis + grandfathering (free_legacy para empresas criadas antes dos planos pagos)
-PLAN_CATALOG = {
-	"free_legacy": {
-		"id": "free_legacy",
-		"name": "Plano Legado (Free + Extras)",
-		"base_price": 0,
-		"included_users": FREE_USERS,
-		"extra_user_price": PRICE_PER_USER,
-		"included_opinions": 30,
-		"has_credit_and_collection": True,
-	},
-	"vendas": {
-		"id": "vendas",
-		"name": "CRM Vendas",
-		"base_price": 119,
-		"included_users": 2,
-		"extra_user_price": 49,
-		"included_opinions": 0,
-		"has_credit_and_collection": False,
-	},
-	"credito_cobranca": {
-		"id": "credito_cobranca",
-		"name": "Crédito & Cobrança — Pro",
-		"badge": "Recomendado",
-		"base_price": 449,
-		"included_users": 5,
-		"extra_user_price": 59,
-		"included_opinions": 30,
-		"has_credit_and_collection": True,
-	},
-	"enterprise": {
-		"id": "enterprise",
-		"name": "Enterprise",
-		"base_price": 990,
-		"included_users": UNLIMITED,
-		"extra_user_price": 0,
-		"included_opinions": 100,
-		"has_credit_and_collection": True,
-	},
-}
 # Menor cobrança avulsa aceita pelo Asaas no cartão; diferença menor não é cobrada (entra na próxima fatura)
 MIN_CHARGE = 5
 # Prazo para pagar a diferença de um aumento (os usuários novos já entram na hora)
@@ -158,31 +118,9 @@ def ensure_trial():
 	return f"teste grátis até {plan.trial_ends_on}"
 
 
-def plan_tier_of(plan=None) -> str:
-	"""Tier ativo do plano (`free_legacy`, `vendas`, `credito_cobranca` ou `enterprise`).
-	Empresas antigas sem `plan_tier` gravado permanecem em `free_legacy` (grandfathering)."""
-	plan = plan or _plan()
-	tier = (plan.get("plan_tier") or "").strip()
-	return tier if tier in PLAN_CATALOG else "free_legacy"
-
-
-def _tier_spec(tier: str | None) -> dict:
-	return PLAN_CATALOG.get(tier or "free_legacy", PLAN_CATALOG["free_legacy"])
-
-
-def _monthly_for(tier: str | None, extra_users: int) -> int:
-	spec = _tier_spec(tier)
-	extras = 0 if cint(spec["included_users"]) >= UNLIMITED else max(0, cint(extra_users))
-	return cint(spec["base_price"]) + cint(spec["extra_user_price"]) * extras
-
-
 def _trial_contract(plan):
-	"""Plano ou extras contratados durante o teste, com a 1ª fatura (no dia seguinte ao fim do teste) ainda não paga."""
-	return bool(
-		cint(plan.contracted_in_trial)
-		and plan.next_due_date
-		and (cint(plan.pending_extra_users) or plan.get("pending_plan_tier"))
-	)
+	"""Extras contratados durante o teste, com a 1ª fatura (no dia seguinte ao fim do teste) ainda não paga."""
+	return bool(cint(plan.contracted_in_trial) and plan.next_due_date and cint(plan.pending_extra_users))
 
 
 def user_limit(plan=None):
@@ -191,23 +129,16 @@ def user_limit(plan=None):
 	plan = plan or _plan()
 	if in_trial(plan):
 		return UNLIMITED
-	# Extras e vagas do plano valem com a assinatura em dia e, vencida, durante a tolerância
+	# Extras valem com a assinatura em dia e, vencida, durante a tolerância
 	in_grace = plan.status == "Past Due" and plan.grace_until and getdate(plan.grace_until) >= getdate()
-	if plan.status == "Active" or in_grace:
-		spec = _tier_spec(plan_tier_of(plan))
-		if cint(spec["included_users"]) >= UNLIMITED:
-			return UNLIMITED
-		return cint(spec["included_users"]) + cint(plan.extra_users)
+	extras = cint(plan.extra_users) if plan.status == "Active" or in_grace else 0
 	if _trial_contract(plan) and (
 		in_grace
 		or (plan.status == "Awaiting Payment" and getdate() <= getdate(add_days(plan.next_due_date, GRACE_DAYS)))
 	):
 		# Contratados no teste: valem até a tolerância da 1ª fatura, para ninguém ser pausado na virada do teste
-		spec = _tier_spec(plan.get("pending_plan_tier") or plan_tier_of(plan))
-		if cint(spec["included_users"]) >= UNLIMITED:
-			return UNLIMITED
-		return cint(spec["included_users"]) + cint(plan.pending_extra_users)
-	return FREE_USERS
+		extras = cint(plan.pending_extra_users)
+	return FREE_USERS + extras
 
 
 def active_users(exclude=None):
@@ -271,21 +202,11 @@ def get_plan():
 		"User", filters={"credhub_paused": 1}, fields=["name", "full_name"], order_by="creation asc"
 	)
 	trial_end = trial_ends_on(plan)
-	tier = plan_tier_of(plan)
-	spec = _tier_spec(tier)
-	trial_active = in_trial(plan)
 	return {
 		"limit": user_limit(plan),
-		"free": cint(spec["included_users"]) if plan.status == "Active" and tier != "free_legacy" else FREE_USERS,
-		"plan_tier": tier,
-		"pending_plan_tier": plan.get("pending_plan_tier"),
-		"base_price": cint(spec["base_price"]),
-		"included_users": cint(spec["included_users"]),
-		"included_opinions": 30 if trial_active else cint(spec["included_opinions"]),
-		"has_credit_and_collection": True if trial_active else bool(spec["has_credit_and_collection"]),
-		"plans_catalog": PLAN_CATALOG,
+		"free": FREE_USERS,
 		# Teste grátis com usuários ilimitados até trial_ends_on (inclusive)
-		"in_trial": trial_active,
+		"in_trial": in_trial(plan),
 		"trial_ends_on": trial_end,
 		"trial_days_left": max(date_diff(trial_end, getdate()) + 1, 0),
 		"extras": cint(plan.extra_users),
@@ -310,7 +231,7 @@ def get_plan():
 		"status": plan.status,
 		"next_due": plan.next_due_date,
 		"amount": plan.monthly_amount or 0,
-		"price_per_user": cint(spec["extra_user_price"]) if tier != "free_legacy" else PRICE_PER_USER,
+		"price_per_user": PRICE_PER_USER,
 		"currency": "BRL",
 		"invoice_url": plan.invoice_url,
 		"paused_users": paused,
@@ -354,8 +275,8 @@ def _clean_payer(payer):
 
 
 @frappe.whitelist(methods=["POST"])
-def request_extra_users(quantity: int, payer=None, plan_tier: str | None = None):
-	"""Quantos usuários extras (e qual plano) a empresa quer. Devolve {ok, invoice_url, status} ou {ok: False, ...}."""
+def request_extra_users(quantity: int, payer=None):
+	"""Quantos usuários extras a empresa quer (0 = só os grátis). Devolve {ok, invoice_url, status} ou {ok: False, ...}."""
 	frappe.only_for("System Manager")
 	if not billing_enabled():
 		frappe.throw(_("Billing is not available right now. Please try again later."))
@@ -363,33 +284,13 @@ def request_extra_users(quantity: int, payer=None, plan_tier: str | None = None)
 	if quantity < 0 or quantity > 500:
 		return _field_error("quantity", _("Choose between 0 and 500 extra users."))
 	plan = _plan()
-	if plan_tier is not None and str(plan_tier).strip():
-		target_tier = str(plan_tier).strip()
-		if target_tier not in PLAN_CATALOG:
-			return _field_error("plan_tier", _("Choose a valid plan."))
-	else:
-		target_tier = plan_tier_of(plan)
-
-	if target_tier == "enterprise":
-		quantity = 0
-
 	if plan.status == "Active" and plan.asaas_subscription_id:
-		return _change_active_plan(plan, quantity, target_tier)
+		return _change_active_plan(plan, quantity)
 
-	value = _monthly_for(target_tier, quantity)
-	if value == 0:
+	if quantity == 0:
 		# Sem assinatura paga não há vaga paga a preservar: volta a só os grátis
 		_forget_subscription(plan)
-		_save_plan(
-			plan,
-			status="Free",
-			plan_tier="free_legacy",
-			monthly_amount=0,
-			invoice_url=None,
-			next_due_date=None,
-			grace_until=None,
-			**_cleared(),
-		)
+		_save_plan(plan, status="Free", monthly_amount=0, invoice_url=None, next_due_date=None, grace_until=None, **_cleared())
 		pause_over_limit("downgrade")
 		return {"ok": True, "invoice_url": None, "status": "Free"}
 
@@ -401,6 +302,7 @@ def request_extra_users(quantity: int, payer=None, plan_tier: str | None = None)
 	# Assinatura antiga sem pagamento (aguardando, em atraso ou cancelada): começa de novo
 	_forget_subscription(plan)
 	customer = plan.asaas_customer_id or _create_customer(clean)
+	value = PRICE_PER_USER * quantity
 	subscription = _asaas(
 		"POST",
 		"/subscriptions",
@@ -411,7 +313,7 @@ def request_extra_users(quantity: int, payer=None, plan_tier: str | None = None)
 			# Contratado no teste, nada é cobrado antes de ele acabar
 			"nextDueDate": str(add_days(trial_ends_on(plan), 1) if in_trial(plan) else getdate()),
 			"cycle": "MONTHLY",
-			"description": _description(quantity, target_tier),
+			"description": _description(quantity),
 			"externalReference": frappe.local.site,
 		},
 	)
@@ -429,24 +331,13 @@ def request_extra_users(quantity: int, payer=None, plan_tier: str | None = None)
 		invoice_url=invoice_url,
 		next_due_date=subscription.get("nextDueDate"),
 		grace_until=None,
-		# A 1ª assinatura libera o plano e os extras quando o 1º pagamento é confirmado
-		**{
-			**_cleared(),
-			"pending_extra_users": quantity,
-			"pending_plan_tier": target_tier if target_tier != "free_legacy" else None,
-		},
+		# A 1ª assinatura libera os extras quando o 1º pagamento é confirmado
+		**{**_cleared(), "pending_extra_users": quantity},
 	)
 	return {"ok": True, "invoice_url": invoice_url, "status": "Awaiting Payment"}
 
 
-def _description(quantity, tier="free_legacy"):
-	if tier and tier != "free_legacy":
-		spec = _tier_spec(tier)
-		if cint(spec["included_users"]) >= UNLIMITED:
-			return f"HubTech CRM - {spec['name']} (usuários ilimitados) - {frappe.local.site}"
-		if quantity:
-			return f"HubTech CRM - {spec['name']} + {quantity} usuário(s) extra(s) - {frappe.local.site}"
-		return f"HubTech CRM - {spec['name']} - {frappe.local.site}"
+def _description(quantity):
 	return f"HubTech CRM - {quantity} usuário(s) a mais - {frappe.local.site}"
 
 
@@ -454,7 +345,6 @@ def _cleared():
 	"""Campos de aumento e diminuição em andamento, zerados."""
 	return {
 		"pending_extra_users": 0,
-		"pending_plan_tier": None,
 		"upgrade_payment_id": None,
 		"upgrade_base_users": 0,
 		"upgrade_due_date": None,
@@ -463,7 +353,7 @@ def _cleared():
 	}
 
 
-def _change_active_plan(plan, quantity, target_tier="free_legacy"):
+def _change_active_plan(plan, quantity):
 	"""Assinatura ativa. Padrão de mercado, sem prejudicar o cliente (decisão do dono, 26/10/2026):
 	- aumentar libera na hora e cobra a diferença proporcional por link, com 3 dias de prazo (a conta do Asaas não
 	  guarda o cartão para cobrar sozinha); sem pagamento no prazo, só os usuários novos são pausados até pagar;
@@ -472,70 +362,46 @@ def _change_active_plan(plan, quantity, target_tier="free_legacy"):
 	error = _drop_upgrade_payment(plan)
 	if error:
 		return error
-	current_tier = plan_tier_of(plan)
 	paid = cint(plan.extra_users)
-	paid_monthly = _monthly_for(current_tier, paid)
-	new_monthly = _monthly_for(target_tier, quantity)
-
 	if plan.scheduled_from:
 		# Mudou de ideia antes da virada: a mensalidade volta ao que está pago e o agendamento sai
 		_asaas(
 			"PUT",
 			f"/subscriptions/{plan.asaas_subscription_id}",
-			{"value": paid_monthly, "description": _description(paid, current_tier), "updatePendingPayments": True},
+			{"value": PRICE_PER_USER * paid, "description": _description(paid), "updatePendingPayments": True},
 		)
-		_save_plan(
-			plan,
-			scheduled_extra_users=0,
-			scheduled_from=None,
-			pending_plan_tier=None,
-			monthly_amount=paid_monthly,
-		)
+		_save_plan(plan, scheduled_extra_users=0, scheduled_from=None, monthly_amount=PRICE_PER_USER * paid)
 
-	if target_tier == current_tier and quantity == paid:
+	if quantity == paid:
 		return {"ok": True, "invoice_url": None, "status": "Active"}
 
-	if new_monthly < paid_monthly:
-		if new_monthly == 0:
+	if quantity < paid:
+		if quantity == 0:
 			# A assinatura é apagada na véspera do vencimento (daily_check): até lá as vagas pagas continuam
-			_save_plan(
-				plan,
-				scheduled_extra_users=0,
-				scheduled_from=plan.next_due_date,
-				pending_plan_tier="free_legacy",
-				monthly_amount=0,
-			)
+			_save_plan(plan, scheduled_extra_users=0, scheduled_from=plan.next_due_date, monthly_amount=0)
 		else:
 			_asaas(
 				"PUT",
 				f"/subscriptions/{plan.asaas_subscription_id}",
-				{"value": new_monthly, "description": _description(quantity, target_tier), "updatePendingPayments": True},
+				{"value": PRICE_PER_USER * quantity, "description": _description(quantity), "updatePendingPayments": True},
 			)
 			_save_plan(
 				plan,
 				scheduled_extra_users=quantity,
 				scheduled_from=plan.next_due_date,
-				pending_plan_tier=target_tier if target_tier != current_tier else None,
-				monthly_amount=new_monthly,
+				monthly_amount=PRICE_PER_USER * quantity,
 			)
 		return {"ok": True, "invoice_url": None, "status": "Active", "scheduled_from": plan.next_due_date}
 
-	diff_monthly = new_monthly - paid_monthly
-	amount = _prorated_amount(diff_monthly, plan.next_due_date)
+	amount = _prorated(quantity - paid, plan.next_due_date)
 	if amount < MIN_CHARGE:
 		# Diferença abaixo do mínimo do Asaas: não cobra avulso; libera e o valor novo entra na próxima fatura
 		_asaas(
 			"PUT",
 			f"/subscriptions/{plan.asaas_subscription_id}",
-			{"value": new_monthly, "description": _description(quantity, target_tier), "updatePendingPayments": True},
+			{"value": PRICE_PER_USER * quantity, "description": _description(quantity), "updatePendingPayments": True},
 		)
-		_save_plan(
-			plan,
-			plan_tier=target_tier,
-			pending_plan_tier=None,
-			extra_users=quantity,
-			monthly_amount=new_monthly,
-		)
+		_save_plan(plan, extra_users=quantity, monthly_amount=PRICE_PER_USER * quantity)
 		restore_paused()
 		return {"ok": True, "invoice_url": None, "status": "Active", "amount": 0}
 	due = add_days(getdate(), UPGRADE_DUE_DAYS)
@@ -547,16 +413,12 @@ def _change_active_plan(plan, quantity, target_tier="free_legacy"):
 			"billingType": "CREDIT_CARD",
 			"value": amount,
 			"dueDate": str(due),
-			"description": f"HubTech CRM - {quantity - paid} usuário(s) a mais até o próximo vencimento - {frappe.local.site}"
-			if target_tier == current_tier
-			else f"HubTech CRM - Upgrade para {_tier_spec(target_tier)['name']} até o próximo vencimento - {frappe.local.site}",
+			"description": f"HubTech CRM - {quantity - paid} usuário(s) a mais até o próximo vencimento - {frappe.local.site}",
 			"externalReference": frappe.local.site,
 		},
 	)
 	_save_plan(
 		plan,
-		plan_tier=target_tier,
-		pending_plan_tier=target_tier if target_tier != current_tier else None,
 		extra_users=quantity,
 		pending_extra_users=quantity,
 		upgrade_base_users=paid,
@@ -614,7 +476,7 @@ def _forget_subscription(plan):
 		raise
 
 
-def _prorated_amount(monthly_diff, next_due_date):
+def _prorated(extra, next_due_date):
 	"""Diferença proporcional aos dias que faltam até o próximo vencimento (ciclo mensal)."""
 	from frappe.utils import add_months, date_diff
 
@@ -623,12 +485,7 @@ def _prorated_amount(monthly_diff, next_due_date):
 	cycle_start = getdate(add_months(due, -1))
 	days_in_cycle = max(date_diff(due, cycle_start), 1)
 	days_left = min(max(date_diff(due, today), 0), days_in_cycle)
-	return round(monthly_diff * days_left / days_in_cycle, 2)
-
-
-def _prorated(extra, next_due_date, price_per_user=PRICE_PER_USER):
-	"""Diferença proporcional aos dias que faltam até o próximo vencimento (ciclo mensal)."""
-	return _prorated_amount(price_per_user * extra, next_due_date)
+	return round(PRICE_PER_USER * extra * days_left / days_in_cycle, 2)
 
 
 def _create_customer(payer):
@@ -990,10 +847,7 @@ def apply_asaas_event(event, payment_id=None, subscription_id=None):
 		subscription = _asaas("GET", f"/subscriptions/{subscription_id}")
 		values = {"status": "Active", "grace_until": None, "next_due_date": subscription.get("nextDueDate")}
 		if not plan.upgrade_payment_id:
-			# 1ª assinatura: o plano e os extras entram agora (com um aumento em aberto, as vagas já estão certas)
-			if plan.get("pending_plan_tier"):
-				values["plan_tier"] = plan.pending_plan_tier
-				values["pending_plan_tier"] = None
+			# 1ª assinatura: os extras entram agora (com um aumento em aberto, as vagas já estão certas)
 			values.update(extra_users=cint(plan.pending_extra_users) or cint(plan.extra_users), pending_extra_users=0)
 			values["invoice_url"] = None
 		_save_plan(plan, **values)
@@ -1050,19 +904,15 @@ def _apply_upgrade_payment(plan, event, payment_id):
 		)
 		return
 	quantity = cint(plan.pending_extra_users)
-	target_tier = plan.get("pending_plan_tier") or plan_tier_of(plan)
-	new_monthly = _monthly_for(target_tier, quantity)
 	_asaas(
 		"PUT",
 		f"/subscriptions/{plan.asaas_subscription_id}",
-		{"value": new_monthly, "description": _description(quantity, target_tier), "updatePendingPayments": True},
+		{"value": PRICE_PER_USER * quantity, "description": _description(quantity), "updatePendingPayments": True},
 	)
 	_save_plan(
 		plan,
-		plan_tier=target_tier,
-		pending_plan_tier=None,
 		extra_users=quantity,
-		monthly_amount=new_monthly,
+		monthly_amount=PRICE_PER_USER * quantity,
 		pending_extra_users=0,
 		upgrade_payment_id=None,
 		upgrade_base_users=0,
@@ -1093,24 +943,16 @@ def daily_check():
 	_trial_reminder(plan, today)
 	if plan.scheduled_from:
 		turn = getdate(plan.scheduled_from)
-		target_tier = plan.get("pending_plan_tier") or plan_tier_of(plan)
-		is_canceling = cint(plan.scheduled_extra_users) == 0 and target_tier == "free_legacy"
-		if is_canceling and plan.asaas_subscription_id and today >= add_days(turn, -1):
+		if cint(plan.scheduled_extra_users) == 0 and plan.asaas_subscription_id and today >= add_days(turn, -1):
 			# Cancelamento: a assinatura sai na véspera, para não gerar a cobrança do mês seguinte
 			_forget_subscription(plan)
 		if today >= turn:
 			quantity = cint(plan.scheduled_extra_users)
-			values = {
-				"plan_tier": target_tier,
-				"pending_plan_tier": None,
-				"extra_users": quantity,
-				"scheduled_extra_users": 0,
-				"scheduled_from": None,
-			}
-			if is_canceling:
+			values = {"extra_users": quantity, "scheduled_extra_users": 0, "scheduled_from": None}
+			if quantity == 0:
 				values.update(status="Free", monthly_amount=0, next_due_date=None, invoice_url=None)
 			_save_plan(plan, **values)
-			pause_over_limit("canceled" if is_canceling else "downgrade")
+			pause_over_limit("canceled" if quantity == 0 else "downgrade")
 	if plan.status == "Past Due" and plan.grace_until and today > getdate(plan.grace_until):
 		pause_over_limit("past_due")
 	if plan.upgrade_payment_id and plan.upgrade_due_date and today > getdate(plan.upgrade_due_date):
