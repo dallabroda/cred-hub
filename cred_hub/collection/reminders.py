@@ -332,9 +332,12 @@ def run(on_day=None):
 			frappe.db.rollback()
 			frappe.log_error(title=f"Collection reminder {key}")
 			# The step is recorded before the SmartChat call; never sent again, shown as failed
-			if frappe.db.exists(LOG, key):
+			# Only a step still "Sending" is ours and undelivered (a "Sent" one, or another run's, stays as it is)
+			if frappe.db.get_value(LOG, key, "status") == SENDING:
 				frappe.db.set_value(LOG, key, {"status": FAILED, "error": "Unexpected error (support notified)"})
-			status = FAILED
+				status = FAILED
+			else:
+				status = frappe.db.get_value(LOG, key, "status") or FAILED
 		stats[status] = stats.get(status, 0) + 1
 		frappe.db.commit()
 	return stats
@@ -387,7 +390,9 @@ def _send_one(settings, inbox, step, row, key, on_day) -> str:
 		conversation = _deliver(inbox, template, name, phone, params)
 	except welcome.ChatError as e:
 		return _finish(log, deal, FAILED, str(e), label)
-	log.conversation = conversation
+	# Delivered: recorded at once, so nothing after this (the card comment) can mark it as failed
+	log.db_set({"status": SENT, "conversation": conversation, "phone": phone, "error": None})
+	frappe.db.commit()
 	return _finish(log, deal, SENT, "", label, template=step.template_name, phone=phone)
 
 

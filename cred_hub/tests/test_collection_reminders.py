@@ -39,6 +39,10 @@ class TestCollectionReminders(IntegrationTestCase):
 		self.commit.start()
 		self.addCleanup(self.commit.stop)
 		self.pipeline = frappe.get_doc({"doctype": "CRM Pipeline", "pipeline_name": f"Cobrança régua {frappe.generate_hash(length=6)}"}).insert()
+		# A funnel needs a stage (CRM Deal Status linked to it) before a card can be created in it
+		frappe.get_doc(
+			{"doctype": "CRM Deal Status", "deal_status": f"Em cobrança {frappe.generate_hash(length=6)}", "pipeline": self.pipeline.name, "type": "Open", "position": 1}
+		).insert()
 		settings = frappe.get_single("Cred Hub Provider Settings")
 		frappe.db.set_single_value("Cred Hub Provider Settings", "collection_pipeline", self.pipeline.name)
 		self.addCleanup(frappe.db.set_single_value, "Cred Hub Provider Settings", "collection_pipeline", settings.collection_pipeline)
@@ -136,6 +140,15 @@ class TestCollectionReminders(IntegrationTestCase):
 		log = frappe.get_doc(reminders.LOG, f"{deal.titles[0].name}:5")
 		self.assertEqual(log.status, "Failed")
 		self.assertIn("131026", log.error)
+
+	def test_an_error_after_delivery_keeps_it_sent(self):
+		deal = self._deal()
+		with patch.object(reminders, "_finish", side_effect=RuntimeError("comment failed")):
+			chat, stats = self._run()
+		self.assertEqual(len(chat.calls), 1)
+		self.assertEqual(stats.get("Sent"), 1)
+		log = frappe.get_doc(reminders.LOG, f"{deal.titles[0].name}:5")
+		self.assertEqual((log.status, log.conversation), ("Sent", "901"))
 
 	def test_turned_off_sends_nothing(self):
 		frappe.db.set_single_value(reminders.SETTINGS, "enabled", 0)
