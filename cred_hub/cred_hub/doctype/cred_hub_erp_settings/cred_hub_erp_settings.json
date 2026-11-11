@@ -28,6 +28,14 @@
   "last_paid_sync",
   "last_sync_message",
   "last_sync_report",
+  "cedente_section",
+  "cedente_send_enabled",
+  "cedente_trigger",
+  "cedente_pipeline",
+  "cedente_stage",
+  "cedente_column",
+  "default_manager",
+  "sector_by_cnae",
   "mapping_section",
   "cedente_field_map"
  ],
@@ -156,6 +164,58 @@
    "read_only": 1
   },
   {
+   "fieldname": "cedente_section",
+   "fieldtype": "Section Break",
+   "label": "Cedente registration (credit funnel)",
+   "description": "Registers the card's company as a cedente in the ERP with the data enriched by the Receita. Only the credit funnel: collection cedentes are already in the ERP."
+  },
+  {
+   "fieldname": "cedente_send_enabled",
+   "fieldtype": "Check",
+   "label": "Register cedentes in the ERP",
+   "default": "0",
+   "description": "Off by default. Each attempt leaves a note on the card and on the company: registered (with the manager), already registered, missing data or refused by the ERP."
+  },
+  {
+   "fieldname": "cedente_trigger",
+   "fieldtype": "Select",
+   "label": "When",
+   "options": "Card enters a stage\nManual only",
+   "default": "Card enters a stage"
+  },
+  {
+   "fieldname": "cedente_pipeline",
+   "fieldtype": "Link",
+   "label": "Funnel",
+   "options": "CRM Pipeline",
+   "depends_on": "eval:doc.cedente_send_enabled",
+   "description": "The credit funnel. Empty: the credit funnel of the credit settings."
+  },
+  {
+   "fieldname": "cedente_stage",
+   "fieldtype": "Link",
+   "label": "Stage",
+   "options": "CRM Deal Status",
+   "depends_on": "eval:doc.cedente_send_enabled && doc.cedente_trigger=='Card enters a stage'",
+   "description": "A card that enters this stage sends its company to the ERP."
+  },
+  {
+   "fieldname": "cedente_column",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "default_manager",
+   "fieldtype": "Data",
+   "label": "Default manager (Smart Securities)",
+   "description": "Name of the Smart manager used when the card owner is not one. As written in the Smart."
+  },
+  {
+   "fieldname": "sector_by_cnae",
+   "fieldtype": "Small Text",
+   "label": "Sector by CNAE division (optional)",
+   "description": "Only to override the automatic sector, one per line: 62 = Serviço de TI. Without it the sector comes from the CNAE, by the Smart's sector names."
+  },
+  {
    "fieldname": "mapping_section",
    "fieldtype": "Section Break",
    "label": "Cedente field mapping",
@@ -184,7 +244,7 @@
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-11-10 22:00:00.000000",
+ "modified": "2026-11-10 23:30:00.000000",
  "modified_by": "Administrator",
  "module": "Cred Hub",
  "name": "Cred Hub ERP Settings",

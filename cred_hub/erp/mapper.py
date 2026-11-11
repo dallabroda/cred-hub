@@ -41,6 +41,8 @@ TRANSFORMS = {
 	"street_number": formats.street_number,
 	"person_type": formats.person_type,
 	"bool": lambda v: str(v).strip().lower() in ("1", "true", "yes", "sim", "s"),
+	# "6204000 - Consultoria em TI" -> "6204000" (the CNAE code only, never digits of the description)
+	"cnae_code": lambda v: formats.digits(str(v).strip().split(" ")[0]),
 }
 
 
@@ -179,53 +181,65 @@ def _rule(erp_field, source="", transform="", default=None, required=False, labe
 	}
 
 
-# Starting point offered to every company; each one edits it in the settings.
+# Starting point offered to every company; each one edits it in the settings. Sources come from the Organization
+# enriched by the Receita (OpenCNPJ/BrasilAPI: address in parts, IBGE code, tax regime), the card's main contact and
+# the credit committee's approved limit (credtech#367). Fields marked "auto" are resolved by the sending step from the
+# ERP's own lists (sector by the CNAE, manager by the card owner or the company default, tax regime): no ERP id is
+# ever typed in the CRM.
 DEFAULT_RULES = {
 	"WBA": [
 		_rule("documento", "organization.cnpj", "digits", required=True, label="CPF/CNPJ"),
 		_rule("tipoPessoa", "organization.cnpj", "person_type", required=True, label="Person type"),
 		_rule("cadastroAtivo", "", "bool", "1", label="Active"),
 		_rule("pessoaJuridica.razaoSocial", "organization.legal_name|organization.organization_name", "trim", required=True, label="Legal name"),
-		_rule("pessoaJuridica.situacaoCadastral", "", "upper", "ATIVA", label="Registration status"),
-		_rule("cedente.limite", "deal.deal_value", "decimal", label="Credit limit"),
+		_rule("pessoaJuridica.nomeFantasia", "organization.trade_name", "trim", label="Trade name"),
+		_rule("pessoaJuridica.situacaoCadastral", "organization.registration_status", "upper", "ATIVA", label="Registration status"),
+		_rule("pessoaJuridica.cnae", "organization.main_cnae", "cnae_code", label="CNAE"),
+		_rule("pessoaJuridica.naturezaJuridica", "organization.legal_nature", "trim", label="Legal nature"),
+		_rule("pessoaJuridica.dataAbertura", "organization.activity_start_date", "br_date", label="Opening date"),
+		_rule("site", "organization.website", "trim", label="Website"),
+		_rule("cedente.limite", "credit.approved_limit", "decimal", label="Credit limit (approved by the committee)"),
 		_rule("cedente.floatingMinimo", "", "int", "1", label="Minimum floating (days)"),
-		_rule("contato", "contact.full_name", "trim", required=True, label="Contact name"),
+		_rule("contato", "contact.full_name|organization.legal_name", "trim", required=True, label="Contact name"),
 		_rule("email", "organization.registry_email|contact.email_id", "lower", required=True, label="Company e-mail"),
-		_rule("emailContato", "contact.email_id", "lower", label="Contact e-mail"),
+		_rule("emailContato", "contact.email_id|organization.registry_email", "lower", label="Contact e-mail"),
 		_rule("telefone.ddd", "organization.registry_phone", "phone_ddd_int", label="Phone area code"),
 		_rule("telefone.numero", "organization.registry_phone", "phone_number_int", label="Phone"),
 		_rule("celular.ddd", "contact.mobile_no", "phone_ddd_int", label="Mobile area code"),
 		_rule("celular.numero", "contact.mobile_no", "phone_number_int", label="Mobile"),
 		_rule("endereco.cep", "address.pincode", "digits", required=True, label="ZIP code"),
-		_rule("endereco.endereco", "address.address_line1", "street", required=True, label="Street"),
-		_rule("endereco.numero", "address.address_line1", "street_number", "S/N", label="Number"),
-		_rule("endereco.complemento", "address.address_line2", "trim", label="Complement"),
-		_rule("endereco.bairro", "organization.neighborhood|address.address_line2", "trim", required=True, label="District"),
-		_rule("endereco.cidade", "address.city", "trim", required=True, label="City"),
-		_rule("endereco.uf", "address.state", "upper", required=True, label="State"),
-		_rule("endereco.codigoIbge", "address.ibge_code", "digits", label="IBGE city code"),
+		_rule("endereco.logradouro", "organization.address_street_type", "trim", label="Street type"),
+		_rule("endereco.endereco", "organization.address_street|address.address_line1", "street", required=True, label="Street"),
+		_rule("endereco.numero", "organization.address_number|address.address_line1", "street_number", "S/N", label="Number"),
+		_rule("endereco.complemento", "organization.address_complement", "trim", label="Complement"),
+		_rule("endereco.bairro", "organization.neighborhood", "trim", required=True, label="District"),
+		_rule("endereco.cidade", "organization.city|address.city", "trim", required=True, label="City"),
+		_rule("endereco.uf", "organization.state|address.state", "upper", required=True, label="State"),
+		_rule("endereco.codigoIbge", "organization.ibge_code", "digits", label="IBGE city code"),
+		_rule("endereco.pais", "", "trim", "Brasil", label="Country"),
 	],
 	"Smart Securities": [
 		_rule("cpfCnpj", "organization.cnpj", "digits", required=True, label="CPF/CNPJ"),
 		_rule("razaoSocial", "organization.legal_name|organization.organization_name", "ascii", required=True, label="Legal name"),
 		_rule("nomeFantasia", "organization.trade_name", "ascii", label="Trade name"),
 		_rule("clienteDesde", "today", "br_date", required=True, label="Client since"),
-		_rule("numeroContratoMae", AUTO, label="Master contract number"),
+		_rule("numeroContratoMae", AUTO, label="Master contract number (next number from the Smart)"),
 		_rule("emailPrincipal", "organization.registry_email|contact.email_id", "lower", required=True, label="Main e-mail"),
-		_rule("idSetor", "", "int", required=True, label="Sector (Smart ID)"),
-		_rule("idGerente", "", "int", required=True, label="Manager (Smart ID)"),
+		_rule("idSetor", AUTO, label="Sector (from the CNAE, by the Smart's sector names)"),
+		_rule("idGerente", AUTO, label="Manager (card owner, else the default manager)"),
+		_rule("idRegimeTributario", AUTO, label="Tax regime (from the Receita)"),
 		_rule("dataFundacao", "organization.activity_start_date", "br_date", label="Foundation date"),
 		_rule("capitalSocial", "organization.share_capital", "br_money", label="Share capital"),
-		_rule("cnae", "organization.main_cnae", "digits", label="CNAE"),
+		_rule("cnae", "organization.main_cnae", "cnae_code", label="CNAE"),
 		_rule("cepEnderecoPrincipal", "address.pincode", "int", required=True, label="ZIP code"),
 		_rule("logradouroEnderecoPrincipal", "address.address_line1", "street", required=True, label="Street"),
-		_rule("numeroEnderecoPrincipal", "address.address_line1", "street_number", "1", required=True, label="Number"),
-		_rule("complementoEnderecoPrincipal", "address.address_line2", "ascii", label="Complement"),
-		_rule("bairroEnderecoPrincipal", "organization.neighborhood|address.address_line2", "ascii", required=True, label="District"),
-		_rule("codigoMunicipioIbgeEnderecoPrincipal", "address.ibge_code", "int", required=True, label="IBGE city code"),
+		_rule("numeroEnderecoPrincipal", "organization.address_number|address.address_line1", "street_number", "1", required=True, label="Number"),
+		_rule("complementoEnderecoPrincipal", "organization.address_complement", "ascii", label="Complement"),
+		_rule("bairroEnderecoPrincipal", "organization.neighborhood", "ascii", required=True, label="District"),
+		_rule("codigoMunicipioIbgeEnderecoPrincipal", "organization.ibge_code", "int", required=True, label="IBGE city code"),
 		_rule("enderecoCobrancaIgualAoEnderecoPrincipal", "", "int", "1", label="Billing address = main"),
-		_rule("telefones[0].ddd", "contact.mobile_no", "phone_ddd", label="Contact phone area code"),
-		_rule("telefones[0].numero", "contact.mobile_no", "phone_number", label="Contact phone"),
+		_rule("telefones[0].ddd", "contact.mobile_no|organization.registry_phone", "phone_ddd", label="Phone area code"),
+		_rule("telefones[0].numero", "contact.mobile_no|organization.registry_phone", "phone_number", label="Phone"),
 		_rule("telefones[0].nomeContato", "contact.full_name", "ascii", label="Contact name"),
 	],
 }

@@ -3350,3 +3350,112 @@ msgstr "O título {0} foi quitado na {1}, mas o protesto dele ainda está ativo 
 
 msgid "sent"
 msgstr "enviado"
+
+# Cadastro de cedente no ERP a partir do funil de crédito (credtech#367)
+msgid "Turn on the cedente registration in the ERP integration settings first."
+msgstr "Ligue antes o cadastro de cedentes nas configurações da integração com o ERP."
+
+msgid "Only cards of the credit funnel register the cedente in the ERP."
+msgstr "Só cards do funil de crédito cadastram o cedente no ERP."
+
+msgid "The card has no company to register."
+msgstr "O card não tem empresa para cadastrar."
+
+msgid "Sending to the ERP. The result appears in the card's activity."
+msgstr "Enviando ao ERP. O resultado aparece na atividade do card."
+
+msgid "{0} refused the cedente registration: {1}"
+msgstr "A {0} recusou o cadastro do cedente: {1}"
+
+msgid "The cedente was already registered in Smart Securities (code {0}). Nothing was sent: the Smart does not accept updates by API."
+msgstr "O cedente já estava cadastrado na Smart Securities (código {0}). Nada foi enviado: a Smart não aceita atualizar cadastro pela API."
+
+msgid "Sector (no Smart sector matches the CNAE; set it in the ERP settings)"
+msgstr "Setor (nenhum setor da Smart corresponde ao CNAE; defina nas configurações do ERP)"
+
+msgid "Manager (the card owner is not a Smart manager and there is no default manager)"
+msgstr "Gerente (o responsável pelo card não é gerente na Smart e não há gerente padrão)"
+
+msgid "The cedente was already registered in Smart Securities. Nothing was sent."
+msgstr "O cedente já estava cadastrado na Smart Securities. Nada foi enviado."
+
+msgid "Cedente registered in Smart Securities. Code: {0} · Manager: {1} ({2}) · Sector: {3} · Tax regime: {4} · Master contract: {5}."
+msgstr "Cedente cadastrado na Smart Securities. Código: {0} · Gerente: {1} ({2}) · Setor: {3} · Regime tributário: {4} · Contrato-mãe: {5}."
+
+msgid "card owner"
+msgstr "responsável pelo card"
+
+msgid "default manager"
+msgstr "gerente padrão"
+
+msgid "The cedente was already registered in WBA (code {0}). Nothing was sent."
+msgstr "O cedente já estava cadastrado na WBA (código {0}). Nada foi enviado."
+
+msgid "Cedente registration sent to WBA. WBA confirms it later; the registration appears in WBA in a few minutes."
+msgstr "Cadastro do cedente enviado à WBA. A WBA confirma depois; o cadastro aparece na WBA em alguns minutos."
+
+msgid "Cedente not sent to {0}: missing {1}. Complete it on the company and send again."
+msgstr "Cedente não enviado à {0}: falta {1}. Complete na empresa e envie de novo."
+
+msgid "Field mapping errors: {0}"
+msgstr "Erros no de-para de campos: {0}"
+
+msgid "Choose the credit funnel for the cedente registration."
+msgstr "Escolha o funil de crédito para o cadastro de cedentes."
+
+msgid "The cedente registration is for the credit funnel: collection cedentes are already in the ERP."
+msgstr "O cadastro de cedentes é para o funil de crédito: os cedentes da cobrança já estão no ERP."
+
+msgid "Choose the stage that sends the cedente to the ERP."
+msgstr "Escolha a etapa que envia o cedente ao ERP."
+
+msgid "The stage must belong to the chosen funnel."
+msgstr "A etapa precisa ser do funil escolhido."
+
+msgid "Cedente registration (credit funnel)"
+msgstr "Cadastro de cedente (funil de crédito)"
+
+msgid "Register cedentes in the ERP"
+msgstr "Cadastrar cedentes no ERP"
+
+msgid "Card enters a stage"
+msgstr "Card entra em uma etapa"
+
+msgid "Manual only"
+msgstr "Só manual"
+
+msgid "Default manager (Smart Securities)"
+msgstr "Gerente padrão (Smart Securities)"
+
+msgid "Sector by CNAE division (optional)"
+msgstr "Setor por divisão do CNAE (opcional)"
+
+msgid "Street Type"
+msgstr "Tipo de logradouro"
+
+msgid "Street"
+msgstr "Logradouro"
+
+msgid "City IBGE Code"
+msgstr "Código IBGE do município"
+
+msgid "Tax Regime"
+msgstr "Regime tributário"
+
+msgid "Lucro Real"
+msgstr "Lucro Real"
+
+msgid "Lucro Presumido"
+msgstr "Lucro Presumido"
+
+msgid "Simples Nacional"
+msgstr "Simples Nacional"
+
+msgid "Another cedente registration is running. Send this card again in a minute."
+msgstr "Outro cadastro de cedente está em andamento. Envie este card de novo em um minuto."
+
+msgid "The cedente registration stopped because of an unexpected error. Support was notified. Check in the ERP whether the cedente was created before sending again."
+msgstr "O cadastro do cedente parou por um erro inesperado. O suporte foi avisado. Confira no ERP se o cedente foi criado antes de enviar de novo."
+
+msgid "The cedente was already sent to WBA and is waiting for WBA to register it. Nothing was sent again."
+msgstr "O cedente já foi enviado à WBA e está aguardando a WBA cadastrar. Nada foi reenviado."

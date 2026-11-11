@@ -102,6 +102,26 @@ Base da integração nativa com os ERPs de retaguarda de securitizadoras, factor
   - Nunca atribui responsável (quem atribui é o cliente) e nunca chuta a espécie. Cada título guarda o seu sacado (`sacado`/`sacado_contact`); o protesto usa o sacado do título.
   - **Antes do deploy:** confirmar com um cliente Smart real se o `VALOR` do `emaberto` é saldo em aberto ou valor de face.
 
+#### Cadastro do cedente no ERP pelo funil de Crédito (`erp/cedente.py`, credtech#367)
+
+- **Só o funil de Crédito.** Na Cobrança o cedente já está no ERP.
+- **Gatilho configurável pelo cliente** em `Cred Hub ERP Settings`, desligado por padrão: "Card entra em uma etapa" (funil + etapa; a etapa precisa ser do funil e o funil não pode ser o de Cobrança) ou "Só manual" (`cred_hub.erp.settings.send_cedente`).
+- **Dados enriquecidos.** A Organização preenchida pela Receita (OpenCNPJ/BrasilAPI) agora guarda o endereço em partes (tipo, logradouro, número, complemento), o código IBGE do município e o regime tributário:
+  - o IBGE vem da BrasilAPI ou, pela OpenCNPJ, do CEP via ViaCEP;
+  - organizações antigas são completadas no envio, de graça.
+- **O de-para padrão usa:** esses campos, o contato principal do card e o limite aprovado no comitê de crédito.
+- **Nenhum ID do ERP no CRM.** Na Smart, o envio resolve sozinho pelas listas dela:
+  - setor pelo CNAE (o mais específico, ex.: 62 → "Serviço de TI"; a empresa pode trocar por divisão);
+  - gerente pelo responsável pelo card ou, se não houver, o **gerente padrão** da empresa;
+  - regime: Real/Presumido/Simples/MEI → R/P/S/M;
+  - contrato-mãe: próximo número da Smart.
+- **Nunca reenvia CNPJ que já está no ERP.** A Smart não aceita atualizar nem excluir cadastro pela API.
+- **Cada tentativa deixa um comentário** no card e na empresa: cadastrado (com código, gerente e de onde ele veio, setor, regime, contrato-mãe), já cadastrado, falta dado ou recusado pelo ERP.
+- **Teste real em 10/11/2026** na Smart do cliente de teste:
+  - sem gerente a Smart recusa (`O parâmetro idGerente deve ser informado`);
+  - com gerente, o cadastro é criado;
+  - o relatório `GET /cedente` demora para mostrar inclusões e exclusões.
+
 ## Instalação
 
 ```sh

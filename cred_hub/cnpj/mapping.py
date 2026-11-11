@@ -109,6 +109,34 @@ def _address(tipo, logradouro, numero, complemento, bairro, municipio, uf, cep) 
 	}
 
 
+def _street_parts(tipo, logradouro, numero, complemento) -> dict:
+	"""Endereço em partes, como a Receita manda (os ERPs pedem rua, número e complemento separados; credtech#367)."""
+	return {
+		"address_street_type": " ".join(_clean(tipo)),
+		"address_street": " ".join(_clean(logradouro)),
+		"address_number": " ".join(_clean(numero)),
+		"address_complement": " ".join(_clean(complemento)),
+	}
+
+
+def tax_regime(forms=None, simples=None, mei=None) -> str:
+	"""Regime tributário mais recente: "Lucro Real", "Lucro Presumido", "Simples Nacional" ou "MEI" ("" se a Receita
+	não informa). `forms` é a lista `regime_tributario` da BrasilAPI (um item por ano)."""
+	if _yes_no(mei) == "Yes":
+		return "MEI"
+	if _yes_no(simples) == "Yes":
+		return "Simples Nacional"
+	latest = sorted(forms or [], key=lambda r: r.get("ano") or 0)
+	text = " ".join(str((latest[-1] if latest else {}).get("forma_de_tributacao") or "").upper().split())
+	if "PRESUMIDO" in text:
+		return "Lucro Presumido"
+	if "REAL" in text:
+		return "Lucro Real"
+	if "SIMPLES" in text:
+		return "Simples Nacional"
+	return ""
+
+
 def _partners(lista, nome_key, qualificacao_key, documento_key):
 	partners = []
 	for socio in lista or []:
@@ -146,6 +174,10 @@ def from_opencnpj(data: dict) -> dict:
 		"state": (data.get("uf") or "").strip(),
 		"address": _address(data.get("tipo_logradouro"), data.get("logradouro"), data.get("numero"),
 		                    data.get("complemento"), data.get("bairro"), data.get("municipio"), data.get("uf"), data.get("cep")),
+		**_street_parts(data.get("tipo_logradouro"), data.get("logradouro"), data.get("numero"), data.get("complemento")),
+		# OpenCNPJ só tem o código da Receita (ex.: 6001), não o do IBGE: o cliente busca pelo CEP
+		"ibge_code": "",
+		"tax_regime": tax_regime(simples=data.get("opcao_simples"), mei=data.get("opcao_mei")),
 		"partners": _partners(data.get("QSA") or data.get("qsa"), "nome_socio", "qualificacao_socio", "cnpj_cpf_socio"),
 		"source": "OpenCNPJ",
 	}
@@ -172,6 +204,10 @@ def from_brasilapi(data: dict) -> dict:
 		"state": (data.get("uf") or "").strip(),
 		"address": _address(data.get("descricao_tipo_de_logradouro"), data.get("logradouro"), data.get("numero"),
 		                    data.get("complemento"), data.get("bairro"), data.get("municipio"), data.get("uf"), data.get("cep")),
+		**_street_parts(data.get("descricao_tipo_de_logradouro"), data.get("logradouro"), data.get("numero"),
+		                data.get("complemento")),
+		"ibge_code": only_digits(data.get("codigo_municipio_ibge")),
+		"tax_regime": tax_regime(data.get("regime_tributario"), data.get("opcao_pelo_simples"), data.get("opcao_pelo_mei")),
 		"partners": _partners(data.get("qsa"), "nome_socio", "qualificacao_socio", "cnpj_cpf_do_socio"),
 		"source": "BrasilAPI",
 	}

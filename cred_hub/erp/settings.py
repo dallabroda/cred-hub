@@ -118,3 +118,11 @@ def reset_field_map() -> list:
 	load_default_rules(settings)
 	settings.save()
 	return [row.as_dict() for row in settings.cedente_field_map]
+
+
+@frappe.whitelist(methods=["POST"])
+def send_cedente(deal: str) -> dict:
+	"""Register the card's company as a cedente in the ERP now (credit funnel; credtech#367)."""
+	from .cedente import send_now
+
+	return send_now(deal)
