@@ -1,0 +1,53 @@
+{
+ "actions": [],
+ "creation": "2026-11-11 12:00:00.000000",
+ "description": "Collection reminders (credtech#367): approved WhatsApp templates sent through the SmartChat to the sacado of each open título of the collection funnel, on the days the company chooses. The AI agent and the templates are configured by the company in the SmartChat.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "enabled",
+  "inbox_id",
+  "steps"
+ ],
+ "fields": [
+  {
+   "default": "0",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enabled"
+  },
+  {
+   "fieldname": "inbox_id",
+   "fieldtype": "Int",
+   "label": "WhatsApp Inbox"
+  },
+  {
+   "fieldname": "steps",
+   "fieldtype": "Table",
+   "label": "Steps",
+   "options": "Cred Hub Collection Reminder Step"
+  }
+ ],
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-11-11 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Cred Hub",
+ "name": "Cred Hub Collection Reminders",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "read": 1,
+   "role": "System Manager",
+   "write": 1
+  },
+  {
+   "read": 1,
+   "role": "Sales Manager"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

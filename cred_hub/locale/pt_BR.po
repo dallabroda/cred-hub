@@ -3459,3 +3459,96 @@ msgstr "O cadastro do cedente parou por um erro inesperado. O suporte foi avisad
 
 msgid "The cedente was already sent to WBA and is waiting for WBA to register it. Nothing was sent again."
 msgstr "O cedente já foi enviado à WBA e está aguardando a WBA cadastrar. Nada foi reenviado."
+
+msgid "Sacado name"
+msgstr "Nome do sacado"
+
+msgid "Título number"
+msgstr "Número do título"
+
+msgid "Amount due"
+msgstr "Saldo devedor"
+
+msgid "Days overdue"
+msgstr "Dias de atraso"
+
+msgid "paid or closed"
+msgstr "quitado ou fechado"
+
+msgid "protested"
+msgstr "protestado"
+
+msgid "payment promise"
+msgstr "promessa de pagamento"
+
+msgid "agreement in installments"
+msgstr "acordo em parcelas"
+
+msgid "Two steps on the same day ({0})."
+msgstr "Duas etapas no mesmo dia ({0})."
+
+msgid "Add at least one step to the collection reminders."
+msgstr "Adicione pelo menos uma etapa à régua de cobrança."
+
+msgid "Connect the SmartChat before turning on the collection reminders."
+msgstr "Conecte o SmartChat antes de ligar a régua de cobrança."
+
+msgid "Choose the WhatsApp number of the collection reminders."
+msgstr "Escolha o número de WhatsApp da régua de cobrança."
+
+msgid "This WhatsApp number is not in the connected SmartChat account."
+msgstr "Este número de WhatsApp não está na conta do SmartChat conectada."
+
+msgid "The template {0} is not approved for this WhatsApp number."
+msgstr "O modelo {0} não está aprovado para este número de WhatsApp."
+
+msgid "Choose the título information of each variable of the template {0}."
+msgstr "Escolha a informação do título de cada variável do modelo {0}."
+
+msgid "The SmartChat was disconnected."
+msgstr "O SmartChat foi desconectado."
+
+msgid "The WhatsApp number of the collection reminders is not in the SmartChat account."
+msgstr "O número de WhatsApp da régua de cobrança não está na conta do SmartChat."
+
+msgid "título {0}"
+msgstr "título {0}"
+
+msgid "título due on {0}"
+msgstr "título com vencimento em {0}"
+
+msgid "no mobile number of the sacado"
+msgstr "sacado sem celular"
+
+msgid "the template {0} is no longer approved"
+msgstr "o modelo {0} não está mais aprovado"
+
+msgid "the título has no {0}"
+msgstr "o título não tem {0}"
+
+msgid "Collection reminder {0} of {1} sent to the WhatsApp {2} (template {3})."
+msgstr "Régua de cobrança: {0} do {1} enviado ao WhatsApp {2} (modelo {3})."
+
+msgid "Collection reminder {0} of {1} was not sent: {2}."
+msgstr "Régua de cobrança: {0} do {1} não foi enviado: {2}."
+
+msgid "Cred Hub Collection Reminders"
+msgstr "Régua de cobrança"
+
+msgid "Cred Hub Collection Reminder Log"
+msgstr "Envios da régua de cobrança"
+
+msgid "Days from the due date"
+msgstr "Dias do vencimento"
+
+msgid "WhatsApp Inbox"
+msgstr "Número de WhatsApp"
+
+msgid "Steps"
+msgstr "Etapas"
+
+msgid "Not sent"
+msgstr "Não enviado"
+
+msgid "Sending"
+msgstr "Enviando"
