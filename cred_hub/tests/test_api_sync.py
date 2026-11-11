@@ -83,10 +83,33 @@ class TestApiSync(IntegrationTestCase):
 			{"fields": '{"a": 1}'},
 			{"cursor": "nao-e-cursor"},
 			{"filters": "{quebrado"},
+			{"filters": '[["User", "name", "=", "x"]]'},
+			{"filters": '[["owner_secret_nao_existe", "=", "x"]]'},
+			{"filters": '[["name", "regexp", "x"]]'},
+			{"filters": frappe.as_json([["name", "=", str(i)] for i in range(21)])},
 		):
 			with self.subTest(kwargs=kwargs), self.assertRaises(api_keys.InvalidParameter) as ctx:
 				api_keys.list_records_cursor("CRM Deal", **kwargs)
 			self.assertEqual(ctx.exception.http_status_code, 400)
+
+	def test_password_and_permlevel_fields_cannot_be_read_or_filtered(self):
+		meta = frappe.get_meta("CRM Deal")
+		hidden = frappe._dict(fieldname="ch_secreto", fieldtype="Data", permlevel=1)
+		password = frappe._dict(fieldname="ch_senha", fieldtype="Password", permlevel=0)
+		real_get_field = meta.get_field
+
+		def get_field(name):
+			return {"ch_secreto": hidden, "ch_senha": password}.get(name) or real_get_field(name)
+
+		with patch.object(meta, "get_field", get_field):
+			for field in ("ch_secreto", "ch_senha"):
+				with self.subTest(field=field):
+					with self.assertRaises(api_keys.InvalidParameter):
+						api_keys.list_records_cursor("CRM Deal", fields=["name", field])
+					with self.assertRaises(api_keys.InvalidParameter):
+						api_keys.list_records_cursor("CRM Deal", filters=[[field, "like", "a%"]])
+		page = api_keys.list_records_cursor("CRM Deal", filters={"pipeline": self.pipeline}, fields=["name", "status"])
+		self.assertIn("data", page)
 
 	# ---------- L4, L5 ----------
 
@@ -97,6 +120,15 @@ class TestApiSync(IntegrationTestCase):
 		self.call(token, "/api/method/cred_hub.bulk.bulk_upsert", "POST", form)
 		with self.assertRaises(frappe.RateLimitExceededError):
 			self.call(token, "/api/method/cred_hub.bulk.bulk_upsert", "POST", form)  # 100 escritas > 60
+
+	def test_full_batch_fits_a_small_custom_limit(self):
+		token = self.create(("cards_read", "cards_write"))["token"]
+		key = frappe.get_all(api_keys.KEY, {"key_id": token.split("_")[1]}, pluck="name")[0]
+		frappe.db.set_value(api_keys.KEY, key, "custom_rate_limit", 30)
+		form = {"doctype": "CRM Deal", "records": frappe.as_json([{"pipeline": self.pipeline}] * 50)}
+		self.call(token, "/api/method/cred_hub.bulk.bulk_upsert", "POST", form)  # 50 records, limit 30: still fits
+		with self.assertRaises(frappe.RateLimitExceededError):
+			self.call(token, "/api/method/cred_hub.bulk.bulk_upsert", "POST", form)
 
 	def test_comments_only_of_api_records_and_clamped_limit(self):
 		token = self.create(("comments_read", "cards_read"))["token"]
