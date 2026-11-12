@@ -129,8 +129,14 @@ doc_events = {
 	# OpenAPI por empresa (credtech#375): campos, funis e etapas mudaram, a especificação é gerada de novo
 	"Custom Field": {"on_update": _OPENAPI, "on_trash": _OPENAPI},
 	"Property Setter": {"on_update": _OPENAPI, "on_trash": _OPENAPI},
-	"CRM Pipeline": {"on_update": _OPENAPI, "on_trash": _OPENAPI},
-	"CRM Deal Status": {"on_update": _OPENAPI, "on_trash": _OPENAPI},
+	# O funil Sandbox da API (chaves de teste) não é excluído nem renomeado, nem suas etapas excluídas (credtech#375)
+	"CRM Pipeline": {
+		"validate": "cred_hub.sandbox.validate_pipeline",
+		"before_rename": "cred_hub.sandbox.protect_pipeline",
+		"on_update": _OPENAPI,
+		"on_trash": ["cred_hub.sandbox.protect_pipeline", _OPENAPI],
+	},
+	"CRM Deal Status": {"on_update": _OPENAPI, "on_trash": ["cred_hub.sandbox.protect_stage", _OPENAPI]},
 	"CRM Lead": {
 		# Empresa pelo domínio do e-mail (credtech#183): em fila, nunca atrasa a entrada do lead
 		"after_insert": "cred_hub.email_company.finder.on_lead_insert",

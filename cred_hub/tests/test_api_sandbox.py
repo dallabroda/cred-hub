@@ -3,6 +3,7 @@ data, never runs paid queries, and its events only reach test webhooks.
 Run: `bench --site <site> run-tests --app cred_hub --module cred_hub.tests.test_api_sandbox`."""
 
 import json
+import re
 from unittest.mock import MagicMock, patch
 
 import frappe
@@ -538,3 +539,57 @@ class TestApiSandbox(IntegrationTestCase):
 		for doctype in ("Contact", "CRM Organization", "File", DEAL):
 			names = [row.deleted_name for row in get_deleted_records(doctype)]
 			self.assertNotIn(self.real_org.name, names)
+
+	# ---------- The Sandbox pipeline stays ----------
+
+	def test_nobody_deletes_or_renames_the_sandbox_pipeline_or_deletes_its_stages(self):
+		from crm.api.pipeline import get_pipeline_config, save_pipeline
+
+		frappe.set_user("Administrator")
+		stages = get_pipeline_config(self.sandbox)["stages"]
+		kept = [{"name": s["name"], "deal_status": s["deal_status"]} for s in stages[:-1]]
+		for attempt in (
+			lambda: save_pipeline({"name": self.sandbox, "pipeline_name": "Outro nome"}),
+			lambda: save_pipeline({"name": self.sandbox, "stages": kept}),
+			lambda: frappe.delete_doc("CRM Deal Status", stages[0]["name"], ignore_permissions=True, force=True),
+			lambda: frappe.delete_doc("CRM Pipeline", self.sandbox, ignore_permissions=True, force=True),
+			lambda: frappe.rename_doc("CRM Pipeline", self.sandbox, "sandbox-renamed", force=True),
+		):
+			frappe.db.savepoint("sandbox_attempt")
+			with self.assertRaisesRegex(frappe.ValidationError, re.escape(sandbox.PIPELINE_NAME)):
+				attempt()
+			frappe.db.rollback(save_point="sandbox_attempt")
+		self.assertTrue(frappe.db.exists("CRM Pipeline", self.sandbox))
+		self.assertEqual(len(get_pipeline_config(self.sandbox)["stages"]), len(stages))
+		self.assertEqual(frappe.db.get_value("CRM Pipeline", self.sandbox, "pipeline_name"), sandbox.PIPELINE_NAME)
+		# other changes to the Sandbox and every change to real pipelines still work
+		save_pipeline({"name": self.sandbox, "color": "blue"})
+		self.assertEqual(frappe.db.get_value("CRM Pipeline", self.sandbox, sandbox.PIPELINE_FLAG), 1)
+		save_pipeline({"name": self.real, "pipeline_name": "Real renomeado"})
+		frappe.delete_doc("CRM Pipeline", self.real, ignore_permissions=True, force=True)
+		self.assertFalse(frappe.db.exists("CRM Pipeline", self.real))
+
+	def test_sandbox_data_gets_no_rejection_email_and_real_lookups_never_reuse_it(self):
+		from cred_hub.collection import importer
+		from cred_hub.credit_check import onboarding
+		from cred_hub.party import resolve
+
+		org = self.sandbox_org()
+		frappe.set_user("Administrator")
+		frappe.local.credhub_api_key = None
+		for name, mailed in ((org.name, False), (self.real_org.name, True)):
+			with (
+				patch.object(onboarding, "generate_portal_link", return_value={"portal": {"url": "https://x.example"}}),
+				patch.object(onboarding, "_resolve_rejection_recipient_email", return_value="pessoa@example.com"),
+				patch.object(frappe, "sendmail") as sendmail,
+			):
+				onboarding._notify_document_rejected(name, None, "contrato_social", "Contrato", "ilegível")
+			self.assertEqual(sendmail.called, mailed, name)
+		# an ERP/import debtor with the CNPJ of a test organization never lands on it
+		frappe.db.set_value("CRM Organization", org.name, "cnpj", "11.222.333/0001-81")
+		self.assertIsNone(importer._existing_org("11222333000181"))
+		self.assertIsNone(importer._existing_debtor("11222333000181", "cnpj"))
+		self.assertNotEqual(resolve.organization_for_cnpj("11222333000181", "Devedora"), org.name)
+		# and a test key only finds its own
+		self.as_test_key()
+		self.assertEqual(sandbox.same_space("CRM Organization"), {sandbox.RECORD_FLAG: 1})

@@ -761,7 +761,16 @@ def _notify_document_rejected(
 		except Exception:
 			pass
 
-		# 2. E-mail transacional se houver destinatário
+		# 2. E-mail transacional se houver destinatário (nunca para dados do sandbox da API, credtech#375: o
+		# destinatário de um registro de teste pode ser qualquer pessoa)
+		from cred_hub.sandbox import is_sandbox_record, is_test_user
+
+		if (
+			is_test_user()
+			or is_sandbox_record("CRM Organization", organization_name)
+			or is_sandbox_record("CRM Deal", deal_name)
+		):
+			return
 		recipient = _resolve_rejection_recipient_email(organization_name, deal_name)
 		if recipient and portal_url:
 			company_title = (

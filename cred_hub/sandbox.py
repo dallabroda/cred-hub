@@ -19,6 +19,9 @@ A test key (`is_test`, token `hub_test<id>_<secret>`) is a normal key that can o
   skipped), no ERP cedente, no protest, no collection reminders, no CNPJ/company/e-mail lookups, no Google Calendar.
 - Webhooks: events of sandbox records go only to webhooks flagged `is_test`, and those get nothing else.
 - Every answer to a test key carries `X-HubTech-Test: 1`.
+- The Sandbox pipeline stays: nobody (admin included) deletes or renames it, nor deletes its stages. Automation flows,
+  Frappe notifications/webhooks, assignment, distribution and the ERPNext sync of the crm skip sandbox records
+  (crm.sandbox).
 """
 
 import frappe
@@ -143,6 +146,14 @@ def is_sandbox_record(doctype: str | None, name: str | None, doc=None) -> bool:
 		org = doc.get("organization") if doc is not None else frappe.db.get_value(doctype, name, "organization")
 		return _flagged("CRM Organization", org)
 	return False
+
+
+def same_space(doctype: str) -> dict:
+	"""Filter of the lookups by CPF/CNPJ that reuse a record (imports, ERP sync, card from a lead): real data never
+	links a sandbox record (a real collection card on a test contact would reach it), and a test key only its own."""
+	if not frappe.get_meta(doctype).has_field(RECORD_FLAG):
+		return {}
+	return {RECORD_FLAG: 1 if is_test_user() else 0}
 
 
 def skip_side_effects(doc) -> bool:
@@ -334,6 +345,51 @@ def erp_cedente_on_deal_update(doc, method=None):
 	from cred_hub.erp import cedente
 
 	return cedente.on_deal_update(doc, method)
+
+
+# ---------- The Sandbox pipeline stays ----------
+
+
+def _flagged_pipeline(name: str | None) -> bool:
+	return (
+		bool(name)
+		and frappe.get_meta("CRM Pipeline").has_field(PIPELINE_FLAG)
+		and bool(frappe.db.get_value("CRM Pipeline", name, PIPELINE_FLAG))
+	)
+
+
+def _keep_pipeline():
+	frappe.throw(
+		_(
+			"The {0} pipeline belongs to the test API keys: it and its stages cannot be deleted or renamed. "
+			"Revoke the test keys to stop using it."
+		).format(frappe.bold(PIPELINE_NAME)),
+		frappe.ValidationError,
+		title=_("Sandbox pipeline"),
+	)
+
+
+def validate_pipeline(doc, method=None):
+	"""CRM Pipeline.validate: the Sandbox pipeline keeps its name (the flag never changes either)."""
+	if doc.is_new() or not _flagged_pipeline(doc.name):
+		return
+	if doc.has_value_changed("pipeline_name"):
+		_keep_pipeline()
+	if doc.meta.has_field(PIPELINE_FLAG):
+		doc.set(PIPELINE_FLAG, 1)
+
+
+def protect_pipeline(doc, method=None, *args, **kwargs):
+	"""CRM Pipeline.on_trash and before_rename: the Sandbox pipeline is never deleted nor renamed, by anyone."""
+	if _flagged_pipeline(doc.name):
+		_keep_pipeline()
+
+
+def protect_stage(doc, method=None):
+	"""CRM Deal Status.on_trash: no stage of the Sandbox pipeline is deleted (deleting the pipeline also goes
+	through here, as the crm deletes its stages first)."""
+	if _flagged_pipeline(doc.get("pipeline")):
+		_keep_pipeline()
 
 
 # ---------- Keys ----------

@@ -7,12 +7,15 @@ from frappe import _
 from cred_hub.cnpj.enrich import person_name
 from cred_hub.cnpj.mapping import format_cnpj, only_digits
 from cred_hub.party.document import CNPJ, CPF, document_kind, format_cpf
+from cred_hub.sandbox import same_space
 
 
 def contact_for_cpf(cpf, name: str = "") -> str:
 	"""Contato com esse CPF; senão um novo com o nome e o CPF."""
 	formatted = format_cpf(cpf)
-	found = frappe.get_all("Contact", {"cpf": ("in", (formatted, only_digits(cpf)))}, pluck="name", limit=1)
+	found = frappe.get_all(
+		"Contact", {"cpf": ("in", (formatted, only_digits(cpf))), **same_space("Contact")}, pluck="name", limit=1
+	)
 	if found:
 		return found[0]
 	contact = frappe.new_doc("Contact")
@@ -27,7 +30,12 @@ def organization_for_cnpj(cnpj, name: str = "", values: dict | None = None) -> s
 	digits = only_digits(cnpj)
 	formatted = format_cnpj(digits)
 	values = {"cnpj": formatted, **(values or {})}
-	same_cnpj = frappe.get_all("CRM Organization", {"cnpj": ("in", (formatted, digits))}, pluck="name", limit=1)
+	same_cnpj = frappe.get_all(
+		"CRM Organization",
+		{"cnpj": ("in", (formatted, digits)), **same_space("CRM Organization")},
+		pluck="name",
+		limit=1,
+	)
 	if same_cnpj:
 		return same_cnpj[0]
 
