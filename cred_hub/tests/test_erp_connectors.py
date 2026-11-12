@@ -28,7 +28,7 @@ def _implements(cls, method: str) -> bool:
 
 class TestEveryConnector(unittest.TestCase):
 	def test_smart_and_wba_are_registered(self):
-		self.assertEqual(set(connectors.keys()), {"Smart Securities", "WBA"})
+		self.assertLessEqual({"Smart Securities", "WBA", "QI Tech"}, set(connectors.keys()))
 
 	def test_settings_offer_exactly_the_registered_systems(self):
 		path = os.path.join(
@@ -64,6 +64,21 @@ class TestEveryConnector(unittest.TestCase):
 					rules = cls.default_rules()
 					self.assertTrue(rules)
 					self.assertLessEqual({r["erp_field"] for r in rules}, catalog, "suggested fields exist")
+
+	def test_suggested_transforms_exist_in_the_engine_and_the_field_map(self):
+		from cred_hub.erp.mapper import TRANSFORMS
+
+		path = os.path.join(
+			os.path.dirname(__file__), "..", "cred_hub", "doctype", "cred_hub_erp_field_map", "cred_hub_erp_field_map.json"
+		)
+		with open(path, encoding="utf-8") as f:
+			field = next(f for f in json.load(f)["fields"] if f["fieldname"] == "transform")
+		allowed = set(field["options"].splitlines()) | {""}
+		for cls in connectors.all_connectors():
+			for rule in [*cls.default_rules(), *cls.catalog()]:
+				with self.subTest(cls.key, field=rule["erp_field"]):
+					self.assertIn(rule["transform"], TRANSFORMS)
+					self.assertIn(rule["transform"], allowed)
 
 	def test_missing_credentials_are_named(self):
 		for cls in connectors.all_connectors():

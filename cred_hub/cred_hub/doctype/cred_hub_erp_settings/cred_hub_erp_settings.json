@@ -19,6 +19,12 @@
   "smart_column",
   "smart_client_id",
   "smart_client_secret",
+  "qitech_section",
+  "qitech_base_url",
+  "qitech_algorithm",
+  "qitech_column",
+  "qitech_api_key",
+  "qitech_private_key",
   "sync_section",
   "sync_dry_run",
   "overdue_days",
@@ -62,7 +68,7 @@
    "fieldname": "erp_provider",
    "fieldtype": "Select",
    "label": "ERP",
-   "options": "\nWBA\nSmart Securities",
+   "options": "\nWBA\nSmart Securities\nQI Tech",
    "mandatory_depends_on": "eval:doc.erp_enabled",
    "description": "Your company's back-office ERP. CredTech only connects; the ERP contract stays between you and the vendor."
   },
@@ -128,6 +134,45 @@
    "fieldtype": "Password",
    "label": "Smart Securities Client Secret",
    "mandatory_depends_on": "eval:doc.erp_enabled && doc.erp_provider=='Smart Securities'"
+  },
+  {
+   "fieldname": "qitech_section",
+   "fieldtype": "Section Break",
+   "label": "QI Tech",
+   "depends_on": "eval:doc.erp_provider=='QI Tech'",
+   "description": "QI Tech (QI DTVM) API: cedente registration and the cedente registry. QI Tech has no REST listing of títulos, so the collection sync stays off for it."
+  },
+  {
+   "fieldname": "qitech_base_url",
+   "fieldtype": "Data",
+   "label": "QI Tech API URL",
+   "mandatory_depends_on": "eval:doc.erp_enabled && doc.erp_provider=='QI Tech'",
+   "description": "The host of the profile your API key was issued for, e.g. https://assignor-api.qidtvm.com.br, https://consultant-api.qidtvm.com.br or https://manager-api.qidtvm.com.br (sandbox: .sandbox.qidtvm.com.br)"
+  },
+  {
+   "fieldname": "qitech_algorithm",
+   "fieldtype": "Select",
+   "label": "QI Tech signing algorithm",
+   "options": "ES512\nES384\nES256\nRS256",
+   "default": "ES512"
+  },
+  {
+   "fieldname": "qitech_column",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "qitech_api_key",
+   "fieldtype": "Password",
+   "label": "QI Tech API key",
+   "mandatory_depends_on": "eval:doc.erp_enabled && doc.erp_provider=='QI Tech'"
+  },
+  {
+   "fieldname": "qitech_private_key",
+   "fieldtype": "Password",
+   "label": "QI Tech private key (PEM)",
+   "length": 4000,
+   "mandatory_depends_on": "eval:doc.erp_enabled && doc.erp_provider=='QI Tech'",
+   "description": "The private.key whose public key was sent to QI Tech (never the .pub). Stored encrypted."
   },
   {
    "fieldname": "sync_section",
@@ -307,7 +352,7 @@
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-11-11 12:00:00.000000",
+ "modified": "2026-11-12 01:00:00.000000",
  "modified_by": "Administrator",
  "module": "Cred Hub",
  "name": "Cred Hub ERP Settings",
