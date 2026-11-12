@@ -688,3 +688,32 @@ class TestApiSandbox(IntegrationTestCase):
 			{"doctype": "FCRM Note", "title": "n", "content": mention, "reference_doctype": DEAL, "reference_docname": card.name}
 		).insert()
 		self.assertIn('class="mention"', frappe.db.get_value("FCRM Note", staff.name, "content"))
+
+	def test_technical_user_never_gets_mail_nor_notifications(self):
+		from frappe.desk.form.assign_to import add as assign_to
+
+		queued = frappe.db.count("Email Queue")
+		tech = self.as_test_key()
+		self.assertTrue(tech.endswith(".invalid"))
+		card = frappe.get_doc({"doctype": DEAL, "pipeline": self.sandbox}).insert()
+		# a test key assigning a task to itself (allowed) queues no e-mail
+		task = frappe.get_doc(
+			{"doctype": "CRM Task", "title": "t", "reference_doctype": DEAL, "reference_docname": card.name, "assigned_to": tech}
+		).insert()
+		self.assertTrue(frappe.db.exists("ToDo", {"reference_name": task.name, "allocated_to": tech}))
+		# nor does a person assigning a record to it, or any e-mail addressed to it
+		frappe.set_user("Administrator")
+		frappe.local.credhub_api_key = None
+		other = frappe.get_doc({"doctype": "CRM Task", "title": "t2"}).insert(ignore_permissions=True)
+		assign_to({"assign_to": [tech], "doctype": "CRM Task", "name": other.name})
+		frappe.sendmail(recipients=[tech], subject="x", message="x", now=False)
+		self.assertEqual(frappe.db.count("Email Queue"), queued)
+		self.assertFalse(frappe.db.exists("Email Queue Recipient", {"recipient": tech}))
+		self.assertFalse(frappe.db.exists("Notification Log", {"for_user": tech}))
+		# the preferences that would send mail are off, and muting again changes nothing
+		self.assertTrue(frappe.db.exists("Email Unsubscribe", {"email": tech, "global_unsubscribe": 1}))
+		self.assertEqual(frappe.db.get_value("Notification Settings", tech, "enabled"), 0)
+		for field in api_keys.QUIET_USER_FIELDS:
+			self.assertEqual(frappe.db.get_value("User", tech, field), 0, field)
+		api_keys.mute_technical_user(tech)
+		self.assertEqual(frappe.db.count("Email Unsubscribe", {"email": tech}), 1)
