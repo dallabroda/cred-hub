@@ -61,7 +61,8 @@ SAMPLE = {
 			"body": {"cedente": "{{payload}}", "origem": "hubtech"},
 			"id_path": "data.id",
 			"already": {"status": [409], "contains": ["já cadastrado"]},
-			"lookup": {"path": "/cedentes", "query": {"documento": "{document}"}, "items": "itens", "id_path": "id"},
+			"lookup": {"path": "/cedentes", "query": {"documento": "{document}"}, "items": "itens", "id_path": "id",
+				"document": "doc"},
 			"fields": [
 				{"erp_field": "documento", "label": "CPF/CNPJ", "transform": "digits", "required": True,
 					"source": "organization.cnpj"},
@@ -139,9 +140,35 @@ class TestConfig(unittest.TestCase):
 		with self.assertRaisesRegex(rest.ConfigError, "secret"):
 			config(auth={"type": "bearer", "token": "abc123"})
 		spec = copy.deepcopy(SAMPLE["endpoints"]["sacados"])
-		spec["query"] = {"key": "{secret:client_secret}"}
+		spec["path"] = "/sacados/{secret:client_secret}"
 		with self.assertRaisesRegex(rest.ConfigError, "secrets go only"):
 			config(sacados=spec)
+		register = copy.deepcopy(SAMPLE["endpoints"]["register_cedente"])
+		register["body"] = {"key": "{secret:client_secret}"}
+		with self.assertRaisesRegex(rest.ConfigError, "secrets go only"):
+			config(register_cedente=register)
+
+	def test_credential_looking_literals_are_refused(self):
+		for name in ("X-Api-Key", "X-Auth-Token", "X-Signature", "X-Client-Secret", "X-Password"):
+			with self.subTest(name), self.assertRaisesRegex(rest.ConfigError, "credential"):
+				config(headers={name: "abc123"})
+		spec = copy.deepcopy(SAMPLE["endpoints"]["sacados"])
+		spec["query"] = {"api_key": "abc123"}
+		with self.assertRaisesRegex(rest.ConfigError, "credential"):
+			config(sacados=spec)
+		# A header that is not a credential keeps its literal value
+		self.assertEqual(config(headers={"X-Tenant": "acme"}).data["headers"], {"X-Tenant": "acme"})
+
+	def test_secret_in_the_query_is_sent_and_masked(self):
+		spec = copy.deepcopy(SAMPLE["endpoints"]["sacados"])
+		spec["query"] = {"api_key": "{secret:api_key}"}
+		cfg = config(sacados=spec)
+		self.assertIn("api_key", cfg.secret_names())
+		conn, session = generic({("GET", "/v2/sacados"): [FakeResponse(200, {"itens": [], "proximo": None})]}, cfg,
+			secrets={**SECRETS, "api_key": "qk-998877"})
+		list(conn.sacados())
+		self.assertEqual(session.sent[-1]["params"]["api_key"], "qk-998877")
+		self.assertNotIn("qk-998877", conn.client.redact("failed with qk-998877"))
 
 	def test_placeholders_are_checked_per_operation(self):
 		spec = copy.deepcopy(SAMPLE["endpoints"]["overdue_titles"])
@@ -184,10 +211,47 @@ class TestConfig(unittest.TestCase):
 		for value in SECRETS.values():
 			self.assertNotIn(value, text)
 		self.assertIn("{secret:client_secret}", text)
-		loaded = rest.RestConfig.from_template(json.dumps(template), "https://erp.other-client.com.br/api")
+		# The sample gets its token from another host than the API: loading needs the admin to confirm that host
+		with self.assertRaises(rest.TokenHostNotConfirmed) as caught:
+			rest.RestConfig.from_template(json.dumps(template), "https://erp.other-client.com.br/api")
+		self.assertEqual(caught.exception.host, "auth.acme-erp.com.br")
+		loaded = rest.RestConfig.from_template(json.dumps(template), "https://erp.other-client.com.br/api",
+			confirm_token_host="auth.acme-erp.com.br")
 		self.assertEqual(loaded.base_url, "https://erp.other-client.com.br/api")
 		self.assertEqual(loaded.data["endpoints"], config().data["endpoints"])
 		self.assertEqual(loaded.secret_names(), ["client_id", "client_secret", "tenant"])
+
+	def test_template_token_url_on_the_api_host_keeps_only_the_path(self):
+		auth = {**SAMPLE["auth"], "token_url": "https://api.acme-erp.com.br/oauth/token"}
+		template = config(auth=auth).template()
+		self.assertEqual(template["auth"]["token_url"], "/oauth/token")
+		loaded = rest.RestConfig.from_template(template, "https://erp.other-client.com.br/api")
+		self.assertEqual(loaded.data["auth"]["token_url"], "https://erp.other-client.com.br/oauth/token")
+
+	def test_template_scrubs_credential_looking_literals(self):
+		cfg = config()
+		cfg.data["headers"]["X-Api-Key"] = "literal-key-123"  # what an old or hand-edited config could hold
+		template = cfg.template()
+		self.assertEqual(template["headers"]["X-Api-Key"], "{secret:X-Api-Key}")
+		self.assertNotIn("literal-key-123", json.dumps(template))
+
+	def test_token_cache_scope_follows_the_credentials(self):
+		cls = connectors.get(GENERIC)
+		one = cls.cache_scope({"rest_config": SAMPLE, "rest_secrets": SECRETS})
+		self.assertTrue(one.startswith("rest:"))
+		self.assertEqual(one, cls.cache_scope({"rest_config": SAMPLE, "rest_secrets": dict(SECRETS)}))
+		rotated = cls.cache_scope({"rest_config": SAMPLE, "rest_secrets": {**SECRETS, "client_secret": "new-one-456"}})
+		self.assertNotEqual(one, rotated)
+		other_api = cls.cache_scope({"rest_config": {**SAMPLE, "base_url": "https://api.other.com.br"},
+			"rest_secrets": SECRETS})
+		self.assertNotEqual(one, other_api)
+		self.assertNotIn("s3cr3t", one)
+
+	def test_lookup_needs_the_document_path(self):
+		register = copy.deepcopy(SAMPLE["endpoints"]["register_cedente"])
+		register["lookup"].pop("document")
+		with self.assertRaisesRegex(rest.ConfigError, "lookup.document"):
+			config(register_cedente=register)
 
 	def test_missing_secrets_are_named(self):
 		cls = connectors.get(GENERIC)
@@ -375,6 +439,77 @@ class TestAuth(unittest.TestCase):
 			cls(client).ping()
 		self.assertNotIn("s3cr3t", str(caught.exception))
 
+	def test_odd_expires_in_never_breaks_the_login(self):
+		for value in ("soon", None, "", "1e400", -5, [1]):
+			with self.subTest(value):
+				answer = FakeResponse(200, {"access_token": "tok-x", "expires_in": value})
+				cfg = config()
+				cls = connectors.get(GENERIC).with_config(cfg)
+				session = FakeSession({("POST", "/oauth/token"): [answer], ("GET", "/v2/health"): [FakeResponse(200, {})]})
+				clock = Clock()
+				client = cls.make_client({"rest_config": cfg.data, "rest_secrets": SECRETS}, session=session, clock=clock)
+				cls(client).ping()
+				self.assertTrue(clock.now < client.token.expires_at <= clock.now + 24 * 3600)
+
+	def test_access_token_and_basic_pair_are_masked(self):
+		conn, _ = generic({("GET", "/v2/health"): [FakeResponse(200, {})]})
+		conn.ping()
+		self.assertEqual(conn.client.redact("echo tok-1"), "echo ***")
+		cfg = config(auth={"type": "basic", "username": "{secret:user}", "password": "{secret:token}"}, headers={})
+		conn, _ = generic({("GET", "/v2/health"): [FakeResponse(200, {})]}, cfg, secrets={"token": "tk-123456", "user": "usr"})
+		conn.ping()
+		self.assertEqual(conn.client.redact("Basic dXNyOnRrLTEyMzQ1Ng=="), "Basic ***")
+
+	def test_shared_pace_is_used_per_call(self):
+		class Pace:
+			def __init__(self):
+				self.waits = []
+
+			def wait(self, interval):
+				self.waits.append(interval)
+
+		pace = Pace()
+		cfg = config(pace={"min_interval": 2})
+		cls = connectors.get(GENERIC).with_config(cfg)
+		session = FakeSession({("POST", "/oauth/token"): [TOKEN], ("GET", "/v2/health"): [FakeResponse(200, {})]})
+		client = cls.make_client({"rest_config": cfg.data, "rest_secrets": SECRETS}, session=session, pace=pace)
+		cls(client).ping()
+		self.assertEqual(pace.waits, [2.0, 2.0])  # login + ping
+
+	def test_redis_pace_waits_for_the_slot_of_another_worker(self):
+		from cred_hub.erp.connectors.rest import RedisPace
+
+		class Cache:
+			def __init__(self):
+				self.taken = 2  # another worker holds the slot for the next 2 attempts
+				self.calls = []
+
+			def make_key(self, key):
+				return f"site|{key}"
+
+			def set(self, key, value, px=None, nx=None):
+				self.calls.append((key, px, nx))
+				self.taken -= 1
+				return self.taken < 0
+
+			def pttl(self, key):
+				return 400
+
+		cache, slept = Cache(), []
+		RedisPace("rest:abc", cache=cache, sleep=slept.append).wait(1.5)
+		self.assertEqual(slept, [0.4, 0.4])
+		self.assertEqual(cache.calls[-1], ("site|cred_hub_erp_pace:rest:abc", 1500, True))
+
+	def test_listing_has_a_total_deadline(self):
+		clock = Clock()
+		answers = [page([{**ITEM, "id": n}, {**ITEM, "id": n + 100}]) for n in range(5)]
+		conn, _ = generic({("GET", "/v2/titulos"): answers}, clock=clock)
+		titles = conn.overdue_titles(date(2026, 11, 1))
+		next(titles)
+		clock.now += rest.RUN_DEADLINE + 1
+		with self.assertRaisesRegex(ErpError, "30 minutes"):
+			list(titles)
+
 
 class TestErrors(unittest.TestCase):
 	def test_maintenance_rate_limit_and_errors(self):
@@ -435,11 +570,21 @@ class TestRegisterCedente(unittest.TestCase):
 		self.assertEqual([r["erp_field"] for r in cls.default_rules()], ["documento", "razaoSocial"])
 
 	def test_existing_cedente_is_not_sent(self):
-		conn, session = generic({("GET", "/v2/cedentes"): [FakeResponse(200, {"itens": [{"id": "C-7"}]})]})
+		conn, session = generic({("GET", "/v2/cedentes"): [FakeResponse(200, {"itens": [
+			{"id": "C-1", "doc": "11.111.111/0001-11"}, {"id": "C-7", "doc": "23.268.852/0001-60"}]})]})
 		outcome = conn.send_registration(PAYLOAD, "23268852000160", Pending())
 		self.assertEqual((outcome.status, outcome.code), ("already", "C-7"))
 		self.assertEqual(session.sent[-1]["params"]["documento"], "23268852000160")
 		self.assertNotIn("POST", [s["method"] for s in session.sent if s["path"] == "/v2/cedentes"])
+
+	def test_lookup_answer_with_other_documents_is_not_a_match(self):
+		# A system that ignores the filter and returns its whole registry must not block the registration
+		conn, _session = generic({
+			("GET", "/v2/cedentes"): [FakeResponse(200, {"itens": [{"id": "C-1", "doc": "11.111.111/0001-11"}, {"id": "C-2"}]})],
+			("POST", "/v2/cedentes"): [FakeResponse(201, {"data": {"id": 9002}})],
+		})
+		outcome = conn.send_registration(PAYLOAD, "23268852000160", Pending())
+		self.assertEqual((outcome.status, outcome.code), ("created", "9002"))
 
 	def test_created_with_body_template_and_id(self):
 		conn, session = generic({
@@ -570,26 +715,50 @@ class TestSafeApi(unittest.TestCase):
 		with self.assertRaisesRegex(safe_api.BlockedAddress, "redirects"):
 			self.session(answers).request("GET", "https://api.acme.com.br/x")
 
-	def test_allowed_redirect_is_checked_again(self):
-		answers = [FakeHttpResponse(302, b"", {"Location": "https://internal-api.acme.com.br/x"}), FakeHttpResponse()]
+	def test_redirect_to_another_host_never_carries_the_credentials(self):
+		# A -> B: B is never called, so it never sees the token, even when redirects are allowed
+		for location in ("https://collector.evil.com/x", "https://internal-api.acme.com.br/x",
+				"https://api.acme.com.br:8443/x", "http://api.acme.com.br/x"):
+			with self.subTest(location):
+				transport = FakeTransport([FakeHttpResponse(302, b"", {"Location": location}), FakeHttpResponse()])
+				session = safe_api.SafeApiSession(transport=transport, resolve=public_dns, max_redirects=3)
+				with self.assertRaisesRegex(safe_api.BlockedAddress, "another host"):
+					session.request("GET", "https://api.acme.com.br/x", headers={"X-Api-Key": "tk-123456"})
+				self.assertEqual([url for _m, url, _k in transport.sent], ["https://api.acme.com.br/x"])
+
+	def test_allowed_same_host_redirect_is_checked_again(self):
+		transport = FakeTransport([FakeHttpResponse(301, b"", {"Location": "/v3/x"}), FakeHttpResponse(200, b'{"ok": 1}')])
 		calls = []
 
 		def resolve(host, port):
 			calls.append(host)
-			if host.startswith("internal"):
-				raise safe_api.BlockedAddress("non-public address")
 
-		with self.assertRaisesRegex(safe_api.BlockedAddress, "non-public"):
-			self.session(answers, resolve=resolve, max_redirects=1).request("GET", "https://api.acme.com.br/x")
-		self.assertEqual(calls, ["api.acme.com.br", "internal-api.acme.com.br"])
-		answers = [FakeHttpResponse(302, b"", {"Location": "http://api.acme.com.br/x"})]
-		with self.assertRaisesRegex(safe_api.BlockedAddress, "https"):
-			self.session(answers, max_redirects=1).request("GET", "https://api.acme.com.br/x")
+		response = safe_api.SafeApiSession(transport=transport, resolve=resolve, max_redirects=1).request(
+			"GET", "https://api.acme.com.br/x")
+		self.assertEqual(response.json(), {"ok": 1})
+		self.assertEqual(calls, ["api.acme.com.br", "api.acme.com.br"])
+		self.assertEqual(transport.sent[1][1], "https://api.acme.com.br/v3/x")
 
 	def test_response_size_is_limited(self):
 		answers = [FakeHttpResponse(200, b"x" * 5000)]
 		with self.assertRaises(safe_api.TooLarge):
 			self.session(answers, max_bytes=1000).request("GET", "https://api.acme.com.br/x")
+
+	def test_gzip_answer_is_decoded_and_the_limit_counts_decoded_bytes(self):
+		import gzip
+
+		body = json.dumps({"itens": [{"doc": "1"}] * 10}).encode()
+		answers = [FakeHttpResponse(200, gzip.compress(body), {"Content-Encoding": "gzip"})]
+		response = self.session(answers).request("GET", "https://api.acme.com.br/x")
+		self.assertEqual(response.json()["itens"][0], {"doc": "1"})
+		bomb = gzip.compress(b"0" * 5_000_000)  # ~5 KB on the wire, 5 MB once opened
+		self.assertLess(len(bomb), 1000 * 10)
+		answers = [FakeHttpResponse(200, bomb, {"Content-Encoding": "gzip"})]
+		with self.assertRaises(safe_api.TooLarge):
+			self.session(answers, max_bytes=100_000).request("GET", "https://api.acme.com.br/x")
+		answers = [FakeHttpResponse(200, b"x", {"Content-Encoding": "br"})]
+		with self.assertRaises(safe_api.TooLarge):
+			self.session(answers).request("GET", "https://api.acme.com.br/x")
 
 	def test_header_allow_list(self):
 		for name in ("Host", "host", "X-Forwarded-For", "Forwarded", "Proxy-Authorization", "Connection",

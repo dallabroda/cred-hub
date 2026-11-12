@@ -114,12 +114,41 @@ class TestGenericRestSite(IntegrationTestCase):
 		self.assertNotIn("s3cr3t", json.dumps(template))
 		frappe.db.set_single_value(erp_settings.SETTINGS, "rest_config", None)
 		frappe.clear_document_cache(erp_settings.SETTINGS, erp_settings.SETTINGS)
+		# The sample's token comes from auth.acme-erp.com.br: nothing is saved until the admin confirms that host
 		result = rest_templates.import_template(json.dumps(template), "https://erp.outro-cliente.com.br/api")
+		self.assertEqual((result["ok"], result["confirm_token_url"]), (False, "auth.acme-erp.com.br"))
+		self.assertFalse(frappe.db.get_single_value(erp_settings.SETTINGS, "rest_config"))
+		result = rest_templates.import_template(json.dumps(template), "https://erp.outro-cliente.com.br/api",
+			confirm_token_url="auth.acme-erp.com.br")
 		self.assertEqual(result["system"], "Acme ERP")
 		doc = frappe.get_doc(erp_settings.SETTINGS)
 		self.assertEqual(json.loads(doc.rest_config)["base_url"], "https://erp.outro-cliente.com.br/api")
 		with self.assertRaises(frappe.ValidationError):
 			rest_templates.import_template(json.dumps(template), "http://erp.outro-cliente.com.br")
+
+	def test_changing_the_config_or_a_secret_forgets_the_token(self):
+		configure()
+		cls = erp_settings.connector_class()
+		values = erp_settings.credential_values(frappe.get_doc(erp_settings.SETTINGS), cls)
+		scope = cls.cache_scope(values)
+		erp_settings._store_token(erp_settings.Token("old-token", 10**10), scope)
+		self.assertEqual(erp_settings._cached_token(scope).value, "old-token")
+		configure(secrets={**SECRETS, "client_secret": "rotated-secret-999"})
+		self.assertEqual(erp_settings._cached_token(scope).value, "")
+		values = erp_settings.credential_values(frappe.get_doc(erp_settings.SETTINGS), cls)
+		self.assertNotEqual(cls.cache_scope(values), scope)
+
+	def test_sandbox_collection_funnel_is_refused(self):
+		configure()
+		session = FakeSession({
+			("POST", "/oauth/token"): [TOKEN],
+			("GET", "/v2/titulos"): [page([ITEM], last=True)],
+			("GET", "/v2/titulos/liquidados"): [FakeResponse(200, [])],
+		})
+		with patch("cred_hub.erp.settings.is_sandbox_pipeline", return_value=True):
+			stats = sync.run(session=session)
+		self.assertIn("Sandbox", stats["error"])
+		self.assertFalse(sync.find_row(GENERIC, "501"))
 
 	def test_templates_are_admin_only(self):
 		configure()

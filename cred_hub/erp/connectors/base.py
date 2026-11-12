@@ -126,6 +126,11 @@ class Connector:
 		"""Called after the settings were saved with this connector chosen. Default: nothing."""
 
 	@classmethod
+	def cache_scope(cls, values: dict) -> str:
+		"""Key of the shared token cache for these credentials ("" = one token per site, as Smart and WBA)."""
+		return ""
+
+	@classmethod
 	def missing_credentials(cls, values: dict) -> list[str]:
 		return [c.label for c in cls.credentials if c.required and not (values.get(c.fieldname) or "").strip()]
 

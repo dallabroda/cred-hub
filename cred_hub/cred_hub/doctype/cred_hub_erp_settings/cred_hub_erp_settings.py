@@ -57,6 +57,10 @@ class CredHubERPSettings(Document):
 			self.cedente_pipeline = frappe.db.get_single_value("Cred Hub Credit Settings", "credit_pipeline")
 		if not self.get("cedente_pipeline"):
 			frappe.throw(_("Choose the credit funnel for the cedente registration."))
+		from cred_hub.erp.settings import is_sandbox_pipeline
+
+		if is_sandbox_pipeline(self.cedente_pipeline):
+			frappe.throw(_("The Sandbox funnel holds test data and never registers cedentes in the ERP."))
 		collection = frappe.db.get_single_value("Cred Hub Provider Settings", "collection_pipeline")
 		if collection and self.cedente_pipeline == collection:
 			frappe.throw(_("The cedente registration is for the credit funnel: collection cedentes are already in the ERP."))

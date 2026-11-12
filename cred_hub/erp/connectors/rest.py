@@ -191,6 +191,20 @@ class RestConnector(Connector, metaclass=_Configured):
 		# From now on the (fresh) cached settings are the source again
 		frappe.flags.pop(SAVING_FLAG, None)
 		frappe.local.cred_hub_rest_configs = {}
+		if settings.has_value_changed("rest_config") or settings.has_value_changed("rest_secrets"):
+			# A changed address, auth or secret never reuses the token obtained with the old one
+			from ..settings import forget_token
+
+			forget_token()
+
+	@classmethod
+	def cache_scope(cls, values: dict) -> str:
+		"""Per-credential token cache (fingerprint of address, auth block and the secret values it uses)."""
+		try:
+			config = RestConfig.parse(values.get("rest_config") or (cls.config.data if cls.config else None))
+		except ConfigError:
+			return ""
+		return f"rest:{config.auth_scope(values.get('rest_secrets') or {})}"
 
 	@classmethod
 	def make_client(cls, values: dict, **kwargs):
@@ -205,6 +219,9 @@ class RestConnector(Connector, metaclass=_Configured):
 		missing = [name for name in config.secret_names() if not secrets.get(name)]
 		if missing:
 			raise ErpAuthError(f"Fill the REST secrets: {', '.join(missing)}.")
+		if "pace" not in kwargs and config.data["pace"]["min_interval"]:
+			# On a site, the minimum interval between calls is shared by every worker (per credential)
+			kwargs["pace"] = _site_pace(config.auth_scope(secrets))
 		return RestClient(config, secrets, **kwargs)
 
 	# Description ------------------------------------------------------------------------------------------------
@@ -315,6 +332,8 @@ class RestConnector(Connector, metaclass=_Configured):
 				"The cedente was already sent to {0} and is waiting for it to register. Nothing was sent again."
 			).format(system))
 		body = fill_body(spec.get("body", "{{payload}}"), payload, values)
+		# "already" signals are configured by the admin (status codes and texts of THIS system); a text match on a
+		# 2xx answer is also taken as "already registered", as the configuration says
 		already = spec["already"]
 		try:
 			status, answer = self.client.call(spec, values, body=body)
@@ -349,12 +368,61 @@ class RestConnector(Connector, metaclass=_Configured):
 				return None
 			raise
 		found = json_path(answer, spec.get("items") or "")
-		if isinstance(found, list):
-			found = found[0] if found else None
-		if not found:
+		items = found if isinstance(found, list) else [found] if isinstance(found, dict) else []
+		# Only an item with OUR document counts: a system that ignores the filter must not block the registration
+		match = next(
+			(i for i in items if isinstance(i, dict) and digits(json_path(i, spec["document"])) == values["document"]),
+			None,
+		)
+		if match is None:
 			return None
-		code = json_path(found, spec["id_path"]) if spec.get("id_path") else None
+		code = json_path(match, spec["id_path"]) if spec.get("id_path") else None
 		return str(code) if code not in (None, "") else ""
+
+
+class RedisPace:
+	"""Minimum interval between calls shared by every worker of the site, per credential: each call claims a
+	slot key that lives `interval` ms (Redis SET NX PX); a worker that finds it taken waits for it to expire."""
+
+	MAX_WAIT = 120  # seconds: a stuck slot never blocks a worker forever
+
+	def __init__(self, scope: str, cache=None, sleep=None, clock=None):
+		import time
+
+		self.key = f"cred_hub_erp_pace:{scope}"
+		self.cache = cache
+		self.sleep = sleep or time.sleep
+		self.clock = clock or time.monotonic
+
+	def _cache(self):
+		if self.cache is None:
+			import frappe
+
+			self.cache = frappe.cache
+		return self.cache
+
+	def wait(self, interval: float):
+		if not interval:
+			return
+		cache = self._cache()
+		key = cache.make_key(self.key)
+		ms = max(int(interval * 1000), 1)
+		started = self.clock()
+		while not cache.set(key, 1, px=ms, nx=True):
+			if self.clock() - started > self.MAX_WAIT:
+				return
+			left = cache.pttl(key)
+			self.sleep(max(left, 10) / 1000 if left and left > 0 else 0.01)
+
+
+def _site_pace(scope: str):
+	try:
+		import frappe
+	except ImportError:
+		return None
+	if not getattr(frappe.local, "site", None):
+		return None
+	return RedisPace(scope)
 
 
 class _CachePending:

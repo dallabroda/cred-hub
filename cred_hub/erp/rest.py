@@ -112,10 +112,40 @@ DEFAULT_LIMITS = {"timeout": 30, "max_bytes": 10 * 1024 * 1024, "max_pages": 500
 MAX_LIMITS = {"timeout": 120, "max_bytes": 50 * 1024 * 1024, "max_pages": 10000, "max_redirects": 3}
 # What a template never carries (ADR §8): the client's address and anything client-specific
 TEMPLATE_DROPPED = ("base_url",)
+# Header / query names that carry credentials: their value must be a {secret:NAME} reference, never a literal
+SENSITIVE_NAME = re.compile(r"key|token|secret|auth|password|passwd|signature|credential|session", re.IGNORECASE)
+_SECRET_ONLY = re.compile(r"^\{secret:[A-Za-z0-9_.-]{1,64}\}$")
+# A whole listing (all its pages) never takes longer than this
+RUN_DEADLINE = 30 * 60
 
 
 class ConfigError(ValueError):
 	"""The configuration is not usable; the message tells the admin what to fix (English, translated by the UI)."""
+
+
+class TokenHostNotConfirmed(ConfigError):
+	"""The template sends the client's credentials to a token host other than the API: the admin must confirm it."""
+
+	def __init__(self, host: str):
+		super().__init__(f"The template gets the token from {host}, another host than the API. Confirm this host.")
+		self.host = host
+
+
+def _origin_url(url: str | None) -> str:
+	parts = urlsplit(url or "")
+	port = f":{parts.port}" if parts.port and parts.port != 443 else ""
+	return f"{(parts.scheme or '').lower()}://{(parts.hostname or '').lower()}{port}"
+
+
+def _no_literal_secret(where: str, name: str, value):
+	if SENSITIVE_NAME.search(str(name)) and not _SECRET_ONLY.match(str(value).strip()):
+		raise ConfigError(f"{where} looks like a credential: use a secret reference, like {{secret:{name}}}.")
+
+
+def _scrub(name: str, value):
+	if SENSITIVE_NAME.search(str(name)) and not _SECRET_ONLY.match(str(value).strip()):
+		return "{secret:" + re.sub(r"[^A-Za-z0-9_.-]", "_", str(name))[:64] + "}"
+	return value
 
 
 # JSON paths -----------------------------------------------------------------------------------------------------
@@ -291,7 +321,7 @@ class RestConfig:
 			data["base_url"] = _check_base_url(data.get("base_url"), "API URL")
 		else:
 			data.pop("base_url", None)
-		data["auth"] = cls._auth(data.get("auth") or {"type": "none"})
+		data["auth"] = cls._auth(data.get("auth") or {"type": "none"}, data.get("base_url"))
 		headers = data.get("headers") or {}
 		if not isinstance(headers, dict):
 			raise ConfigError("headers must be an object {name: value}.")
@@ -302,6 +332,7 @@ class RestConfig:
 				raise ConfigError(f"Header not allowed: {e}") from None
 			if name.lower() == "authorization":
 				raise ConfigError("Set the Authorization header through auth, not headers.")
+			_no_literal_secret(f"headers.{name}", name, value)
 		data["headers"] = {str(k): str(v) for k, v in headers.items()}
 		pace = data.get("pace") or {}
 		data["pace"] = {
@@ -327,7 +358,7 @@ class RestConfig:
 		return cls(data)
 
 	@staticmethod
-	def _auth(auth: dict) -> dict:
+	def _auth(auth: dict, base_url: str | None = None) -> dict:
 		if not isinstance(auth, dict):
 			raise ConfigError("auth must be an object.")
 		kind = auth.get("type") or "none"
@@ -350,7 +381,13 @@ class RestConfig:
 			except safe_api.BlockedAddress as e:
 				raise ConfigError(f"Header not allowed: {e}") from None
 		if kind == "oauth2":
-			auth["token_url"] = _check_base_url(auth["token_url"], "OAuth2 token URL")
+			token_url = str(auth["token_url"]).strip()
+			if token_url.startswith("/"):
+				# A template keeps only the token path when the API host itself issues the token
+				if not base_url:
+					raise ConfigError("auth.token_url is a path: fill the API URL first.")
+				token_url = _origin_url(base_url) + token_url
+			auth["token_url"] = _check_base_url(token_url, "OAuth2 token URL")
 			auth["client_auth"] = auth.get("client_auth") or "body"
 			if auth["client_auth"] not in ("body", "basic"):
 				raise ConfigError("auth.client_auth must be body or basic.")
@@ -371,9 +408,13 @@ class RestConfig:
 		if not isinstance(query, dict):
 			raise ConfigError(f"{op}.query must be an object.")
 		allowed = PLACEHOLDERS[op] if allowed is None else allowed
-		used = placeholders_in([path, query, spec.get("body")])
+		used = placeholders_in([path, spec.get("body")])
 		if any(p.startswith("secret:") for p in used):
-			raise ConfigError(f"{op}: secrets go only in auth and headers, never in the path, query or body.")
+			raise ConfigError(f"{op}: secrets go only in auth, headers and query, never in the path or body.")
+		for name, value in query.items():
+			_no_literal_secret(f"{op}.query.{name}", name, value)
+		# Query values may reference secrets (an API key in the query string); the logs mask the query string
+		used |= {p for p in placeholders_in(query) if not p.startswith("secret:")}
 		wrong = sorted(used - allowed)
 		if wrong:
 			raise ConfigError(f"{op} cannot use {', '.join('{' + w + '}' for w in wrong)}.")
@@ -431,7 +472,13 @@ class RestConfig:
 		if spec.get("lookup"):
 			lookup = cls._endpoint("lookup", {**spec["lookup"], "method": spec["lookup"].get("method") or "GET"})
 			lookup["id_path"] = str(spec["lookup"].get("id_path") or "")
+			# Where the CPF/CNPJ is in each item: only an item with OUR document means "already registered" (a
+			# system that ignores the filter and returns everything must not block the registration)
+			lookup["document"] = str(spec["lookup"].get("document") or "")
+			if not lookup["document"]:
+				raise ConfigError("register_cedente.lookup.document: where the CPF/CNPJ is in each item of the answer.")
 			path_tokens(lookup["id_path"])
+			path_tokens(lookup["document"])
 			result["lookup"] = lookup
 		fields = spec.get("fields") or []
 		if not fields or not isinstance(fields, list):
@@ -495,8 +542,18 @@ class RestConfig:
 
 	def secret_names(self) -> list[str]:
 		"""Secrets the configuration references (the credentials of this connector are dynamic, ADR §3)."""
-		names = {p[7:] for p in placeholders_in([self.data["auth"], self.data["headers"]]) if p.startswith("secret:")}
-		return sorted(names)
+		queries = [spec.get("query") for spec in self.data["endpoints"].values()]
+		queries += [spec["lookup"].get("query") for spec in self.data["endpoints"].values() if spec.get("lookup")]
+		found = placeholders_in([self.data["auth"], self.data["headers"], queries])
+		return sorted({p[7:] for p in found if p.startswith("secret:")})
+
+	def auth_scope(self, secrets: dict) -> str:
+		"""Fingerprint of who we are on the API (address, auth block, headers and the secret values used): the
+		shared token cache and the shared pace are per credential, so a new client secret or another API never
+		reuses the old token."""
+		used = {name: (secrets or {}).get(name, "") for name in self.secret_names()}
+		material = json.dumps([_origin_url(self.base_url), self.data["auth"], self.data["headers"], used], sort_keys=True)
+		return hashlib.sha256(material.encode()).hexdigest()[:24]
 
 	def register_fields(self) -> list[dict]:
 		spec = self.endpoint("register_cedente")
@@ -513,11 +570,23 @@ class RestConfig:
 		data = json.loads(json.dumps(self.data))
 		for key in TEMPLATE_DROPPED:
 			data.pop(key, None)
+		auth = data["auth"]
+		# A token URL on the client's own host keeps only its path (the next client fills its own host)
+		if auth.get("token_url") and _origin_url(auth["token_url"]) == _origin_url(self.base_url):
+			auth["token_url"] = urlsplit(auth["token_url"]).path or "/"
+		# A literal under a credential-looking name becomes a secret reference (defense in depth: parse refuses it)
+		data["headers"] = {k: _scrub(k, v) for k, v in data["headers"].items()}
+		for spec in data["endpoints"].values():
+			for holder in (spec, spec.get("lookup") or {}):
+				if holder.get("query"):
+					holder["query"] = {k: _scrub(k, v) for k, v in holder["query"].items()}
 		data["template"] = True
 		return data
 
 	@classmethod
-	def from_template(cls, template, base_url: str) -> "RestConfig":
+	def from_template(cls, template, base_url: str, confirm_token_host: str = "") -> "RestConfig":
+		"""A configuration from a template. A token URL on another host than the API is accepted only when the
+		admin confirms that host (`confirm_token_host`): the client's secrets would be sent there."""
 		if isinstance(template, str):
 			try:
 				template = json.loads(template)
@@ -527,7 +596,13 @@ class RestConfig:
 			raise ConfigError("The template must be a JSON object.")
 		data = {k: v for k, v in template.items() if k not in ("template", *TEMPLATE_DROPPED)}
 		data["base_url"] = base_url
-		return cls.parse(data, require_url=bool(base_url))
+		config = cls.parse(data, require_url=bool(base_url))
+		token_url = config.data["auth"].get("token_url")
+		if token_url and _origin_url(token_url) != _origin_url(config.base_url):
+			host = urlsplit(token_url).hostname or ""
+			if (confirm_token_host or "").strip().lower() != host:
+				raise TokenHostNotConfirmed(host)
+		return config
 
 
 # HTTP client ----------------------------------------------------------------------------------------------------
@@ -538,9 +613,13 @@ STATIC = "static"
 class RestClient(BaseClient):
 	"""HTTP client driven by a RestConfig. `secrets` = {name: value}, used only to build headers and redact."""
 
-	def __init__(self, config: RestConfig, secrets: dict | None = None, session=None, **kwargs):
+	def __init__(self, config: RestConfig, secrets: dict | None = None, session=None, pace=None, **kwargs):
 		self.config = config
 		self.secrets = {k: v for k, v in (secrets or {}).items() if v}
+		# Values derived from the secrets (Basic pair, OAuth access token) are masked too
+		self._derived = set()
+		# Shared minimum interval between calls (Redis, per credential); None = the per-process one of BaseClient
+		self.pace = pace
 		limits = config.data["limits"]
 		session = session or safe_api.SafeApiSession(max_bytes=limits["max_bytes"], max_redirects=limits["max_redirects"])
 		super().__init__(config.base_url, session=session, **kwargs)
@@ -552,7 +631,8 @@ class RestClient(BaseClient):
 	def redact(self, text) -> str:
 		"""Secrets out of any text that may reach a log or the admin; URLs lose their query string."""
 		text = str(text or "")
-		for value in sorted(self.secrets.values(), key=len, reverse=True):
+		token = self.token.value if self.token and self.token.value != STATIC else ""
+		for value in sorted({*self.secrets.values(), *self._derived, token}, key=len, reverse=True):
 			if len(value) >= 4:
 				text = text.replace(value, "***")
 		return re.sub(r"(https?://[^\s?#\"']+)\?[^\s\"']*", r"\1?***", text)
@@ -563,6 +643,11 @@ class RestClient(BaseClient):
 		if host != self._host and url != self.config.data["auth"].get("token_url"):
 			raise ErpError("The API sent us to another address; the connector only calls the configured API.", "blocked")
 		return url
+
+	def _throttle(self):
+		if self.pace is None:
+			return super()._throttle()
+		self.pace.wait(self.min_interval)
 
 	def _send(self, method: str, target: str, **kwargs):
 		self._throttle()
@@ -594,6 +679,7 @@ class RestClient(BaseClient):
 		client_id, client_secret = self._auth_value("client_id"), self._auth_value("client_secret")
 		if auth["client_auth"] == "basic":
 			pair = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
+			self._derived.add(pair)
 			headers["Authorization"] = f"Basic {pair}"
 		else:
 			form.update(client_id=client_id, client_secret=client_secret)
@@ -606,7 +692,11 @@ class RestClient(BaseClient):
 				self.redact(f"The API refused the login: {error_text(response) or response.status_code}"),
 				response.status_code,
 			)
-		lifetime = int(body.get("expires_in") or 3600)
+		try:
+			lifetime = int(float(body.get("expires_in") or 3600))
+		except (TypeError, ValueError, OverflowError):
+			lifetime = 3600  # an odd expires_in never breaks the login; a 401 renews the token anyway
+		lifetime = min(max(lifetime, 60), 24 * 3600)
 		return Token(str(body["access_token"]), self.clock() + max(lifetime - self.TOKEN_MARGIN, 30))
 
 	def _headers(self) -> dict:
@@ -621,6 +711,7 @@ class RestClient(BaseClient):
 			headers[auth["header"]] = self._auth_value("value")
 		elif kind == "basic":
 			pair = base64.b64encode(f"{self._auth_value('username')}:{self._auth_value('password')}".encode()).decode()
+			self._derived.add(pair)
 			headers["Authorization"] = f"Basic {pair}"
 		elif kind == "oauth2":
 			headers["Authorization"] = f"Bearer {self.token.value}"
@@ -649,7 +740,7 @@ class RestClient(BaseClient):
 		kwargs = {}
 		if url is None:
 			target = fill(spec["path"], values, quote_values=True)
-			query = {k: fill(v, values) for k, v in spec["query"].items()}
+			query = {k: fill(v, values, self.secrets) for k, v in spec["query"].items()}
 			query.update(extra_query or {})
 			if query:
 				kwargs["params"] = query
@@ -673,9 +764,12 @@ class RestClient(BaseClient):
 		offset = int(pagination.get("start", 0)) if kind == "offset" else 0
 		size = int(pagination.get("size") or pagination.get("limit") or 100)
 		cursor, next_url = None, None
+		ends_at = self.clock() + RUN_DEADLINE
 		for number in range(max_pages + 1):
 			if number == max_pages:
 				raise ErpError(f"The listing passed {max_pages} pages; check the pagination settings.", "pagination")
+			if self.clock() > ends_at:
+				raise ErpError(f"The listing took more than {RUN_DEADLINE // 60} minutes; it stops here.", "pagination")
 			extra = {}
 			if kind == "page":
 				extra[pagination["page_param"]] = page

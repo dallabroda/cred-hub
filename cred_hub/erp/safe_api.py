@@ -6,8 +6,10 @@ The call leaves our server, which also hosts the database, Redis and the interna
 - resolves the name and requires EVERY address to be public (no private, loopback, link-local, cloud metadata or
   internal ranges), and checks the address actually connected again on the socket (DNS rebinding) - the checks and
   the socket guard are the ones of `cred_hub.email_company.safe_http`, reused here;
-- does not follow redirects unless the configuration allows N hops, each one checked the same way;
-- has a connect/read timeout, a total deadline and a maximum response size;
+- does not follow redirects unless the configuration allows N hops, each one checked the same way and ONLY to the
+  same origin (scheme, host, port): the headers carry credentials, so a redirect to another host is refused;
+- has a connect/read timeout, a total deadline and a maximum response size, counted on the DECODED body (a gzip or
+  deflate answer is opened in steps and refused as soon as it passes the limit: no decompression bomb);
 - sends only allowed header names (never Host, proxy, forwarding or hop-by-hop headers) and no CR/LF in values;
 - never uses the environment's proxy or .netrc.
 
@@ -18,6 +20,7 @@ with the same fake sessions as the native connectors.
 import json
 import re
 import time
+import zlib
 from urllib.parse import urljoin, urlsplit
 
 import requests
@@ -150,21 +153,53 @@ class SafeApiSession:
 					if len(redirects) >= self.max_redirects:
 						raise BlockedAddress("redirects are not followed")
 					redirects.append(url)
-					url = urljoin(url, response.headers["Location"])
+					target = urljoin(url, response.headers["Location"])
+					if _origin(target) != _origin(url):
+						# Never carry the credentials in the headers to another host
+						raise BlockedAddress("redirect to another host is not followed")
+					url = target
 					params = None  # the Location carries its own query
 					if response.status_code == 303:
 						method, kwargs = "GET", {}
 					continue
-				body = b""
-				while True:
-					remaining()
-					chunk = response.raw.read1(64 * 1024)
-					if not chunk:
-						break
-					body += chunk
-					if len(body) > self.max_bytes:
-						raise TooLarge(f"response over {self.max_bytes} bytes")
+				body = self._read(response, remaining)
 				return SafeResponse(url, response.status_code, response.headers, body, redirects)
 			finally:
 				response.close()
 		raise BlockedAddress("too many redirects")
+
+	def _read(self, response, remaining) -> bytes:
+		"""The body, decoded (gzip/deflate) step by step, never more than max_bytes after decoding."""
+		encoding = (response.headers.get("Content-Encoding") or "").strip().lower()
+		if encoding in ("", "identity"):
+			opener = None
+		elif encoding in ("gzip", "x-gzip", "deflate"):
+			opener = zlib.decompressobj(16 + zlib.MAX_WBITS if "gzip" in encoding else zlib.MAX_WBITS)
+		else:
+			raise TooLarge(f"unsupported content encoding {encoding!r}")
+		body, raw_size = b"", 0
+		while True:
+			remaining()
+			chunk = response.raw.read1(64 * 1024)
+			if not chunk:
+				break
+			raw_size += len(chunk)
+			if raw_size > self.max_bytes:
+				raise TooLarge(f"response over {self.max_bytes} bytes")
+			if opener is None:
+				body += chunk
+			else:
+				try:
+					body += opener.decompress(chunk, self.max_bytes + 1 - len(body))
+				except zlib.error:
+					raise TooLarge("the compressed answer is broken") from None
+				if opener.unconsumed_tail:
+					raise TooLarge(f"response over {self.max_bytes} bytes once decompressed")
+			if len(body) > self.max_bytes:
+				raise TooLarge(f"response over {self.max_bytes} bytes")
+		return body
+
+
+def _origin(url: str) -> tuple:
+	parts = urlsplit(url)
+	return ((parts.scheme or "").lower(), (parts.hostname or "").lower(), parts.port or 443)
