@@ -29,6 +29,7 @@ from cred_hub.integrations.protest import SENDABLE, row_status
 from cred_hub.party.document import CNPJ, CPF, document_kind, format_cpf
 from cred_hub.party.resolve import contact_for_cpf, organization_for_cnpj
 from cred_hub.party.roles import CEDENTE, DEBTOR, add_role
+from cred_hub.sandbox import same_space
 
 DEAL, TITLE_ROW, ORG, CONTACT = "CRM Deal", "CRM Deal Title", "CRM Organization", "Contact"
 # Campos do título preenchidos pelo sync do ERP (cred_hub.erp.fields)
@@ -219,16 +220,20 @@ def _grouping(settings) -> str:
 
 def _existing_debtor(document, kind):
 	if kind == CPF:
-		found = frappe.get_all(CONTACT, {"cpf": ("in", (format_cpf(document), document))}, pluck="name", limit=1)
+		found = frappe.get_all(
+			CONTACT, {"cpf": ("in", (format_cpf(document), document)), **same_space(CONTACT)}, pluck="name", limit=1
+		)
 		return (CONTACT, found[0]) if found else None
-	found = frappe.get_all(ORG, {"cnpj": ("in", (format_cnpj(document), document))}, pluck="name", limit=1)
+	found = frappe.get_all(
+		ORG, {"cnpj": ("in", (format_cnpj(document), document)), **same_space(ORG)}, pluck="name", limit=1
+	)
 	return (ORG, found[0]) if found else None
 
 
 def _existing_org(cnpj):
 	if not cnpj:
 		return None
-	found = frappe.get_all(ORG, {"cnpj": ("in", (format_cnpj(cnpj), cnpj))}, pluck="name", limit=1)
+	found = frappe.get_all(ORG, {"cnpj": ("in", (format_cnpj(cnpj), cnpj)), **same_space(ORG)}, pluck="name", limit=1)
 	return found[0] if found else None
 
 
