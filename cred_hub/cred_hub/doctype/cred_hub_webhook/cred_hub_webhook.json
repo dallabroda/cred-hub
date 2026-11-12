@@ -19,8 +19,11 @@
   "contact_updated",
   "checklist_item_rejected",
   "credit_limit_decided",
+  "checklist_item_attached",
   "pipelines_section",
   "pipelines",
+  "payload_section",
+  "payload_fields",
   "audit_section",
   "last_delivery_on",
   "last_delivery_status",
@@ -119,6 +122,12 @@
    "label": "credit.limit_decided (Limite aprovado/reprovado na Mesa de Comitê)"
   },
   {
+   "default": "0",
+   "fieldname": "checklist_item_attached",
+   "fieldtype": "Check",
+   "label": "checklist.item_attached (Documento recebido na Pasta Digital)"
+  },
+  {
    "fieldname": "pipelines_section",
    "fieldtype": "Section Break",
    "label": "Pipelines Filter (Vazio = Todos os Funis)"
@@ -128,6 +137,17 @@
    "fieldtype": "Table",
    "label": "Authorized Pipelines",
    "options": "Cred Hub Webhook Pipeline"
+  },
+  {
+   "fieldname": "payload_section",
+   "fieldtype": "Section Break",
+   "label": "Payload Fields"
+  },
+  {
+   "description": "One field per line (e.g. name, status, ch_my_field, organization, contacts). Empty: every field. Passwords and internal fields are never sent.",
+   "fieldname": "payload_fields",
+   "fieldtype": "Small Text",
+   "label": "Fields Sent"
   },
   {
    "fieldname": "audit_section",
@@ -154,7 +174,7 @@
   }
  ],
  "links": [],
- "modified": "2026-11-05 16:30:00.000000",
+ "modified": "2026-11-11 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Cred Hub",
  "name": "Cred Hub Webhook",

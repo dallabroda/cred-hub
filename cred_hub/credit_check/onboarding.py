@@ -799,6 +799,103 @@ def _notify_document_rejected(
 		pass
 
 
+def _notify_document_attached(
+	organization_name: str,
+	deal_name: str | None,
+	item_key: str,
+	label: str,
+	file_name: str,
+	file_url: str,
+	source: str,
+) -> None:
+	"""Webhook checklist.item_attached (credtech#375): a document arrived in an item, from the screen, the API or the
+	client's link. Never breaks the upload."""
+	try:
+		from cred_hub.webhooks import trigger_checklist_attached
+
+		trigger_checklist_attached(
+			organization_name=organization_name,
+			deal_name=deal_name,
+			item_key=item_key,
+			label=label,
+			file_name=file_name,
+			file_url=file_url,
+			source=source,
+		)
+	except Exception:
+		frappe.log_error(title="Pasta Digital: falha ao disparar checklist.item_attached")
+
+
+def _clean_document_name(file_name: str | None) -> str:
+	"""Rules of every document sent to the Digital Folder (client link and API): a name with an allowed type."""
+	file_name = os.path.basename((file_name or "").strip())
+	if not file_name:
+		frappe.throw(_("Select a file to upload."))
+	ext = os.path.splitext(file_name)[1].lower()
+	if ext not in ALLOWED_EXTENSIONS:
+		frappe.throw(_("File type not allowed ({0}). Send PDF, image or spreadsheet.").format(ext or "unknown"))
+	return file_name
+
+
+def _check_document_bytes(raw_bytes: bytes | None) -> None:
+	if not raw_bytes:
+		frappe.throw(_("Empty file content."))
+	if len(raw_bytes) > MAX_UPLOAD_BYTES:
+		frappe.throw(_("File exceeds the maximum limit of 15 MB."))
+
+
+def _assert_not_verified(current: dict) -> None:
+	if current.get("status") == "verified":
+		frappe.throw(_("This document has already been verified and locked by the credit team."))
+
+
+def _save_private_document(item_key: str, file_name: str, raw_bytes: bytes, target_doctype: str, target_name: str):
+	"""Private file on the card or organization. Frappe's File checks the content (a PDF with scripts is refused); a
+	file it cannot read (a broken PDF) is refused with a clear message instead of a server error."""
+	from frappe.utils.file_manager import save_file
+
+	try:
+		return save_file(f"{item_key}_{file_name}", raw_bytes, target_doctype, target_name, is_private=1)
+	except frappe.ValidationError:
+		raise
+	except Exception:
+		frappe.throw(_("The file could not be read. Send a valid document."))
+
+
+def receive_document(
+	organization_name: str,
+	item_key: str,
+	file_name: str,
+	raw_bytes: bytes,
+	deal_name: str | None = None,
+	valid_until: str | None = None,
+) -> dict[str, Any]:
+	"""A document sent through the API into a checklist item (credtech#375): the client link's file rules (type, size,
+	verified items locked), saved as a private file on the card or the organization, then the screen's update
+	(timeline, document reading, checklist.item_attached webhook). Returns the updated item."""
+	file_name = _clean_document_name(file_name)
+	_check_document_bytes(raw_bytes)
+	item_key = (item_key or "").strip()
+	state = _load_org_state(organization_name)
+	if item_key not in {item["key"] for item in _effective_template_for_org(state)}:
+		frappe.throw(_("Unknown checklist document: {0}").format(item_key))
+	checklist_state = state.get("checklist") if isinstance(state.get("checklist"), dict) else {}
+	current = checklist_state.get(item_key) if isinstance(checklist_state.get(item_key), dict) else {}
+	_assert_not_verified(current)
+
+	target_doctype, target_name = ("CRM Deal", deal_name) if deal_name else ("CRM Organization", organization_name)
+	file_doc = _save_private_document(item_key, file_name, raw_bytes, target_doctype, target_name)
+	result = update_checklist_item(
+		organization_name=organization_name,
+		item_key=item_key,
+		file_url=file_doc.file_url,
+		file_name=file_name,
+		deal_name=deal_name,
+		valid_until=valid_until or None,
+	)
+	return next(item for item in result["checklist"] if item["key"] == item_key)
+
+
 def update_checklist_item(
 	organization_name: str,
 	item_key: str,
@@ -887,6 +984,10 @@ def update_checklist_item(
 		deal_name,
 		f"📋 <strong>{escape(_('Credit Document Checklist'))}</strong>: {escape(label)} → <strong>{escape(status_label)}</strong>{note_suffix}",
 	)
+
+	if new_status == "attached" and new_file_url and new_file_url != current.get("file_url"):
+		source = "api" if getattr(frappe.local, "credhub_api_key", None) else "user"
+		_notify_document_attached(organization_name, deal_name, item_key, label, new_file_name, new_file_url, source)
 
 	if new_status == "rejected":
 		_notify_document_rejected(
@@ -1176,12 +1277,7 @@ def public_upload_document(
 	org_name, state = _resolve_portal_token(token)
 	_verify_portal_cnpj(org_name, cnpj)
 
-	file_name = os.path.basename((file_name or "").strip())
-	if not file_name:
-		frappe.throw(_("Select a file to upload."))
-	ext = os.path.splitext(file_name)[1].lower()
-	if ext not in ALLOWED_EXTENSIONS:
-		frappe.throw(_("File type not allowed ({0}). Send PDF, image or spreadsheet.").format(ext or "unknown"))
+	file_name = _clean_document_name(file_name)
 
 	if not file_content_base64:
 		frappe.throw(_("Empty file content."))
@@ -1191,10 +1287,7 @@ def public_upload_document(
 		raw_bytes = base64.b64decode(file_content_base64)
 	except Exception:
 		frappe.throw(_("Could not decode the uploaded file."))
-	if not raw_bytes:
-		frappe.throw(_("Empty file content."))
-	if len(raw_bytes) > MAX_UPLOAD_BYTES:
-		frappe.throw(_("File exceeds the maximum limit of 15 MB."))
+	_check_document_bytes(raw_bytes)
 
 	# Se o cliente estiver enviando um documento complementar extra
 	item_key = (item_key or "").strip()
@@ -1228,23 +1321,13 @@ def public_upload_document(
 
 	checklist_state = state.get("checklist") if isinstance(state.get("checklist"), dict) else {}
 	current = checklist_state.get(item_key) if isinstance(checklist_state.get(item_key), dict) else {}
-	if current.get("status") == "verified":
-		frappe.throw(_("This document has already been verified and locked by the credit team."))
+	_assert_not_verified(current)
 
 	deal_name = str((state.get("portal") or {}).get("deal") or "").strip() or None
 	target_doctype = "CRM Deal" if (deal_name and frappe.db.exists("CRM Deal", deal_name)) else "CRM Organization"
 	target_name = deal_name if target_doctype == "CRM Deal" else org_name
 
-	from frappe.utils.file_manager import save_file
-
-	safe_filename = f"{item_key}_{file_name}"
-	file_doc = save_file(
-		safe_filename,
-		raw_bytes,
-		target_doctype,
-		target_name,
-		is_private=1,
-	)
+	file_doc = _save_private_document(item_key, file_name, raw_bytes, target_doctype, target_name)
 
 	timestamp = now_datetime().strftime("%Y-%m-%d %H:%M")
 	clean_valid_until = str(valid_until or current.get("valid_until") or "").strip()
@@ -1285,6 +1368,7 @@ def public_upload_document(
 		f"📥 <strong>{escape(_('External Document Portal'))}</strong>: "
 		f"{escape(_('Client uploaded'))} <strong>{escape(label)}</strong> ({escape(file_name)})",
 	)
+	_notify_document_attached(org_name, deal_name, item_key, label, file_name, file_doc.file_url, "portal")
 
 	return public_verify_and_list(token, cnpj)
 

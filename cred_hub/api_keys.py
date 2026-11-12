@@ -114,6 +114,15 @@ METHODS = {
 	"crm.api.pipeline.save_pipeline": "fields_admin",
 	# Formulários dinâmicos (dev 3): o schema vai com a leitura de cada recurso
 	"crm.api.forms.get_form_schema": "cards_read",
+	# Catálogo de campos e formulários pela chave (decisão do dono 11/11/2026, credtech#375): só com "Campos e regras";
+	# o crm confere o funil (Dono) e os limites, e o hook crm_field_admin deixa o usuário técnico passar como admin
+	"crm.api.forms.create_field": "fields_admin",
+	"crm.api.forms.update_field": "fields_admin",
+	"crm.api.forms.disable_field": "fields_admin",
+	"crm.api.forms.save_form_config": "fields_admin",
+	"crm.api.pipeline.create_field": "fields_admin",
+	"crm.api.pipeline.update_field": "fields_admin",
+	"crm.api.pipeline.disable_field": "fields_admin",
 	# Campos da organização, segunda organização e contato que a etapa mostra no card (Fase 5, credtech#182)
 	"crm.api.forms.get_card_blocks": "cards_read",
 	# Vínculos de contatos ao card
@@ -133,6 +142,9 @@ METHODS = {
 	"cred_hub.api_keys.get_openapi_spec": "pipelines_read",
 	# Domínio de Crédito PJ & Pasta Digital
 	"cred_hub.credit_check.api.get_credit_onboarding": "credit_read",
+	# Pasta Digital pela API (credtech#375): ler o checklist item a item e enviar um documento a um item
+	"cred_hub.credit_check.api.get_document_checklist": "credit_read",
+	"cred_hub.credit_check.api.upload_checklist_document": "files_write",
 	"cred_hub.credit_check.api.get_credit_committee": "credit_read",
 	"cred_hub.credit_check.api.get_report_details": "credit_read",
 	"cred_hub.credit_check.api.get_whatsapp_onboarding_reminder": "credit_read",
@@ -474,6 +486,11 @@ def _check_route(key_name: str) -> bool:
 			if scopes & {"organizations_read", "contacts_read", "cards_read", "credit_read"}:
 				return False
 			_deny()
+		if target == "cred_hub.credit_check.api.upload_checklist_document":
+			# o arquivo (files_write) e a leitura da Pasta Digital que a resposta devolve (credit_read)
+			if {"files_write", "credit_read"} <= scopes and verb == "POST":
+				return True
+			_deny()
 		if target in ("cred_hub.bulk.bulk_upsert", "cred_hub.bulk.bulk_delete"):
 			doctype = frappe.local.form_dict.get("doctype")
 			req_scope = {
@@ -506,6 +523,16 @@ def _check_route(key_name: str) -> bool:
 
 # save_pipeline pela chave: só campos e regras de um funil da chave, nunca criar funil, membros ou distribuição
 SAVE_PIPELINE_KEYS = {"name", "fields", "field_rules"}
+
+
+def is_fields_admin_call() -> bool:
+	"""Hook crm_field_admin: this request comes from an API key with the fields admin scope, running as its technical
+	user. The route was already checked against the key in authenticate; this checks it again where the crm decides."""
+	info = getattr(frappe.local, "credhub_api_key", None)
+	if not info or not info.get("name"):
+		return False
+	technical_user = frappe.db.get_value(KEY, info["name"], "technical_user")
+	return technical_user == frappe.session.user and "fields_admin" in _scopes(info["name"])
 
 
 def _check_save_pipeline(key_name: str):
@@ -650,10 +677,39 @@ def after_request(response=None, request=None):
 			log_payload["request_id"] = request_id
 		if log_meta.has_field("duration_ms"):
 			log_payload["duration_ms"] = duration_ms
+		details = _audit_details(kind, target)
+		if details and log_meta.has_field("details"):
+			log_payload["details"] = details
 		frappe.get_doc(log_payload).insert(ignore_permissions=True)
 		frappe.db.commit()
 	except Exception:
 		frappe.log_error(title="Cred Hub API: falha ao registrar o uso da chave")
+
+
+# Argumentos de uma chamada de "Campos e regras" guardados no log (quem mudou o quê); nunca segredos
+AUDITED_ARGS = (
+	"doctype",
+	"fieldname",
+	"label",
+	"fieldtype",
+	"options",
+	"placement",
+	"required",
+	"pipeline",
+	"stage",
+	"block",
+	"fields",
+	"doc",
+)
+AUDIT_DETAILS_LIMIT = 4000
+
+
+def _audit_details(kind: str | None, target: str | None) -> str | None:
+	if kind != "method" or METHODS.get(target) != "fields_admin":
+		return None
+	form = frappe.local.form_dict or {}
+	details = {arg: form.get(arg) for arg in AUDITED_ARGS if form.get(arg) not in (None, "")}
+	return json.dumps(details, default=str, ensure_ascii=False)[:AUDIT_DETAILS_LIMIT]
 
 
 LAST_USED_THROTTLE_SECONDS = 60
@@ -1009,131 +1065,14 @@ def lookup_by_document(document: str) -> dict:
 	return _limit_lookup_to_scopes(result)
 
 
-@frappe.whitelist(allow_guest=True)
+@frappe.whitelist()
 def get_openapi_spec() -> dict:
-	"""Gera a especificação OpenAPI 3.1.0 viva da API do HubTech CRM."""
-	base_url = frappe.utils.get_url()
-	return {
-		"openapi": "3.1.0",
-		"info": {
-			"title": "HubTech CRM — API Padrão Ouro",
-			"version": "1.2.0",
-			"description": (
-				"API REST & RPC do HubTech CRM (CredTech Digital) para gestão de Funis, Cards, Organizações, "
-				"Contatos, Pasta Digital de Crédito PJ, Pareceres de Risco e Sincronização Incremental com ERPs."
-			),
-		},
-		"servers": [{"url": base_url, "description": "Servidor de Produção HubTech CRM"}],
-		"components": {
-			"securitySchemes": {
-				"BearerAuth": {
-					"type": "http",
-					"scheme": "bearer",
-					"bearerFormat": "hub_<key_id>_<secret>",
-					"description": "Chave de API gerada em Configurações > Integrações > API.",
-				}
-			}
-		},
-		"security": [{"BearerAuth": []}],
-		"paths": {
-			"/api/method/crm.api.pipeline.get_pipelines": {
-				"get": {
-					"summary": "Listar Funis e Etapas",
-					"tags": ["Funis & Catálogo"],
-					"responses": {"200": {"description": "Lista de funis ativos autorizados na chave."}},
-				}
-			},
-			"/api/method/crm.api.pipeline.get_field_catalog": {
-				"get": {
-					"summary": "Catálogo Dinâmico de Campos (Padrão + Customizados)",
-					"tags": ["Funis & Catálogo"],
-					"responses": {"200": {"description": "Catálogo de campos do Card, Organização e Contato."}},
-				}
-			},
-			"/api/method/cred_hub.api_keys.lookup_by_document": {
-				"get": {
-					"summary": "Busca Unificada 360° por CNPJ ou CPF",
-					"tags": ["Crédito PJ & Pasta Digital", "Cards & Organizações"],
-					"parameters": [
-						{
-							"name": "document",
-							"in": "query",
-							"required": True,
-							"schema": {"type": "string", "example": "12.345.678/0001-90"},
-							"description": "CNPJ (14 dígitos) ou CPF (11 dígitos), com ou sem pontuação.",
-						}
-					],
-					"responses": {
-						"200": {
-							"description": "Organização/Contato, Cards vinculados, resumo da Pasta Digital e veredito de crédito."
-						}
-					},
-				}
-			},
-			"/api/method/cred_hub.api_keys.list_records_cursor": {
-				"get": {
-					"summary": "Listagem Paginada por Cursor + Delta (updated_since)",
-					"tags": ["Sincronização ERP"],
-					"parameters": [
-						{"name": "doctype", "in": "query", "required": True, "schema": {"type": "string", "enum": ["CRM Deal", "CRM Organization", "Contact", "CRM Task", "FCRM Note"]}},
-						{"name": "limit", "in": "query", "schema": {"type": "integer", "default": 50}},
-						{"name": "cursor", "in": "query", "schema": {"type": "string"}},
-						{"name": "updated_since", "in": "query", "schema": {"type": "string", "example": "2026-11-01 00:00:00"}},
-					],
-					"responses": {"200": {"description": "Página de registros com next_cursor e has_more."}},
-				}
-			},
-			"/api/resource/CRM Deal": {
-				"get": {"summary": "Listar Cards", "tags": ["Cards & Organizações"], "responses": {"200": {"description": "OK"}}},
-				"post": {"summary": "Criar Card", "tags": ["Cards & Organizações"], "responses": {"200": {"description": "Card criado"}}},
-			},
-			"/api/method/crm.api.pipeline.move_card": {
-				"post": {
-					"summary": "Mover Card de Etapa (respeita Stage Gate e campos obrigatórios)",
-					"tags": ["Cards & Organizações"],
-					"responses": {"200": {"description": "Card atualizado"}},
-				}
-			},
-			"/api/method/cred_hub.bulk.bulk_upsert": {
-				"post": {
-					"summary": "Upsert em Lote (até 50 registros por chamada)",
-					"tags": ["Sincronização ERP"],
-					"responses": {
-						"200": {"description": "Resumo de criados, atualizados e erros."},
-						"409": {"description": "Banco ocupado (deadlock): nada foi gravado; repita a mesma chamada."},
-					},
-				}
-			},
-			"/api/method/cred_hub.bulk.bulk_delete": {
-				"post": {
-					"summary": "Exclusão em Lote (até 50 registros por chamada, requer allow_delete)",
-					"tags": ["Sincronização ERP"],
-					"responses": {
-						"200": {"description": "Resumo de excluídos, não encontrados e erros."},
-						"409": {"description": "Banco ocupado (deadlock): nada foi excluído; repita a mesma chamada."},
-					},
-				}
-			},
-			"/api/method/cred_hub.credit_check.api.get_credit_onboarding": {
-				"get": {
-					"summary": "Consultar Pasta Digital de Documentos e Relatório de Visita",
-					"tags": ["Crédito PJ & Pasta Digital"],
-					"parameters": [
-						{"name": "organization", "in": "query", "required": True, "schema": {"type": "string"}},
-						{"name": "deal", "in": "query", "schema": {"type": "string"}},
-					],
-					"responses": {"200": {"description": "Checklist completo, link externo blindado e visita."}},
-				}
-			},
-			"/api/method/cred_hub.credit_check.api.create_onboarding_portal_link": {
-				"post": {
-					"summary": "Gerar / Obter Link da Caixa de Correio Blindada (Pasta Digital)",
-					"tags": ["Crédito PJ & Pasta Digital"],
-					"responses": {"200": {"description": "URL do portal blindado protegida por CNPJ."}},
-				}
-			},
-		},
-	}
+	"""OpenAPI 3.1 of this company's API (credtech#375): record schemas with the company's own fields, pipelines and
+	stages as enums. Built once and cached per site (cred_hub.api_schema); needs a key or a signed-in user, since it
+	shows how the company is set up."""
+	from cred_hub.api_schema import openapi_spec
+
+	return openapi_spec()
 
 
 @frappe.whitelist()
@@ -1476,6 +1415,12 @@ def install():
 	)
 	if not frappe.db.exists("Role", API_ROLE):
 		frappe.get_doc({"doctype": "Role", "role_name": API_ROLE, "desk_access": 0}).insert(ignore_permissions=True)
+	# Migração pode mudar campos e eventos: a especificação OpenAPI e a lista de webhooks ativos são lidas de novo
+	from cred_hub.api_schema import clear_openapi_cache
+	from cred_hub.webhooks import clear_active_cache
+
+	clear_openapi_cache()
+	clear_active_cache()
 	ensure_indexes()
 	try:
 		from cred_hub.credit_check.onboarding import migrate_all_to_relational
