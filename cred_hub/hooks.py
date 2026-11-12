@@ -44,6 +44,9 @@ on_session_creation = "cred_hub.api_keys.block_login"
 crm_hidden_users = ["cred_hub.api_keys.technical_users"]
 # Chave com "Campos e regras" (fields_admin) cria e altera campos e formulários pela API (credtech#375)
 crm_field_admin = ["cred_hub.api_keys.is_fields_admin_call"]
+# Arquivos lidos por uma chave seguem o card a que estão anexados (funis da chave; audit M10)
+permission_query_conditions = {"File": "cred_hub.api_guard.file_query_conditions"}
+has_permission = {"File": "cred_hub.api_guard.has_file_permission"}
 
 # Quem chega sem conta vai para o cadastro de empresa nova (credtech#25)
 oauth_without_account = "cred_hub.signup_access.oauth_without_account"
