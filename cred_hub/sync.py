@@ -27,13 +27,9 @@ def get_deleted_records(doctype: str, since: str | None = None) -> list[dict]:
 		frappe.throw(_("This API key is not allowed to read {0}.").format(doctype), frappe.PermissionError)
 
 	pipelines = frappe.get_all("Cred Hub API Key Pipeline", {"parent": key_info["name"]}, pluck="pipeline")
-	owners = None
-	if getattr(frappe.local, "credhub_api_is_test", False):
-		# a test key only learns about deletions of sandbox records (credtech#375)
-		from cred_hub import sandbox
-
-		owners = sorted(sandbox.test_users())
-	return deleted_since(doctype, since, pipelines, owners=owners)
+	# a test key only learns about deletions of sandbox records (credtech#375)
+	sandbox_only = bool(getattr(frappe.local, "credhub_api_is_test", False))
+	return deleted_since(doctype, since, pipelines, sandbox_only=sandbox_only)
 
 
 # Exclusões que dependem de um card: o funil vem do snapshot gravado na exclusão (CRM Deal) ou do card
@@ -47,7 +43,7 @@ CARD_SCOPED = {
 
 
 def deleted_since(
-	doctype: str, since: str | None, pipelines: list[str], limit: int = 500, owners: list[str] | None = None
+	doctype: str, since: str | None, pipelines: list[str], limit: int = 500, sandbox_only: bool = False
 ) -> list[dict]:
 	"""O filtro por funil é feito no banco, antes do limite: com o filtro depois, 500 exclusões de outros
 	funis devolviam uma lista vazia e quem sincroniza nunca conseguia passar delas."""
@@ -55,10 +51,9 @@ def deleted_since(
 	values = {"doctype": doctype, "since": since, "pipelines": tuple(pipelines) or ("",), "limit": limit}
 	if since:
 		where.append("dd.creation >= %(since)s")
-	if owners is not None and doctype not in ("CRM Deal", "FCRM Note", "CRM Task"):
-		# records that do not follow a card: only those created by the given users (test keys)
-		values["owners"] = tuple(owners) or ("",)
-		where.append("JSON_VALUE(dd.data, '$.owner') in %(owners)s")
+	if sandbox_only and doctype != "CRM Deal":
+		# records stamped as sandbox when created (cards already follow the key's pipeline: the Sandbox)
+		where.append("JSON_VALUE(dd.data, '$.credhub_sandbox') = 1")
 	if doctype == "CRM Deal":
 		where.append("JSON_VALUE(dd.data, '$.pipeline') in %(pipelines)s")
 	elif doctype in CARD_SCOPED:

@@ -22,6 +22,10 @@ def on_update(doc, method=None):
 def _on_update(doc):
 	if getattr(frappe.flags, "in_import", False):
 		return
+	from cred_hub.sandbox import skip_side_effects
+
+	if skip_side_effects(doc):
+		return
 	name = company_name(doc)
 	if doc.get("company_checked_on") or not name:
 		return

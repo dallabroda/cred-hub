@@ -21,9 +21,9 @@ def on_deal_update(doc, method=None):
 		return
 
 	# Sandbox da API (credtech#375): card de teste nunca dispara consulta paga
-	from cred_hub.sandbox import is_sandbox_pipeline
+	from cred_hub.sandbox import skip_side_effects
 
-	if is_sandbox_pipeline(doc.pipeline):
+	if skip_side_effects(doc):
 		return
 
 	# Proteção contra disparo acidental em funis de cobrança / recuperação

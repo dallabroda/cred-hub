@@ -59,6 +59,8 @@ _SANDBOX_GUARDED = (
 	"Cred Hub Checklist Item",
 	"Cred Hub Visit Report",
 	"Cred Hub Credit Report",
+	"CRM Pipeline",
+	"CRM Deal Status",
 )
 permission_query_conditions = {
 	"File": ["cred_hub.api_guard.file_query_conditions", _SANDBOX_QUERY],
@@ -108,7 +110,8 @@ doc_events = {
 			"cred_hub.integrations.protest.on_deal_update",
 			"cred_hub.credit_check.events.on_deal_update",
 			# Card entered the configured stage of the credit funnel: cedente goes to the ERP (credtech#367)
-			"cred_hub.erp.cedente.on_deal_update",
+			# (through the sandbox: a Sandbox card never goes to the ERP)
+			"cred_hub.sandbox.erp_cedente_on_deal_update",
 			"cred_hub.webhooks.on_deal_update",
 		],
 		"on_trash": "cred_hub.webhooks.on_deal_trash",
@@ -137,3 +140,14 @@ doc_events = {
 	"Cred Hub Checklist Item": {"validate": "cred_hub.sandbox.validate_organization_record"},
 	"Cred Hub Visit Report": {"validate": "cred_hub.sandbox.validate_organization_record"},
 }
+
+# Sandbox da API (credtech#375): registros criados por chave de teste ganham a marca credhub_sandbox (indexada), que
+# ninguém muda depois; notas, tarefas e arquivos também (para a sincronização e os webhooks)
+for _doctype in ("Contact", "CRM Organization", "CRM Lead", "FCRM Note", "CRM Task", "File"):
+	_events = doc_events.setdefault(_doctype, {})
+	for _event, _method in (("before_insert", "cred_hub.sandbox.stamp"), ("validate", "cred_hub.sandbox.keep_flag")):
+		_current = _events.get(_event) or []
+		_events[_event] = [*([_current] if isinstance(_current, str) else _current), _method]
+
+# Conversão de lead pela chave de teste só encontra contatos e organizações do sandbox (sem oráculo de dado real)
+extend_doctype_class = {"CRM Lead": ["cred_hub.sandbox.SandboxLeadMixin"]}

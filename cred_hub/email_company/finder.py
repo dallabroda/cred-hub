@@ -38,6 +38,10 @@ def on_lead_insert(doc, method=None):
 	"""doc_event CRM Lead.after_insert: site, Google Ads, Meta, webhook e lead criado à mão."""
 	if not enabled() or frappe.flags.in_import or not email_domain(doc.get("email")):
 		return
+	from cred_hub.sandbox import skip_side_effects
+
+	if skip_side_effects(doc):
+		return
 	frappe.enqueue(
 		"cred_hub.email_company.finder.run",
 		queue="default",

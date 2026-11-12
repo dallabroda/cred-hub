@@ -719,6 +719,10 @@ def on_deal_update(doc, method=None):
 	começam desligadas: o cartório cobra custas e quem decide gastar é o cliente (dono, 30/10/2026)."""
 	if doc.flags.cred_hub_protest or not doc.has_value_changed("status"):
 		return
+	from cred_hub.sandbox import skip_side_effects
+
+	if skip_side_effects(doc):
+		return
 	settings = get_settings()
 	if not settings.cenprot_enabled or not settings.collection_pipeline or doc.pipeline != settings.collection_pipeline:
 		return

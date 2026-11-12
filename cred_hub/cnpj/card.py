@@ -18,6 +18,11 @@ def after_insert(doc, method=None):
 	vai para o contato do card e nunca vira Organização (credtech#315)."""
 	if not doc.get("lead"):
 		return
+	from cred_hub.sandbox import skip_side_effects
+
+	if skip_side_effects(doc):
+		# Sandbox card: never linked to a real organization found by CNPJ (credtech#375)
+		return
 	lead = frappe.db.get_value("CRM Lead", doc.lead, ["cnpj", *RECEITA_FIELDS], as_dict=True)
 	if not lead or not only_digits(lead.cnpj or ""):
 		return
