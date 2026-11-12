@@ -556,7 +556,7 @@ class TestApiSandbox(IntegrationTestCase):
 			lambda: frappe.rename_doc("CRM Pipeline", self.sandbox, "sandbox-renamed", force=True),
 		):
 			frappe.db.savepoint("sandbox_attempt")
-			with self.assertRaisesRegex(frappe.ValidationError, re.escape(sandbox.PIPELINE_NAME)):
+			with self.assertRaisesRegex(frappe.ValidationError, re.escape(sandbox.PIPELINE_NAME) + ".*still in use"):
 				attempt()
 			frappe.db.rollback(save_point="sandbox_attempt")
 		self.assertTrue(frappe.db.exists("CRM Pipeline", self.sandbox))
@@ -593,3 +593,98 @@ class TestApiSandbox(IntegrationTestCase):
 		# and a test key only finds its own
 		self.as_test_key()
 		self.assertEqual(sandbox.same_space("CRM Organization"), {sandbox.RECORD_FLAG: 1})
+
+	def test_sandbox_pipeline_can_go_once_no_test_key_nor_test_data_remains(self):
+		from crm.api.pipeline import save_pipeline
+
+		org = self.sandbox_org()
+		card = frappe.get_doc({"doctype": DEAL, "pipeline": self.sandbox}).insert()
+		frappe.set_user("Administrator")
+		frappe.local.credhub_api_key = None
+		uses = ", ".join(sandbox.sandbox_in_use(self.sandbox))
+		for expected in ("1 test API key(s) not revoked", "1 card(s)", "1 CRM Organization"):
+			self.assertIn(expected, uses)
+		api_keys.revoke_api_key(self.created["name"])
+		frappe.delete_doc(DEAL, card.name, ignore_permissions=True, force=True)
+		# revoked and no card, but a test organization is still there: the message says what remains
+		frappe.db.savepoint("sandbox_attempt")
+		with self.assertRaisesRegex(frappe.ValidationError, "still in use.*1 CRM Organization"):
+			frappe.delete_doc("CRM Pipeline", self.sandbox, ignore_permissions=True)
+		frappe.db.rollback(save_point="sandbox_attempt")
+		frappe.delete_doc("CRM Organization", org.name, ignore_permissions=True, force=True)
+		self.assertEqual(sandbox.sandbox_in_use(self.sandbox), [])
+		# free: the admin renames and deletes it (no force: the revoked key's link goes with it, the key stays)
+		save_pipeline({"name": self.sandbox, "pipeline_name": "Sandbox antigo"})
+		frappe.delete_doc("CRM Pipeline", self.sandbox, ignore_permissions=True)
+		self.assertFalse(frappe.db.exists("CRM Pipeline", self.sandbox))
+		self.assertFalse(frappe.db.exists("Cred Hub API Key Pipeline", {"pipeline": self.sandbox}))
+		self.assertTrue(frappe.db.exists(api_keys.KEY, self.created["name"]))
+		# the next test key gets a new Sandbox
+		sandbox.clear_test_users_cache()
+		new = self.create_key(test=True, label="Nova")
+		self.assertNotEqual(new["pipelines"], [self.sandbox])
+		self.assertEqual(frappe.db.get_value("CRM Pipeline", new["pipelines"][0], sandbox.PIPELINE_FLAG), 1)
+
+	# ---------- A test key never assigns nor mentions a person ----------
+
+	def test_matrix_test_key_never_assigns_or_mentions_people(self):
+		from frappe.desk.form.utils import add_comment
+
+		person = "Administrator"
+		mention = (
+			f'<p><span class="mention" data-type="mention" data-id="{person}" data-label="Admin">@Admin</span> veja</p>'
+		)
+		# every writable resource with an owner field is guarded
+		for doctype, (_read, write) in api_keys.RESOURCES.items():
+			if not write:
+				continue
+			fields = {"deal_owner", "lead_owner", "assigned_to"} & {df.fieldname for df in frappe.get_meta(doctype).fields}
+			self.assertTrue(fields <= set(sandbox.OWNER_FIELDS.get(doctype, ())), (doctype, fields))
+		self.as_test_key()
+		card = frappe.get_doc({"doctype": DEAL, "pipeline": self.sandbox}).insert()
+		for doc in (
+			{"doctype": DEAL, "pipeline": self.sandbox, "deal_owner": person},
+			{"doctype": "CRM Lead", "first_name": "Teste", "pipeline": self.sandbox, "lead_owner": person},
+			{"doctype": "CRM Task", "title": "t", "reference_doctype": DEAL, "reference_docname": card.name, "assigned_to": person},
+		):
+			frappe.db.savepoint("assign_attempt")
+			with self.assertRaisesRegex(frappe.ValidationError, "cannot assign records to people"):
+				frappe.get_doc(doc).insert()
+			frappe.db.rollback(save_point="assign_attempt")
+		card.reload()
+		card._assign = json.dumps([person])
+		with self.assertRaisesRegex(frappe.ValidationError, "_assign"):
+			card.save()
+		# an owner set by the team stays, and the key can keep working on the card
+		frappe.set_user("Administrator")
+		frappe.db.set_value(DEAL, card.name, "deal_owner", person)
+		self.as_test_key()
+		card = frappe.get_doc(DEAL, card.name)
+		card.website = "https://teste.example"
+		card.save()
+		card.deal_owner = None
+		card.save()
+		# @mentions written by a test key become plain text (no Frappe or crm notification, no e-mail)
+		from crm.api.comment import extract_mentions as crm_mentions
+		from frappe.desk.notifications import extract_mentions
+
+		comment = add_comment(DEAL, card.name, mention, frappe.session.user, "API")
+		note = frappe.get_doc(
+			{"doctype": "FCRM Note", "title": "n", "content": mention, "reference_doctype": DEAL, "reference_docname": card.name}
+		).insert()
+		task = frappe.get_doc(
+			{"doctype": "CRM Task", "title": "t", "description": mention, "reference_doctype": DEAL, "reference_docname": card.name}
+		).insert()
+		for doctype, name, field in (("Comment", comment.name, "content"), ("FCRM Note", note.name, "content"), ("CRM Task", task.name, "description")):
+			stored = frappe.db.get_value(doctype, name, field)
+			self.assertIn("@Admin", stored, doctype)
+			self.assertEqual(extract_mentions(stored), [], doctype)
+			self.assertEqual(crm_mentions(stored), [], doctype)
+		# people's mentions are untouched
+		frappe.set_user("Administrator")
+		frappe.local.credhub_api_key = None
+		self.assertEqual(sandbox.plain_mentions("<p>sem menção</p>"), "<p>sem menção</p>")
+		staff = frappe.get_doc(
+			{"doctype": "FCRM Note", "title": "n", "content": mention, "reference_doctype": DEAL, "reference_docname": card.name}
+		).insert()
+		self.assertIn('class="mention"', frappe.db.get_value("FCRM Note", staff.name, "content"))
