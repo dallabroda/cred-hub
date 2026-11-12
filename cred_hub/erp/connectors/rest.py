@@ -204,7 +204,7 @@ class RestConnector(Connector, metaclass=_Configured):
 			config = RestConfig.parse(values.get("rest_config") or (cls.config.data if cls.config else None))
 		except ConfigError:
 			return ""
-		return f"rest:{config.auth_scope(values.get('rest_secrets') or {})}"
+		return f"rest:{config.auth_scope(values.get('rest_secrets') or {}, _site_key())}"
 
 	@classmethod
 	def make_client(cls, values: dict, **kwargs):
@@ -221,7 +221,7 @@ class RestConnector(Connector, metaclass=_Configured):
 			raise ErpAuthError(f"Fill the REST secrets: {', '.join(missing)}.")
 		if "pace" not in kwargs and config.data["pace"]["min_interval"]:
 			# On a site, the minimum interval between calls is shared by every worker (per credential)
-			kwargs["pace"] = _site_pace(config.auth_scope(secrets))
+			kwargs["pace"] = _site_pace(config.auth_scope(secrets, _site_key()))
 		return RestClient(config, secrets, **kwargs)
 
 	# Description ------------------------------------------------------------------------------------------------
@@ -413,6 +413,16 @@ class RedisPace:
 				return
 			left = cache.pttl(key)
 			self.sleep(max(left, 10) / 1000 if left and left > 0 else 0.01)
+
+
+def _site_key() -> str:
+	"""The site's own secret (encryption key) for the HMAC of the credential fingerprint; "" outside a site."""
+	try:
+		import frappe
+	except ImportError:
+		return ""
+	conf = getattr(frappe.local, "conf", None) or {}
+	return conf.get("encryption_key") or conf.get("secret_key") or ""
 
 
 def _site_pace(scope: str):
