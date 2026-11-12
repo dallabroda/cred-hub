@@ -12,7 +12,31 @@ from cred_hub import api_keys, billing
 SELLER = "crm.user1@example.com"
 
 
+def PDF_UPLOAD():
+	import io
+
+	from werkzeug.datastructures import FileStorage
+
+	return {"file": FileStorage(io.BytesIO(b"%PDF-1.4"), filename="relatorio.pdf")}
+
+
 class TestApiKeys(IntegrationTestCase):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		# the CRM test user may be missing on a fresh site (the crm fixtures are not loaded by this module)
+		if not frappe.db.exists("User", SELLER):
+			frappe.get_doc(
+				{
+					"doctype": "User",
+					"email": SELLER,
+					"first_name": "Seller",
+					"send_welcome_email": 0,
+					"roles": [{"role": "Sales User"}],
+				}
+			).insert(ignore_permissions=True)
+			frappe.db.commit()  # nosemgrep: fixture shared by the class
+
 	def setUp(self):
 		frappe.set_user("Administrator")
 		commit = patch.object(frappe.db, "commit")
@@ -37,9 +61,11 @@ class TestApiKeys(IntegrationTestCase):
 		frappe.local.credhub_api_key = None
 		return api_keys.create_api_key("ERP", list(scopes), [self.pipeline], **kw)
 
-	def call(self, token, path, method="GET", form=None, ip="203.0.113.9"):
+	def call(self, token, path, method="GET", form=None, ip="203.0.113.9", files=None):
 		"""Roda o auth_hook como numa chamada real e devolve o usuário da chamada."""
-		request = MagicMock(path=path, method=method, headers=Headers({"Authorization": f"Bearer {token}"}))
+		request = MagicMock(
+			path=path, method=method, headers=Headers({"Authorization": f"Bearer {token}"}), files=files or {}
+		)
 		frappe.set_user("Guest")
 		frappe.local.credhub_api_key = None
 		with (
@@ -398,7 +424,7 @@ class TestApiKeys(IntegrationTestCase):
 			self.call(token_read, "/api/resource/File", "POST")
 
 		token_write = self.create(scopes=("files_read", "files_write"))["token"]
-		self.call(token_write, "/api/method/upload_file", "POST")
+		self.call(token_write, "/api/method/upload_file", "POST", files=PDF_UPLOAD())
 		self.assertTrue(frappe.local.credhub_api_key["write"])
 		self.call(token_write, "/api/resource/File", "POST")
 		self.assertTrue(frappe.local.credhub_api_key["write"])
@@ -809,7 +835,11 @@ class TestApiKeys(IntegrationTestCase):
 			}
 		).insert(ignore_permissions=True)
 
-		with patch("requests.post") as mock_post:
+		from cred_hub.email_company import safe_http
+
+		session = MagicMock()
+		mock_post = session.post
+		with patch.object(safe_http, "resolve_public"), patch.object(safe_http, "_session", return_value=session):
 			mock_post.return_value.ok = True
 			mock_post.return_value.status_code = 200
 			mock_post.return_value.text = "OK"
@@ -859,13 +889,18 @@ class TestApiKeyDispatchBypass(IntegrationTestCase):
 
 	def test_upload_through_a_key_is_always_private(self):
 		token = self.create(("files_write", "cards_read"))["token"]
-		request = MagicMock(path="/api/method/upload_file", method="POST", headers=Headers({"Authorization": f"Bearer {token}"}))
+		request = MagicMock(
+			path="/api/method/upload_file",
+			method="POST",
+			headers=Headers({"Authorization": f"Bearer {token}"}),
+			files=PDF_UPLOAD(),
+		)
 		frappe.set_user("Guest")
 		frappe.local.credhub_api_key = None
 		with (
 			patch.object(frappe, "request", request),
 			patch.object(frappe, "get_request_header", lambda name, default=None: request.headers.get(name, default)),
-			patch.dict(frappe.local.form_dict, {"is_private": 0, "doctype": "CRM Deal"}, clear=True),
+			patch.dict(frappe.local.form_dict, {"is_private": 0}, clear=True),
 		):
 			frappe.local.request_ip = "203.0.113.9"
 			api_keys.authenticate()

@@ -27,6 +27,7 @@ import frappe
 from frappe import _
 from frappe.utils import add_days, cint, getdate, now_datetime, nowdate
 
+from cred_hub import api_guard
 from cred_hub.cnpj.mapping import format_cnpj, only_digits
 
 
@@ -69,6 +70,9 @@ SCOPES = {
 	"sync_deletes": "Incremental sync: read deleted records log",
 	"credit_read": "Credit & Digital Folder: read",
 	"credit_write": "Credit & Digital Folder: write",
+	# Consultas pagas a bureaus (a empresa paga ao provedor): só com este escopo, que vem desligado (decisão do dono:
+	# o cliente decide os custos)
+	"credit_paid_queries": "Credit: run paid bureau queries",
 }
 
 # /api/resource/<doctype> e /api/v2/document/<doctype>: escopo de leitura e de escrita
@@ -142,11 +146,15 @@ METHODS = {
 	"cred_hub.credit_check.api.save_visit_report": "credit_write",
 	"cred_hub.credit_check.api.save_committee_proposal": "credit_write",
 	"cred_hub.credit_check.api.cast_committee_vote": "credit_write",
-	"cred_hub.credit_check.api.check_deal": "credit_write",
-	"cred_hub.credit_check.api.trigger_check": "credit_write",
+	"cred_hub.credit_check.api.check_deal": "credit_paid_queries",
+	"cred_hub.credit_check.api.trigger_check": "credit_paid_queries",
 }
+# Rotas que gastam dinheiro do cliente: só POST (um GET de navegador ou de cache nunca dispara uma consulta paga)
+POST_ONLY_METHODS = {name for name, scope in METHODS.items() if scope == "credit_paid_queries"}
 WRITE_METHODS = {
-	name for name, scope in METHODS.items() if scope.endswith("_write") or scope == "fields_admin"
+	name
+	for name, scope in METHODS.items()
+	if scope.endswith("_write") or scope in ("fields_admin", "credit_paid_queries")
 }
 # frappe.client.* e list_records_cursor só para leitura, com o doctype conferido contra RESOURCES
 CLIENT_READS = (
@@ -196,6 +204,11 @@ def authenticate():
 		return
 	start_time = time.time()
 	request_id = f"req_{secrets.token_hex(8)}"
+	# A key never gets a server traceback, whatever the site's allow_error_traceback says (audit M14)
+	frappe.local.flags.disable_traceback = True
+	_set_header("X-Request-Id", request_id)
+	# An IP that keeps failing authentication is stopped before any lookup or hashing
+	_check_auth_failures()
 	key_id, secret = _split_token(token.strip())
 	key = frappe.db.get_value(
 		KEY,
@@ -204,19 +217,22 @@ def authenticate():
 		as_dict=True,
 	)
 	if not key or not secret:
-		raise frappe.AuthenticationError
+		_refuse_auth(None)
 	expected_hash = _hash(secret)
 	legacy_hash = hashlib.sha256(secret.encode()).hexdigest()
 	stored_hash = key.secret_hash or ""
 	if not (hmac.compare_digest(stored_hash, expected_hash) or hmac.compare_digest(stored_hash, legacy_hash)):
-		raise frappe.AuthenticationError
+		_refuse_auth(key.name)
 	if stored_hash == legacy_hash and stored_hash != expected_hash:
 		frappe.db.set_value(KEY, key.name, "secret_hash", expected_hash, update_modified=False)
 	if key.status != "Active" or (key.expires_on and getdate(key.expires_on) < getdate(nowdate())):
-		raise frappe.AuthenticationError
+		_refuse_auth(key.name)
 	if not _ip_allowed(key.allowed_ips, frappe.local.request_ip):
-		raise frappe.AuthenticationError
-	write = _check_route(key.name)
+		_refuse_auth(key.name)
+	try:
+		write = _check_route(key.name)
+	except KeyNotAllowed:
+		_refuse(key, request_id, start_time, 403, KeyNotAllowed)
 	rate_info = _rate_limit(key.name, write, key.custom_rate_limit)
 	# set_user zera o form_dict (os argumentos da chamada); o OAuth do Frappe faz o mesmo cuidado
 	form_dict = frappe.local.form_dict
@@ -229,6 +245,9 @@ def authenticate():
 		"start_time": start_time,
 		"rate_limit": rate_info,
 	}
+	if _route()[1] == "upload_file":
+		# with the key's user set: the record the file goes to must be writable by this key (its pipelines)
+		api_guard.check_upload_record()
 	try:
 		if hasattr(frappe.local, "response_headers"):
 			frappe.local.response_headers.set("X-Request-Id", request_id)
@@ -237,6 +256,77 @@ def authenticate():
 			frappe.local.response_headers.set("X-RateLimit-Reset", str(rate_info["reset"]))
 	except Exception:
 		pass
+
+
+def _set_header(name: str, value: str):
+	try:
+		if hasattr(frappe.local, "response_headers"):
+			frappe.local.response_headers.set(name, value)
+	except Exception:
+		pass
+
+
+# Falhas de autenticação por IP e por minuto antes do 429 (quem erra a chave não gasta o limite da integração real)
+AUTH_FAILURES_PER_MINUTE = 30
+
+
+def _auth_failures_key() -> str:
+	minute = now_datetime().strftime("%Y%m%d%H%M")
+	return frappe.cache.make_key(f"credhub_api_authfail:{frappe.local.request_ip}:{minute}")
+
+
+def _check_auth_failures():
+	if cint(frappe.cache.get(_auth_failures_key())) >= AUTH_FAILURES_PER_MINUTE:
+		_set_header("Retry-After", str(max(1, 60 - now_datetime().second)))
+		raise frappe.RateLimitExceededError(_("Too many failed authentications from this address. Wait a minute."))
+
+
+def _refuse_auth(key_name: str | None):
+	"""401: counted per IP (never in the key's own limit: knowing a key id must not lock the real integration out),
+	and logged at most once per key and IP a minute (review of #103)."""
+	try:
+		failures_key = _auth_failures_key()
+		if frappe.cache.incrby(failures_key, 1) == 1:
+			frappe.cache.expire(failures_key, 120)
+		once = frappe.cache.make_key(f"credhub_api_authlog:{key_name}:{frappe.local.request_ip}")
+		if key_name and frappe.cache.set(once, 1, nx=True, ex=60):
+			_log_refusal(key_name, 401)
+	except Exception:
+		frappe.log_error(title="Cred Hub API: falha ao registrar autenticação recusada")
+	raise frappe.AuthenticationError
+
+
+def _log_refusal(key_name: str, status: int, request_id: str | None = None, start_time: float | None = None):
+	kind, target, verb = _route()
+	frappe.get_doc(
+		{
+			"doctype": LOG,
+			"api_key": key_name,
+			"route": f"{verb} {frappe.request.path}"[:240],
+			"reference_doctype": target if kind == "resource" else None,
+			"status_code": status,
+			"ip_address": frappe.local.request_ip,
+			"called_on": now_datetime(),
+			"request_id": request_id,
+			"duration_ms": max(1, int((time.time() - (start_time or time.time())) * 1000)),
+		}
+	).insert(ignore_permissions=True)
+	frappe.db.commit()
+
+
+def _refuse(key, request_id: str, start_time: float, status: int, exc):
+	"""403 of a key whose secret was verified: logged and counted in its rate limit, so probing the scopes is visible
+	and throttled (audit M13). The log is committed: the request fails."""
+	try:
+		_rate_limit(key.name, False, key.custom_rate_limit)
+	finally:
+		try:
+			_log_refusal(key.name, status, request_id, start_time)
+		except Exception:
+			frappe.log_error(title="Cred Hub API: falha ao registrar chamada recusada")
+	if exc is KeyNotAllowed:
+		_deny()
+	raise exc
 
 
 # ---------- Chaves antigas (token api_key:api_secret de um usuário) ----------
@@ -308,6 +398,15 @@ def _resource_has_name() -> bool:
 	return False
 
 
+def _resource_name() -> str | None:
+	path = unquote(frappe.request.path or "")
+	for prefix in ("/api/resource/", "/api/v2/document/"):
+		if path.startswith(prefix):
+			parts = [p for p in path[len(prefix) :].split("/") if p]
+			return parts[1] if len(parts) >= 2 else None
+	return None
+
+
 def _route():
 	"""(kind, target, verbo): kind é resource, method, file_download, other (barrado) ou None fora da API."""
 	path = unquote(frappe.request.path or "")
@@ -330,9 +429,10 @@ def _route():
 
 
 # Request arguments that make Frappe run ANOTHER whitelisted method than the one in the path: `cmd` is handled by
-# frappe.app before the path (any route), `method`/`library_file_name` by upload_file. A key must never reach them,
+# frappe.app before the path (any route), `run_method` by GET /api/resource/<doctype>/<name> (v1 runs a document
+# method), `method`/`library_file_name` by upload_file. A key must never reach them,
 # or the scope allow-list below is bypassed (audit 11/11/2026, C1/H1).
-DISPATCH_ARGS = ("cmd",)
+DISPATCH_ARGS = ("cmd", "run_method")
 UPLOAD_DISPATCH_ARGS = ("method", "library_file_name")
 
 
@@ -356,6 +456,8 @@ def _check_route(key_name: str) -> bool:
 			# POST /api/resource/<doctype>/<name> runs a document method (Frappe v1): never through a key
 			if verb == "POST" and _resource_has_name():
 				_deny()
+			# system-filled fields and child-row internals are refused (audit M6)
+			api_guard.check_write(target, api_guard.request_payload(), _resource_name() if verb != "POST" else None)
 			return True
 		elif verb == "DELETE":
 			if target not in PROTECTED_AGAINST_DELETE and write and write in scopes and "allow_delete" in scopes:
@@ -370,10 +472,6 @@ def _check_route(key_name: str) -> bool:
 			_deny()
 		if target == "cred_hub.api_keys.lookup_by_document":
 			if scopes & {"organizations_read", "contacts_read", "cards_read", "credit_read"}:
-				return False
-			_deny()
-		if target == "cred_hub.credit_check.api.get_credit_onboarding":
-			if scopes & {"credit_read", "cards_read", "organizations_read"}:
 				return False
 			_deny()
 		if target in ("cred_hub.bulk.bulk_upsert", "cred_hub.bulk.bulk_delete"):
@@ -391,9 +489,14 @@ def _check_route(key_name: str) -> bool:
 		if target == "upload_file":
 			if any(form.get(arg) not in (None, "") for arg in UPLOAD_DISPATCH_ARGS):
 				_deny()
+			if "files_write" not in scopes:
+				_deny()
+			api_guard.check_upload(scopes, RESOURCES)
 			# Files sent by an integration are always private (a public .html/.svg would be served on our domain)
 			form["is_private"] = 1
 		scope = METHODS.get(target)
+		if target in POST_ONLY_METHODS and verb != "POST":
+			_deny()
 		if scope and scope in scopes:
 			if target == "crm.api.pipeline.save_pipeline":
 				_check_save_pipeline(key_name)
@@ -608,6 +711,34 @@ def list_records_cursor(
 	}
 
 
+# Blocos da busca por CPF/CNPJ e o escopo que cada um pede quando quem chama é uma chave (audit M8)
+LOOKUP_BLOCK_SCOPES = {
+	"organization": "organizations_read",
+	"contact": "contacts_read",
+	"cards": "cards_read",
+	"digital_folder_summary": "credit_read",
+}
+CREDIT_FIELDS = ("credit_verdict", "credit_report")
+
+
+def _limit_lookup_to_scopes(result: dict) -> dict:
+	"""A key only gets the blocks its scopes cover; credit verdicts only with credit_read. Cards already follow the
+	key's pipelines (get_list as its technical user). People signed in keep the whole answer."""
+	info = getattr(frappe.local, "credhub_api_key", None)
+	if not info:
+		return result
+	scopes = _scopes(info["name"])
+	for block, scope in LOOKUP_BLOCK_SCOPES.items():
+		if scope not in scopes:
+			result[block] = [] if block == "cards" else None
+	if "credit_read" not in scopes:
+		for row in [result.get("organization"), *(result.get("cards") or [])]:
+			for field in CREDIT_FIELDS:
+				if row:
+					row.pop(field, None)
+	return result
+
+
 @frappe.whitelist()
 def lookup_by_document(document: str) -> dict:
 	"""Busca unificada por CNPJ ou CPF (com ou sem máscara) retornando Organização/Contato, Cards abertos, Pasta Digital e Crédito."""
@@ -696,7 +827,7 @@ def lookup_by_document(document: str) -> dict:
 					limit_page_length=25,
 				)
 
-	return result
+	return _limit_lookup_to_scopes(result)
 
 
 @frappe.whitelist(allow_guest=True)

@@ -38,6 +38,9 @@ after_request = ["cred_hub.api_keys.after_request"]
 on_session_creation = "cred_hub.api_keys.block_login"
 # O crm esconde o usuário técnico das listas, dos membros dos funis e da distribuição
 crm_hidden_users = ["cred_hub.api_keys.technical_users"]
+# Arquivos lidos por uma chave seguem o card a que estão anexados (funis da chave; audit M10)
+permission_query_conditions = {"File": "cred_hub.api_guard.file_query_conditions"}
+has_permission = {"File": "cred_hub.api_guard.has_file_permission"}
 
 # Quem chega sem conta vai para o cadastro de empresa nova (credtech#25)
 oauth_without_account = "cred_hub.signup_access.oauth_without_account"
