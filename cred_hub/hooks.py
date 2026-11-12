@@ -129,7 +129,8 @@ doc_events = {
 	# OpenAPI por empresa (credtech#375): campos, funis e etapas mudaram, a especificação é gerada de novo
 	"Custom Field": {"on_update": _OPENAPI, "on_trash": _OPENAPI},
 	"Property Setter": {"on_update": _OPENAPI, "on_trash": _OPENAPI},
-	# O funil Sandbox da API (chaves de teste) não é excluído nem renomeado, nem suas etapas excluídas (credtech#375)
+	# O funil Sandbox da API (chaves de teste) não é excluído nem renomeado, nem suas etapas excluídas, enquanto houver
+	# chave de teste não revogada ou dado de teste (credtech#375)
 	"CRM Pipeline": {
 		"validate": "cred_hub.sandbox.validate_pipeline",
 		"before_rename": "cred_hub.sandbox.protect_pipeline",
@@ -154,6 +155,20 @@ for _doctype in ("Contact", "CRM Organization", "CRM Lead", "FCRM Note", "CRM Ta
 	for _event, _method in (("before_insert", "cred_hub.sandbox.stamp"), ("validate", "cred_hub.sandbox.keep_flag")):
 		_current = _events.get(_event) or []
 		_events[_event] = [*([_current] if isinstance(_current, str) else _current), _method]
+
+# Chave de teste nunca entrega um registro a uma pessoa nem menciona alguém (aviso e e-mail a gente real, credtech#375):
+# responsável recusado antes do validate do crm (que já atribui), e @menção vira texto
+for _doctype, _event, _method in (
+	("CRM Deal", "before_validate", "cred_hub.sandbox.refuse_assignment"),
+	("CRM Lead", "before_validate", "cred_hub.sandbox.refuse_assignment"),
+	("CRM Task", "before_validate", "cred_hub.sandbox.refuse_assignment"),
+	("Comment", "validate", "cred_hub.sandbox.strip_mentions"),
+	("FCRM Note", "validate", "cred_hub.sandbox.strip_mentions"),
+	("CRM Task", "validate", "cred_hub.sandbox.strip_mentions"),
+):
+	_events = doc_events.setdefault(_doctype, {})
+	_current = _events.get(_event) or []
+	_events[_event] = [*([_current] if isinstance(_current, str) else _current), _method]
 
 # Conversão de lead pela chave de teste só encontra contatos e organizações do sandbox (sem oráculo de dado real)
 extend_doctype_class = {"CRM Lead": ["cred_hub.sandbox.SandboxLeadMixin"]}

@@ -19,7 +19,9 @@ A test key (`is_test`, token `hub_test<id>_<secret>`) is a normal key that can o
   skipped), no ERP cedente, no protest, no collection reminders, no CNPJ/company/e-mail lookups, no Google Calendar.
 - Webhooks: events of sandbox records go only to webhooks flagged `is_test`, and those get nothing else.
 - Every answer to a test key carries `X-HubTech-Test: 1`.
-- The Sandbox pipeline stays: nobody (admin included) deletes or renames it, nor deletes its stages. Automation flows,
+- A test key never assigns nor @mentions a person (owner fields refused, mentions become plain text).
+- The Sandbox pipeline stays while in use: nobody (admin included) deletes or renames it, nor deletes its stages,
+  while a test key is not revoked or test data remains (then the admin may remove it). Automation flows,
   Frappe notifications/webhooks, assignment, distribution and the ERPNext sync of the crm skip sandbox records
   (crm.sandbox).
 """
@@ -347,7 +349,62 @@ def erp_cedente_on_deal_update(doc, method=None):
 	return cedente.on_deal_update(doc, method)
 
 
-# ---------- The Sandbox pipeline stays ----------
+# ---------- Nobody is assigned or mentioned by a test key ----------
+
+# Fields that hand a record to a person: Frappe's assignment (ToDo) notifies and e-mails them
+OWNER_FIELDS = {"CRM Deal": ("deal_owner",), "CRM Lead": ("lead_owner",), "CRM Task": ("assigned_to",)}
+# Rich text where an @mention notifies the person (Frappe and crm notifications, e-mail)
+MENTION_FIELDS = {"Comment": "content", "FCRM Note": "content", "CRM Task": "description"}
+
+
+def refuse_assignment(doc, method=None):
+	"""before_validate of CRM Deal, CRM Lead and CRM Task (before the crm assigns in validate/after_insert): a test
+	key never hands a record to a person. The owner stays empty or the key's own technical user; `_assign` is never
+	changed. Owners set by the team on the screen are kept."""
+	if not is_test_user():
+		return
+	before = None if doc.is_new() else doc.get_doc_before_save()
+	for field in OWNER_FIELDS.get(doc.doctype, ()):
+		value = doc.get(field)
+		changed = doc.is_new() or before is None or before.get(field) != value
+		if changed and value and value != frappe.session.user:
+			_refuse_people(field)
+	assigned = doc.get("_assign")
+	if (assigned and assigned != "[]") if doc.is_new() else (before is not None and before.get("_assign") != assigned):
+		_refuse_people("_assign")
+
+
+def _refuse_people(field: str):
+	frappe.throw(
+		_("A test API key cannot assign records to people ({0}): leave it empty.").format(field),
+		frappe.ValidationError,
+		title=_("Sandbox"),
+	)
+
+
+def strip_mentions(doc, method=None):
+	"""validate of Comment, FCRM Note and CRM Task: an @mention written by a test key becomes plain text, so nobody is
+	notified (Frappe's mention e-mail and the crm's notification both read the mention markup)."""
+	field = MENTION_FIELDS.get(doc.doctype)
+	if not field or not is_test_user() or not doc.get(field) or "mention" not in doc.get(field):
+		return
+	doc.set(field, plain_mentions(doc.get(field)))
+
+
+def plain_mentions(html: str) -> str:
+	from bs4 import BeautifulSoup
+
+	soup = BeautifulSoup(html, "html.parser")
+	found = soup.find_all(class_="mention") + soup.find_all(attrs={"data-type": "mention"})
+	if not found:
+		return html
+	for mention in found:
+		if mention.parent is not None:
+			mention.replace_with(mention.get_text())
+	return str(soup)
+
+
+# ---------- The Sandbox pipeline stays while it is in use ----------
 
 
 def _flagged_pipeline(name: str | None) -> bool:
@@ -358,38 +415,70 @@ def _flagged_pipeline(name: str | None) -> bool:
 	)
 
 
-def _keep_pipeline():
+def sandbox_in_use(pipeline: str) -> list[str]:
+	"""What still uses the Sandbox pipeline: test keys not revoked, its cards and leads, records stamped as test
+	data. Empty means the admin may delete or rename it (the next test key creates a new one)."""
+	uses = []
+	if frappe.get_meta(KEY).has_field("is_test"):
+		keys = frappe.db.count(KEY, {"is_test": 1, "status": ("!=", "Revoked")})
+		if keys:
+			uses.append(_("{0} test API key(s) not revoked").format(keys))
+	for doctype, label, filters in (
+		("CRM Deal", _("card(s)"), {"pipeline": pipeline}),
+		("CRM Lead", _("lead(s)"), {"pipeline": pipeline}),
+	):
+		count = frappe.db.count(doctype, filters)
+		if count:
+			uses.append(f"{count} {label}")
+	for doctype in STAMPED:
+		if frappe.get_meta(doctype).has_field(RECORD_FLAG):
+			count = frappe.db.count(doctype, {RECORD_FLAG: 1})
+			if count:
+				uses.append(f"{count} {_(doctype)}")
+	return uses
+
+
+def _keep_pipeline(pipeline: str):
+	uses = sandbox_in_use(pipeline)
+	if not uses:
+		return
 	frappe.throw(
 		_(
-			"The {0} pipeline belongs to the test API keys: it and its stages cannot be deleted or renamed. "
-			"Revoke the test keys to stop using it."
-		).format(frappe.bold(PIPELINE_NAME)),
+			"The {0} pipeline is still in use by the test API keys ({1}). To delete or rename it (or delete its "
+			"stages), revoke the test keys and delete the test data first: the Sandbox cards, then the "
+			"[sandbox] organizations, test contacts, leads, notes, tasks and files."
+		).format(frappe.bold(PIPELINE_NAME), ", ".join(uses)),
 		frappe.ValidationError,
 		title=_("Sandbox pipeline"),
 	)
 
 
 def validate_pipeline(doc, method=None):
-	"""CRM Pipeline.validate: the Sandbox pipeline keeps its name (the flag never changes either)."""
+	"""CRM Pipeline.validate: the Sandbox pipeline keeps its name while in use (and its flag, always)."""
 	if doc.is_new() or not _flagged_pipeline(doc.name):
 		return
 	if doc.has_value_changed("pipeline_name"):
-		_keep_pipeline()
+		_keep_pipeline(doc.name)
 	if doc.meta.has_field(PIPELINE_FLAG):
 		doc.set(PIPELINE_FLAG, 1)
 
 
 def protect_pipeline(doc, method=None, *args, **kwargs):
-	"""CRM Pipeline.on_trash and before_rename: the Sandbox pipeline is never deleted nor renamed, by anyone."""
-	if _flagged_pipeline(doc.name):
-		_keep_pipeline()
+	"""CRM Pipeline.on_trash and before_rename: the Sandbox pipeline is not deleted nor renamed while in use. Once
+	free, its deletion also drops it from the revoked test keys (their history stays)."""
+	if not _flagged_pipeline(doc.name):
+		return
+	_keep_pipeline(doc.name)
+	if method == "on_trash":
+		frappe.db.delete("Cred Hub API Key Pipeline", {"parenttype": KEY, "pipeline": doc.name})
+		frappe.local.credhub_sandbox_pipeline = None
 
 
 def protect_stage(doc, method=None):
-	"""CRM Deal Status.on_trash: no stage of the Sandbox pipeline is deleted (deleting the pipeline also goes
-	through here, as the crm deletes its stages first)."""
+	"""CRM Deal Status.on_trash: no stage of the Sandbox pipeline is deleted while in use (deleting the pipeline
+	also goes through here, as the crm deletes its stages first)."""
 	if _flagged_pipeline(doc.get("pipeline")):
-		_keep_pipeline()
+		_keep_pipeline(doc.get("pipeline"))
 
 
 # ---------- Keys ----------
