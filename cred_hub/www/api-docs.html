@@ -333,16 +333,51 @@ curl -X POST "{{ base_url }}/api/method/crm.api.pipeline.move_card" \
   -d '{"deal": "CRM-DEAL-2026-00001", "stage": "&lt;chave_da_etapa&gt;"}'</code></pre>
     </div>
 
-    <h2>6. Operações em Lote (Batch API) e Webhooks HMAC com Auto-Retry</h2>
+    <h2>6. Identidade Universal (external_id), Upsert Inteligente &amp; Porta B de ERPs</h2>
     <div class="card">
-      <h3><span class="method POST">POST</span> <code>/api/method/cred_hub.bulk.bulk_upsert</code> — Upsert em Lote</h3>
-      <p>Processa cada item com <em>savepoint</em> isolado. Se um item falhar, os demais são gravados normalmente.</p>
+      <p>O HubTech CRM suporta o campo <code>external_id</code> em <strong>Organizações</strong>, <strong>Contatos</strong> e <strong>Cards</strong>, permitindo integrações <em>stateless</em> em que o ERP externo usa sua própria chave primária sem necessidade de consultar ou armazenar os IDs internos do HubTech.</p>
+
+      <h3><span class="method POST">POST</span> <code>/api/method/cred_hub.api_keys.upsert_record</code> — Upsert Unitário Inteligente</h3>
+      <p>Cria ou atualiza um registro único. Resolve automaticamente por <code>name</code>, <code>external_id</code>, <code>cnpj</code> (14 dígitos para Organização) ou <code>cpf</code> (11 dígitos para Contato):</p>
+<pre><code>curl -X POST "{{ base_url }}/api/method/cred_hub.api_keys.upsert_record" \
+  -H "Authorization: Bearer hub_&lt;id&gt;_&lt;segredo&gt;" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: upsert-org-001" \
+  -H "X-HubTech-API-Version: 1" \
+  -d '{"doctype": "CRM Organization", "record": {"external_id": "omie_cli_12984", "cnpj": "11222333000181", "organization_name": "Acme Distribuidora S/A"}}'</code></pre>
+
+      <h3><span class="method POST">POST</span> <code>/api/method/cred_hub.erp.push.upsert_titles</code> — Push de Títulos do ERP (Porta B)</h3>
+      <p>Permite que <strong>qualquer ERP</strong> (Omie, Conta Azul, Bling, TOTVS, Asaas, SAP, sistemas próprios) envie lotes de títulos em aberto ou vencidos diretamente para a esteira de cobrança do HubTech CRM:</p>
+<pre><code>curl -X POST "{{ base_url }}/api/method/cred_hub.erp.push.upsert_titles" \
+  -H "Authorization: Bearer hub_&lt;id&gt;_&lt;segredo&gt;" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: push-tit-2026-001" \
+  -H "X-HubTech-API-Version: 1" \
+  -d '{"erp_source": "Omie ERP", "titles": [{"erp_id": "TIT_99481", "sacado_document": "11222333000181", "sacado_name": "Devedor Exemplo", "due_date": "2026-11-20", "amount": 2500.00, "number": "NF-1029"}]}'</code></pre>
+
+      <h3><span class="method POST">POST</span> <code>/api/method/cred_hub.erp.push.settle_titles</code> — Baixas e Liquidações do ERP</h3>
+      <p>Recebe baixas, liquidações ou recompras do ERP para encerrar títulos no CRM. Quando todos os títulos de um card são liquidados, o card é marcado automaticamente como Ganho (Won):</p>
+<pre><code>curl -X POST "{{ base_url }}/api/method/cred_hub.erp.push.settle_titles" \
+  -H "Authorization: Bearer hub_&lt;id&gt;_&lt;segredo&gt;" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: settle-tit-2026-001" \
+  -H "X-HubTech-API-Version: 1" \
+  -d '{"erp_source": "Omie ERP", "settlements": [{"erp_id": "TIT_99481", "outcome": "paid", "paid_amount": 2500.00, "paid_on": "2026-11-12"}]}'</code></pre>
+
+      <h3><span class="method POST">POST</span> <code>/api/method/cred_hub.erp.push.register_result</code> — Confirmação de Cadastro do ERP</h3>
+      <p>Registra o código gerado no ERP após a aprovação de um card (disparada via webhook <code>cedente.ready_to_register</code>), vinculando o <code>external_id</code> na Organização e inserindo nota auditável na linha do tempo.</p>
+    </div>
+
+    <h2>7. Operações em Lote (Batch API) e Webhooks HMAC com Auto-Retry</h2>
+    <div class="card">
+      <h3><span class="method POST">POST</span> <code>/api/method/cred_hub.bulk.bulk_upsert</code> — Upsert em Lote com Match Inteligente</h3>
+      <p>Processa até 50 itens por chamada com <em>savepoint</em> isolado. Localiza automaticamente por <code>name</code>, <code>external_id</code>, CNPJ ou CPF sem exigir pré-consultas. Se um item falhar, os demais são gravados normalmente.</p>
 <pre><code>curl -X POST "{{ base_url }}/api/method/cred_hub.bulk.bulk_upsert" \
   -H "Authorization: Bearer hub_&lt;id&gt;_&lt;segredo&gt;" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: batch-2026-00101" \
   -H "X-HubTech-API-Version: 1" \
-  -d '{"doctype": "CRM Deal", "records": [{"pipeline": "&lt;funil&gt;", "organization": "Acme Ltda", "deal_value": 150000}]}'</code></pre>
+  -d '{"doctype": "CRM Organization", "records": [{"external_id": "erp_c1", "cnpj": "11222333000181", "organization_name": "Acme Distribuidora"}, {"external_id": "erp_c2", "cnpj": "43141963000118", "organization_name": "Beta Tecnologia"}]}'</code></pre>
       <h3><span class="method POST">POST</span> <code>/api/method/cred_hub.bulk.bulk_delete</code> — Exclusão em Lote</h3>
       <p>Exclui até 50 registros por requisição. Exige chave de API com escopo de escrita no doctype e permissão explícita <code>allow_delete</code>.</p>
 <pre><code>curl -X POST "{{ base_url }}/api/method/cred_hub.bulk.bulk_delete" \
@@ -361,11 +396,11 @@ curl -X POST "{{ base_url }}/api/method/crm.api.pipeline.move_card" \
         <li><code>X-HubTech-Delivery</code>: UUID único da entrega para deduplicação no receptor</li>
         <li><code>X-HubTech-Test: 1</code>: presente apenas em eventos gerados no funil Sandbox das chaves de teste</li>
       </ul>
-      <p><strong>Eventos Suportados (10 eventos):</strong></p>
-      <p><code>deal.created</code>, <code>deal.stage_changed</code>, <code>deal.won</code>, <code>deal.lost</code>, <code>deal.deleted</code>, <code>contact.created</code>, <code>contact.updated</code>, <code>checklist.item_rejected</code>, <code>checklist.item_attached</code> e <code>credit.limit_decided</code>. O corpo sempre traz o campo booleano <code>"test"</code> (<code>true</code> no Sandbox, <code>false</code> em produção).</p>
+      <p><strong>Eventos Suportados (16 eventos em tempo real):</strong></p>
+      <p><code>deal.created</code>, <code>deal.stage_changed</code>, <code>deal.updated</code>, <code>deal.won</code>, <code>deal.lost</code>, <code>deal.deleted</code>, <code>contact.created</code>, <code>contact.updated</code>, <code>organization.created</code>, <code>organization.updated</code>, <code>cedente.ready_to_register</code>, <code>checklist.item_rejected</code>, <code>checklist.item_attached</code>, <code>credit.limit_decided</code>, <code>title.promise_recorded</code> e <code>title.agreement_recorded</code>. O corpo sempre traz o campo booleano <code>"test"</code> (<code>true</code> no Sandbox, <code>false</code> em produção).</p>
     </div>
 
-    <h2>7. Códigos de Retorno e Cabeçalhos HTTP</h2>
+    <h2>8. Códigos de Retorno e Cabeçalhos HTTP</h2>
     <table>
       <thead>
         <tr><th>Status / Header</th><th>Tipo</th><th>Significado</th></tr>

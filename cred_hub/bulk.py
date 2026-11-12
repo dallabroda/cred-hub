@@ -4,6 +4,8 @@ import frappe
 from frappe import _
 
 from cred_hub import api_guard
+from cred_hub.cnpj.mapping import format_cnpj
+from cred_hub.party.document import format_cpf, only_digits
 
 
 SUPPORTED_DOCTYPES = {"CRM Deal", "Contact", "CRM Organization"}
@@ -44,6 +46,55 @@ SYSTEM_KEYS = frozenset({
 	"doctype", "name", "owner", "creation", "modified", "modified_by", "docstatus", "idx", "parent", "parentfield",
 	"parenttype", "lft", "rgt", "_user_tags", "_comments", "_assign", "_liked_by",
 })
+
+
+def resolve_record_name(doctype: str, item: dict) -> str | None:
+	"""Localiza o nome (ID interno) de um registro para upsert inteligente sem pré-consulta.
+
+	Prioridades de correspondência:
+	1. Match por name se fornecido e existente no banco.
+	2. Match por external_id se fornecido (identificador universal de ERP).
+	3. Para CRM Organization: match por cnpj ou tax_id (14 dígitos normalizados, formatado ou raw).
+	4. Para Contact: match por cpf ou tax_id (11 dígitos normalizados, formatado ou raw), ou email_id.
+	5. Para CRM Deal: match por external_id.
+	"""
+	name = item.get("name")
+	if name and frappe.db.exists(doctype, name):
+		return name
+
+	external_id = item.get("external_id")
+	if external_id and str(external_id).strip():
+		found = frappe.db.get_value(doctype, {"external_id": str(external_id).strip()}, "name")
+		if found:
+			return found
+
+	if doctype == "CRM Organization":
+		raw_cnpj = item.get("cnpj") or item.get("tax_id")
+		if raw_cnpj:
+			digits = only_digits(raw_cnpj)
+			if len(digits) == 14:
+				formatted = format_cnpj(digits)
+				found = frappe.db.get_value("CRM Organization", {"cnpj": ("in", [digits, formatted])}, "name")
+				if found:
+					return found
+
+	elif doctype == "Contact":
+		raw_cpf = item.get("cpf") or item.get("tax_id")
+		if raw_cpf:
+			digits = only_digits(raw_cpf)
+			if len(digits) == 11:
+				formatted = format_cpf(digits)
+				found = frappe.db.get_value("Contact", {"cpf": ("in", [digits, formatted])}, "name")
+				if found:
+					return found
+		email = item.get("email_id") or item.get("email")
+		if email and str(email).strip():
+			clean_email = str(email).strip().lower()
+			found = frappe.db.get_value("Contact", {"email_id": clean_email}, "name")
+			if found:
+				return found
+
+	return None
 
 
 @frappe.whitelist(methods=["POST"])
@@ -92,32 +143,40 @@ def bulk_upsert(doctype: str, records: list[dict] | str) -> dict:
 			results.append({"index": index, "status": "error", "error": _("Record doctype must be {0}.").format(doctype)})
 			failed_count += 1
 			continue
-		name = item.get("name")
-		item = {k: v for k, v in item.items() if k not in SYSTEM_KEYS}
 		savepoint = f"bulk_item_{index}"
 		try:
 			frappe.db.savepoint(savepoint)
-			exists = bool(name and frappe.db.exists(doctype, name))
+			matched_name = resolve_record_name(doctype, item)
+			exists = bool(matched_name)
 			if exists and getattr(frappe.local, "credhub_api_is_test", False):
 				# a test key never learns that a real record exists: what it cannot read is created anew
-				exists = frappe.has_permission(doctype, "read", doc=name)
+				if not frappe.has_permission(doctype, "read", doc=matched_name):
+					exists = False
+					matched_name = None
 			# system-filled fields and child rows of another record are refused, as in the REST routes (audit M6)
-			api_guard.check_write(doctype, item, name if exists else None)
+			item_data = {k: v for k, v in item.items() if k not in SYSTEM_KEYS}
+			api_guard.check_write(doctype, item_data, matched_name if exists else None)
 
 			if exists:
-				doc = frappe.get_doc(doctype, name)
+				doc = frappe.get_doc(doctype, matched_name)
 				doc.check_permission("write")
-				doc.update(item)
+				doc.update(item_data)
 				doc.save()
 				action = "updated"
 			else:
-				doc_data = {k: v for k, v in item.items() if k != "name"} if name else dict(item)
+				doc_data = {k: v for k, v in item_data.items() if k != "name"}
 				doc = frappe.get_doc({"doctype": doctype, **doc_data})
 				doc.check_permission("create")
 				doc.insert()
 				action = "created"
 
-			results.append({"index": index, "status": "success", "action": action, "name": doc.name})
+			results.append({
+				"index": index,
+				"status": "success",
+				"action": action,
+				"name": doc.name,
+				"external_id": doc.get("external_id") or None,
+			})
 			success_count += 1
 		except Exception as exc:
 			if _is_deadlock(exc):

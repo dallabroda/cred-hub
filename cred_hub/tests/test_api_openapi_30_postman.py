@@ -5,19 +5,25 @@ from cred_hub.api_schema import _webhook_specs, to_openapi_3_0, to_postman_colle
 
 
 class TestApiOpenApi30AndPostman(unittest.TestCase):
-	def test_webhook_specs_covers_all_ten_events(self):
+	def test_webhook_specs_covers_all_sixteen_events(self):
 		webhooks = _webhook_specs()
 		expected_events = {
 			"deal.created",
 			"deal.stage_changed",
+			"deal.updated",
 			"deal.won",
 			"deal.lost",
 			"deal.deleted",
 			"contact.created",
 			"contact.updated",
+			"organization.created",
+			"organization.updated",
+			"cedente.ready_to_register",
 			"checklist.item_rejected",
 			"checklist.item_attached",
 			"credit.limit_decided",
+			"title.promise_recorded",
+			"title.agreement_recorded",
 		}
 		self.assertEqual(set(webhooks.keys()), expected_events)
 		for event_name, op in webhooks.items():
@@ -62,7 +68,7 @@ class TestApiOpenApi30AndPostman(unittest.TestCase):
 		self.assertEqual(spec_3_0["openapi"], "3.0.3")
 		self.assertNotIn("webhooks", spec_3_0)
 		self.assertIn("x-webhooks", spec_3_0)
-		self.assertEqual(len(spec_3_0["x-webhooks"]), 10)
+		self.assertEqual(len(spec_3_0["x-webhooks"]), 16)
 
 		props = spec_3_0["components"]["schemas"]["Card"]["properties"]
 		self.assertEqual(props["name"]["type"], "string")
