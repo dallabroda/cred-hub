@@ -126,11 +126,11 @@ def on_deal_update(doc, method=None):
 		return
 	import frappe
 
-	from cred_hub.billing import CREDIT_AND_COLLECTION, plan_allows
+	from cred_hub.billing import CREDIT_AND_COLLECTION, automation_allowed
 
 	from .settings import get_settings, is_sandbox_pipeline
 
-	if not plan_allows(CREDIT_AND_COLLECTION):
+	if not automation_allowed(CREDIT_AND_COLLECTION):
 		# Plano sem Crédito e Cobrança (credtech#398): a automação não roda
 		return
 

@@ -250,11 +250,27 @@ def require_feature(feature: str) -> None:
 	"""Barra (PlanFeatureNotIncluded, HTTP 403) quando o plano não inclui o recurso. Chamado em toda porta de entrada:
 	tela, chave da API, agendador e eventos de documento."""
 	if not plan_allows(feature):
+		if frappe.session.user == "Guest":
+			# Rotas públicas (portal da Pasta Digital): quem vê é o cliente final da empresa, não o admin
+			frappe.throw(
+				_("This upload is unavailable right now. Please contact the company that sent you the link."),
+				PlanFeatureNotIncluded,
+			)
 		frappe.throw(
 			_("Your plan does not include Credit & Collection. An admin can change the plan in Users and Plan."),
 			PlanFeatureNotIncluded,
 			title=_("Not included in your plan"),
 		)
+
+
+def automation_allowed(feature: str) -> bool:
+	"""Para eventos de documento e jobs: nunca quebra o salvamento do card. Se a leitura do plano falhar (migração no
+	meio, doctype ausente), registra no Error Log e trata como trava ligada: a automação não roda."""
+	try:
+		return plan_allows(feature)
+	except Exception:  # noqa: BLE001 - a broken plan read never blocks saving a card
+		frappe.log_error(title="Cred Hub: leitura do plano falhou (automação de Crédito e Cobrança pulada)")
+		return False
 
 
 def requires_feature(feature: str):

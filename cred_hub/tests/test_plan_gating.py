@@ -40,7 +40,6 @@ OPEN_ROUTES = {
 		"get_credit_onboarding",
 		"get_document_checklist",
 		"get_credit_committee",
-		"get_whatsapp_onboarding_reminder",
 		"get_bureau_vertical_catalog",
 		"public_get_portal_info",
 		"public_verify_and_list",
@@ -258,6 +257,62 @@ class TestAutomationsStopWithoutThePlan(PlanCase):
 			cedente_settings.assert_not_called()
 		erp_settings.assert_not_called()
 		protest_settings.assert_not_called()
+
+
+class TestPlanReadFailure(PlanCase):
+	"""Document hooks never break a card save when the plan cannot be read: logged, automation skipped."""
+
+	def test_hooks_log_and_skip_when_the_plan_read_fails(self):
+		from cred_hub.credit_check import enrich, events, onboarding
+		from cred_hub.erp import cedente
+		from cred_hub.integrations import protest
+
+		set_plan("credito_cobranca")
+		doc = MagicMock(organization="x", status="Comitê", flags=frappe._dict())
+		doc.is_new.return_value = False
+		doc.has_value_changed.return_value = True
+		with (
+			patch.object(billing, "_plan", side_effect=frappe.DoesNotExistError("Cred Hub Plan")),
+			patch.object(billing.frappe, "log_error") as log_error,
+			patch.object(events, "get_credit_settings") as credit_settings,
+			patch.object(onboarding, "_kv_get") as kv,
+			patch.object(protest, "get_settings") as protest_settings,
+			patch("cred_hub.erp.settings.get_settings") as erp_settings,
+			patch.object(enrich, "get_credit_settings") as enrich_settings,
+		):
+			events.on_deal_update(doc)
+			onboarding.validate_deal_stage_gate(doc)
+			protest.on_deal_update(doc)
+			cedente.on_deal_update(doc)
+			self.assertIsNone(enrich.run_background_check(organization_name="x"))
+			# endpoints still raise (only automations swallow the failure)
+			with self.assertRaises(frappe.DoesNotExistError):
+				billing.require_feature(C)
+		for mocked in (credit_settings, kv, protest_settings, erp_settings, enrich_settings):
+			mocked.assert_not_called()
+		self.assertEqual(log_error.call_count, 5)
+
+
+class TestGuestPortal(PlanCase):
+	def test_end_client_gets_a_neutral_message(self):
+		set_plan("vendas")
+		frappe.set_user("Guest")
+		with self.assertRaises(billing.PlanFeatureNotIncluded) as raised:
+			credit_api.public_upload_document("token", "11222333000181", "contrato", "a.pdf", "JVBERi0=")
+		message = str(raised.exception)
+		self.assertIn("Please contact the company that sent you the link", message)
+		self.assertNotIn("plan", message.lower())
+		po = (Path(billing.__file__).parent / "locale" / "pt_BR.po").read_text(encoding="utf-8").replace("\r\n", "\n")
+		self.assertIn(
+			f'msgid "{message}"\nmsgstr "Este envio está indisponível no momento. Fale com a empresa que enviou o link."',
+			po,
+		)
+
+	def test_signed_in_user_keeps_the_admin_message(self):
+		set_plan("vendas")
+		with self.assertRaises(billing.PlanFeatureNotIncluded) as raised:
+			credit_api.get_whatsapp_onboarding_reminder(organization_name="x")
+		self.assertIn("Users and Plan", str(raised.exception))
 
 
 class TestApiKeyPath(PlanCase):

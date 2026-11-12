@@ -26,7 +26,7 @@ from crm.fcrm.doctype.crm_deal_title.crm_deal_title import balance_of
 from frappe import _
 from frappe.utils import cint, flt, getdate, now_datetime, today
 
-from cred_hub.billing import CREDIT_AND_COLLECTION, plan_allows, requires_feature
+from cred_hub.billing import CREDIT_AND_COLLECTION, automation_allowed, plan_allows, requires_feature
 from cred_hub.cnpj.mapping import is_valid_cnpj, only_digits
 from cred_hub.integrations import bureau_log, get_settings, secret
 from cred_hub.integrations.cenprot import (
@@ -725,7 +725,7 @@ def on_deal_update(doc, method=None):
 	começam desligadas: o cartório cobra custas e quem decide gastar é o cliente (dono, 30/10/2026)."""
 	if doc.flags.cred_hub_protest or not doc.has_value_changed("status"):
 		return
-	if not plan_allows(CREDIT_AND_COLLECTION):
+	if not automation_allowed(CREDIT_AND_COLLECTION):
 		# Plano sem Crédito e Cobrança (credtech#398): a automação não roda
 		return
 	from cred_hub.sandbox import skip_side_effects

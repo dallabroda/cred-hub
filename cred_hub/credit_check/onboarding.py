@@ -14,7 +14,7 @@ import frappe
 from frappe import _
 from frappe.utils import add_days, cint, getdate, now_datetime, today
 
-from cred_hub.billing import CREDIT_AND_COLLECTION, plan_allows
+from cred_hub.billing import CREDIT_AND_COLLECTION, automation_allowed
 from cred_hub.cnpj.mapping import only_digits
 
 SETTINGS = "Cred Hub Credit Settings"
@@ -1029,7 +1029,7 @@ def validate_deal_stage_gate(doc, method=None) -> None:
 		return
 	if doc.is_new() or not doc.has_value_changed("status") or not doc.status:
 		return
-	if not plan_allows(CREDIT_AND_COLLECTION):
+	if not automation_allowed(CREDIT_AND_COLLECTION):
 		# Plano sem Crédito e Cobrança (credtech#398): as travas da Pasta Digital não seguram o card
 		return
 

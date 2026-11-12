@@ -1528,6 +1528,8 @@ def cast_committee_vote(
 
 
 @frappe.whitelist()
+# creates the portal link when there is none (a write of the gated Digital Folder), so it is gated too
+@requires_feature(CREDIT_AND_COLLECTION)
 def get_whatsapp_onboarding_reminder(
 	organization_name: str | None = None,
 	deal_name: str | None = None,
