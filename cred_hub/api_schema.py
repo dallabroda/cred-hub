@@ -528,6 +528,32 @@ def _method_paths() -> dict:
 	}
 
 
+IDEMPOTENCY_PARAMETER = {
+	"name": "Idempotency-Key",
+	"in": "header",
+	"required": False,
+	"schema": {"type": "string", "minLength": 1, "maxLength": 255},
+	"description": "Any unique value (a UUID). Resending the same request with the same key within 24 hours replays "
+	"the first answer (header Idempotent-Replayed: true) instead of writing again.",
+}
+IDEMPOTENCY_RESPONSES = {
+	"409": {"description": "A request with this Idempotency-Key is still running: wait and send again"},
+	"422": {"description": "This Idempotency-Key was already used for a different request"},
+}
+
+
+def _add_idempotency(paths: dict):
+	"""Every write accepts Idempotency-Key (credtech#375)."""
+	for operations in paths.values():
+		for verb in ("post", "put", "patch", "delete"):
+			operation = operations.get(verb)
+			if not operation:
+				continue
+			operation["parameters"] = [*operation.get("parameters", []), IDEMPOTENCY_PARAMETER]
+			for code, response in IDEMPOTENCY_RESPONSES.items():
+				operation.setdefault("responses", {}).setdefault(code, response)
+
+
 def build_openapi_spec() -> dict:
 	pipelines = _pipeline_enum()
 	stages = _stage_enum(pipelines[1])
@@ -537,6 +563,7 @@ def build_openapi_spec() -> dict:
 	for doctype in PUBLIC_DOCTYPES:
 		paths.update(_resource_paths(doctype))
 	paths.update(_method_paths())
+	_add_idempotency(paths)
 	return {
 		"openapi": "3.1.0",
 		"info": {
