@@ -168,16 +168,14 @@ class TestApiIdempotency(IntegrationTestCase):
 		"""MariaDB may pick a deadlock victim among calls racing for one key: that call is told to send again."""
 		with (
 			patch.object(idem, "_insert", side_effect=frappe.QueryDeadlockError("1213")),
-			patch.object(frappe.db, "rollback"),
+			patch.object(frappe.db, "rollback"),self.assertRaises(idem.IdempotencyKeyInUse)
 		):
-			with self.assertRaises(idem.IdempotencyKeyInUse):
-				self.call(key="race-dl")
+			self.call(key="race-dl")
 
 	def test_live_claim_is_never_deleted_by_a_racing_call(self):
 		first = self.call(key="live")
-		with patch.object(frappe.db, "delete") as delete:
-			with self.assertRaises(idem.IdempotencyKeyInUse):
-				self.call(key="live")
+		with patch.object(frappe.db, "delete") as delete, self.assertRaises(idem.IdempotencyKeyInUse):
+			self.call(key="live")
 		delete.assert_not_called()
 		self.assertTrue(first["name"])
 
