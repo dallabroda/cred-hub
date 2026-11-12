@@ -30,6 +30,16 @@ from frappe.utils import add_days, cint, getdate, now_datetime, nowdate
 from cred_hub import api_guard
 from cred_hub.api_version import deprecation_headers, requested_version, set_version_headers
 from cred_hub.cnpj.mapping import format_cnpj, only_digits
+from cred_hub.sandbox import (
+	TEST_FORBIDDEN_SCOPES,
+	TEST_HEADER,
+	TEST_KEY_ID_PREFIX,
+	check_not_sandbox,
+	check_test_scopes,
+	clear_test_users_cache,
+	ensure_sandbox_pipeline,
+	install_sandbox,
+)
 
 
 def _format_cpf(digits: str) -> str:
@@ -191,8 +201,8 @@ def _hash(secret: str) -> str:
 	return hmac.new(site_secret.encode(), secret.encode(), hashlib.sha256).hexdigest()
 
 
-def _new_secret():
-	key_id = secrets.token_hex(6)
+def _new_secret(prefix: str = ""):
+	key_id = prefix + secrets.token_hex(6)
 	secret = secrets.token_urlsafe(32)
 	return key_id, secret, f"{PREFIX}{key_id}_{secret}"
 
@@ -228,7 +238,7 @@ def authenticate():
 	key = frappe.db.get_value(
 		KEY,
 		{"key_id": key_id} if key_id else {"name": ""},
-		["name", "secret_hash", "status", "expires_on", "technical_user", "allowed_ips", "custom_rate_limit"],
+		["name", "secret_hash", "status", "expires_on", "technical_user", "allowed_ips", "custom_rate_limit", "is_test"],
 		as_dict=True,
 	)
 	if not key or not secret:
@@ -244,6 +254,10 @@ def authenticate():
 		_refuse_auth(key.name)
 	if not _ip_allowed(key.allowed_ips, frappe.local.request_ip):
 		_refuse_auth(key.name)
+	# Test key (sandbox, credtech#375): every answer says so, and the route check refuses what costs or is global
+	frappe.local.credhub_api_is_test = bool(cint(key.is_test))
+	if frappe.local.credhub_api_is_test:
+		_set_header(TEST_HEADER, "1")
 	try:
 		write = _check_route(key.name)
 	except KeyNotAllowed:
@@ -474,6 +488,9 @@ def _check_route(key_name: str) -> bool:
 	if any(form.get(arg) not in (None, "") for arg in DISPATCH_ARGS):
 		_deny()
 	scopes = _scopes(key_name)
+	if getattr(frappe.local, "credhub_api_is_test", False):
+		# a test key never runs paid queries nor changes company-wide fields, even if a scope slipped in
+		scopes -= TEST_FORBIDDEN_SCOPES
 	if kind == "file_download":
 		if "files_read" in scopes and verb in ("GET", "HEAD"):
 			return False
@@ -1253,6 +1270,7 @@ def _key_info(doc) -> dict:
 		"created_on": doc.creation,
 		"last_used_on": doc.last_used_on,
 		"last_used_ip": doc.last_used_ip,
+		"is_test": cint(doc.get("is_test")),
 	}
 
 
@@ -1277,19 +1295,27 @@ def create_api_key(
 	allowed_ips: str | None = None,
 	expires_on: str | None = None,
 	custom_rate_limit: int | None = None,
+	is_test: int | None = None,
 ) -> dict:
-	"""Cria a chave e devolve o token completo UMA vez (só o hash fica gravado)."""
+	"""Cria a chave e devolve o token completo UMA vez (só o hash fica gravado). `is_test`: chave de teste, presa ao
+	funil Sandbox (criado na primeira), sem consultas pagas nem campos da empresa (credtech#375)."""
 	_only_admin()
 	label = (label or "").strip()
 	if not label:
 		frappe.throw(_("Give the key a name."))
 	if frappe.db.count(KEY, {"status": "Active"}) >= MAX_KEYS:
 		frappe.throw(_("This company already has {0} active API keys. Revoke one to create another.").format(MAX_KEYS))
+	is_test = cint(is_test)
 	values = _clean_scopes(scopes)
-	pipelines = _clean_pipelines(pipelines)
+	if is_test:
+		check_test_scopes(values)
+		pipelines = [ensure_sandbox_pipeline()]
+	else:
+		pipelines = _clean_pipelines(pipelines)
+		check_not_sandbox(pipelines)
 	_check_card_pipelines(values, pipelines)
 	_check_ips(allowed_ips)
-	key_id, secret, token = _new_secret()
+	key_id, secret, token = _new_secret(TEST_KEY_ID_PREFIX if is_test else "")
 	user = _create_technical_user(key_id, label)
 	doc = frappe.get_doc(
 		{
@@ -1304,10 +1330,12 @@ def create_api_key(
 			"custom_rate_limit": _custom_rate_limit(custom_rate_limit),
 			"expires_on": expires_on or None,
 			"pipelines": [{"pipeline": p} for p in pipelines],
+			"is_test": is_test,
 			**values,
 		}
 	).insert(ignore_permissions=True)
 	_sync_pipelines(user, pipelines)
+	clear_test_users_cache()
 	return {**_key_info(doc), "token": token}
 
 
@@ -1331,9 +1359,18 @@ def update_api_key(
 			frappe.throw(_("Give the key a name."))
 		doc.label = label.strip()
 	if scopes is not None:
-		doc.update(_clean_scopes(scopes))
+		values = _clean_scopes(scopes)
+		if cint(doc.get("is_test")):
+			check_test_scopes(values)
+		doc.update(values)
 	if pipelines is not None:
-		doc.set("pipelines", [{"pipeline": p} for p in _clean_pipelines(pipelines)])
+		# a test key stays on the Sandbox pipeline; a real key never gets it
+		if cint(doc.get("is_test")):
+			pipelines = [ensure_sandbox_pipeline()]
+		else:
+			pipelines = _clean_pipelines(pipelines)
+			check_not_sandbox(pipelines)
+		doc.set("pipelines", [{"pipeline": p} for p in pipelines])
 	if allowed_ips is not None:
 		_check_ips(allowed_ips)
 		doc.allowed_ips = allowed_ips
@@ -1371,6 +1408,7 @@ def revoke_api_key(name: str) -> dict:
 	doc.status = "Revoked"
 	doc.save(ignore_permissions=True)
 	_disable_technical_user(doc.technical_user)
+	clear_test_users_cache()
 	return _key_info(doc)
 
 
@@ -1445,6 +1483,7 @@ def install():
 		},
 		update=True,
 	)
+	install_sandbox()
 	if not frappe.db.exists("Role", API_ROLE):
 		frappe.get_doc({"doctype": "Role", "role_name": API_ROLE, "desk_access": 0}).insert(ignore_permissions=True)
 	# Migração pode mudar campos e eventos: a especificação OpenAPI e a lista de webhooks ativos são lidas de novo

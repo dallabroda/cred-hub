@@ -34,7 +34,7 @@ from datetime import datetime, timezone
 import frappe
 from frappe.utils import add_days, add_to_date, get_datetime, now_datetime
 
-from cred_hub import api_schema
+from cred_hub import api_schema, sandbox
 
 WEBHOOK_DOCTYPE = "Cred Hub Webhook"
 LOG_DOCTYPE = "Cred Hub Webhook Log"
@@ -221,7 +221,8 @@ def _active_webhooks() -> list[dict]:
 	if frappe.db.exists("DocType", WEBHOOK_DOCTYPE):
 		meta = frappe.get_meta(WEBHOOK_DOCTYPE)
 		flags = {event: field for event, field in EVENT_FIELD_MAP.items() if meta.has_field(field)}
-		rows = frappe.get_all(WEBHOOK_DOCTYPE, {"status": "Active"}, ["name", *set(flags.values())])
+		extra = ["is_test"] if meta.has_field("is_test") else []
+		rows = frappe.get_all(WEBHOOK_DOCTYPE, {"status": "Active"}, ["name", *set(flags.values()), *extra])
 		pipelines: dict[str, list] = {}
 		if rows:
 			for row in frappe.get_all(
@@ -235,6 +236,7 @@ def _active_webhooks() -> list[dict]:
 				"name": row.name,
 				"events": [event for event, field in flags.items() if row.get(field)],
 				"pipelines": pipelines.get(row.name, []),
+				"is_test": bool(row.get("is_test")),
 			}
 			for row in rows
 		]
@@ -264,10 +266,17 @@ def _record_pipelines(reference_doctype: str | None, reference_name: str | None)
 	return set(frappe.get_all("CRM Deal", filters, pluck="pipeline", distinct=True)) - {None, ""}
 
 
-def _subscribers(event_name: str, pipeline: str | None, reference_doctype=None, reference_name=None) -> list[str]:
+def _subscribers(
+	event_name: str, pipeline: str | None, reference_doctype=None, reference_name=None, sandbox_event=False
+) -> list[str]:
 	"""Webhooks of the event. A webhook that lists pipelines only gets events of those pipelines; an event without a
-	pipeline (contact, organization) reaches it only when a card of the record is in one of them (audit M3)."""
-	webhooks = [wh for wh in _active_webhooks() if event_name in wh["events"]]
+	pipeline (contact, organization) reaches it only when a card of the record is in one of them (audit M3).
+	Events of sandbox records go only to test webhooks, and test webhooks get nothing else (credtech#375)."""
+	webhooks = [
+		wh
+		for wh in _active_webhooks()
+		if event_name in wh["events"] and bool(wh.get("is_test")) == bool(sandbox_event)
+	]
 	if not webhooks:
 		return []
 	event_pipelines = None
@@ -289,7 +298,8 @@ def _trigger_record_event(events, doc, pipeline: str | None = None):
 	"""Record events: the payload (record + related, O(fields), two queries for related) is built only when some
 	webhook wants one of the events."""
 	events = [events] if isinstance(events, str) else events
-	targets = [(event, _subscribers(event, pipeline, doc.doctype, doc.name)) for event in events]
+	sandbox_event = sandbox.is_sandbox_record(doc.doctype, doc.name, doc)
+	targets = [(event, _subscribers(event, pipeline, doc.doctype, doc.name, sandbox_event)) for event in events]
 	if not any(names for _event, names in targets):
 		return
 	data = api_schema.record(doc)
@@ -301,7 +311,8 @@ def _trigger_record_event(events, doc, pipeline: str | None = None):
 def _trigger_event(event_name: str, payload_data: dict, pipeline: str | None, reference_doctype: str, reference_name: str):
 	if event_name not in EVENT_FIELD_MAP:
 		return
-	names = _subscribers(event_name, pipeline, reference_doctype, reference_name)
+	sandbox_event = sandbox.is_sandbox_pipeline(pipeline) or sandbox.is_sandbox_record(reference_doctype, reference_name)
+	names = _subscribers(event_name, pipeline, reference_doctype, reference_name, sandbox_event)
 	_write_outbox(names, event_name, payload_data, reference_doctype, reference_name)
 
 
@@ -643,6 +654,8 @@ def send_webhook(
 		"X-HubTech-Webhook-Version": str(PAYLOAD_VERSION),
 		**sign(_signing_secrets(doc), payload_json, int(time.time())),
 	}
+	if doc.get("is_test"):
+		headers[sandbox.TEST_HEADER] = "1"
 
 	start_time = time.time()
 	status = "Failed"

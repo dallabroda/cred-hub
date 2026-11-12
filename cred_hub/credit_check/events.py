@@ -20,6 +20,12 @@ def on_deal_update(doc, method=None):
 	if doc.status != settings["auto_trigger_stage"]:
 		return
 
+	# Sandbox da API (credtech#375): card de teste nunca dispara consulta paga
+	from cred_hub.sandbox import is_sandbox_pipeline
+
+	if is_sandbox_pipeline(doc.pipeline):
+		return
+
 	# Proteção contra disparo acidental em funis de cobrança / recuperação
 	if doc.pipeline:
 		p_name = str(frappe.db.get_value("CRM Pipeline", doc.pipeline, "pipeline_name") or "").lower()

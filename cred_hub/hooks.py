@@ -47,8 +47,27 @@ crm_hidden_users = ["cred_hub.api_keys.technical_users"]
 # Chave com "Campos e regras" (fields_admin) cria e altera campos e formulários pela API (credtech#375)
 crm_field_admin = ["cred_hub.api_keys.is_fields_admin_call"]
 # Arquivos lidos por uma chave seguem o card a que estão anexados (funis da chave; audit M10)
-permission_query_conditions = {"File": "cred_hub.api_guard.file_query_conditions"}
-has_permission = {"File": "cred_hub.api_guard.has_file_permission"}
+# Chave de teste (credtech#375): só enxerga e altera registros do sandbox (cred_hub.sandbox)
+_SANDBOX_QUERY = "cred_hub.sandbox.query_conditions"
+_SANDBOX_PERMISSION = "cred_hub.sandbox.has_permission"
+_SANDBOX_GUARDED = (
+	"Contact",
+	"CRM Organization",
+	"CRM Lead",
+	"FCRM Note",
+	"CRM Task",
+	"Cred Hub Checklist Item",
+	"Cred Hub Visit Report",
+	"Cred Hub Credit Report",
+)
+permission_query_conditions = {
+	"File": ["cred_hub.api_guard.file_query_conditions", _SANDBOX_QUERY],
+	**{doctype: _SANDBOX_QUERY for doctype in _SANDBOX_GUARDED},
+}
+has_permission = {
+	"File": ["cred_hub.api_guard.has_file_permission", _SANDBOX_PERMISSION],
+	**{doctype: _SANDBOX_PERMISSION for doctype in _SANDBOX_GUARDED},
+}
 
 # Quem chega sem conta vai para o cadastro de empresa nova (credtech#25)
 oauth_without_account = "cred_hub.signup_access.oauth_without_account"
@@ -75,7 +94,11 @@ doc_events = {
 	# Card criado de um lead com CNPJ: o CNPJ vai para a Organização do card (épico #66)
 	# Mudança de etapa do funil dispara esteira progressiva de crédito se configurado (credtech#260)
 	"CRM Deal": {
-		"validate": "cred_hub.credit_check.onboarding.validate_deal_stage_gate",
+		"validate": [
+			"cred_hub.credit_check.onboarding.validate_deal_stage_gate",
+			# Sandbox da API: chave de teste só em cards do funil Sandbox, e o Sandbox só com registros de teste
+			"cred_hub.sandbox.validate_deal",
+		],
 		"after_insert": [
 			"cred_hub.cnpj.card.after_insert",
 			"cred_hub.webhooks.on_deal_insert",
@@ -91,7 +114,7 @@ doc_events = {
 		"on_trash": "cred_hub.webhooks.on_deal_trash",
 	},
 	"Contact": {
-		"validate": "cred_hub.party.events.validate_contact",
+		"validate": ["cred_hub.party.events.validate_contact", "cred_hub.sandbox.validate_contact"],
 		"after_insert": "cred_hub.webhooks.on_contact_insert",
 		"on_update": "cred_hub.webhooks.on_contact_update",
 	},
@@ -108,7 +131,9 @@ doc_events = {
 	"CRM Lead": {
 		# Empresa pelo domínio do e-mail (credtech#183): em fila, nunca atrasa a entrada do lead
 		"after_insert": "cred_hub.email_company.finder.on_lead_insert",
-		"validate": "cred_hub.cnpj.events.validate",
+		"validate": ["cred_hub.cnpj.events.validate", "cred_hub.sandbox.validate_lead"],
 		"on_update": ["cred_hub.cnpj.events.on_update", "cred_hub.company.events.on_update"],
 	},
+	"Cred Hub Checklist Item": {"validate": "cred_hub.sandbox.validate_organization_record"},
+	"Cred Hub Visit Report": {"validate": "cred_hub.sandbox.validate_organization_record"},
 }
