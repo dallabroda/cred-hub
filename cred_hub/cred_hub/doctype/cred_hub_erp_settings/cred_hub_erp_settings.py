@@ -21,7 +21,11 @@ class CredHubERPSettings(Document):
 				frappe.throw(_("The ERP API URL must start with https://"))
 			self.set(field, url)
 		credentials = ("erp_provider", "wba_base_url", "wba_tenant_id", "wba_username", "wba_password",
-			"smart_base_url", "smart_client_id", "smart_client_secret")
+			"smart_base_url", "smart_client_id", "smart_client_secret", "rest_config", "rest_secrets")
+		cls = settings.connector_class(self)
+		if cls:
+			# What only the chosen connector knows (e.g. the generic REST configuration), before the maps below
+			cls.validate_settings(self)
 		if any(self.has_value_changed(field) for field in credentials):
 			settings.forget_token()
 		if self.has_value_changed("erp_provider"):
@@ -37,6 +41,13 @@ class CredHubERPSettings(Document):
 			settings.load_default_import_maps(self)
 		settings.validate_maps(self)
 		self.validate_cedente_trigger()
+
+	def on_update(self):
+		from cred_hub.erp import settings
+
+		cls = settings.connector_class(self)
+		if cls:
+			cls.settings_saved(self)
 
 	def validate_cedente_trigger(self):
 		"""Cedente registration (credtech#367): only the credit funnel, and the stage must belong to it."""

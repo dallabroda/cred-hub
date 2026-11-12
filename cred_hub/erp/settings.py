@@ -56,10 +56,7 @@ def connector_class(settings=None):
 
 def credential_values(settings, cls) -> dict:
 	"""{fieldname: value} of the credentials the connector declares; secrets decrypted only here."""
-	return {
-		c.fieldname: (_secret(settings, c.fieldname) if c.secret else (settings.get(c.fieldname) or ""))
-		for c in cls.credentials
-	}
+	return cls.read_credentials(settings, _secret)
 
 
 def client(settings=None, session=None):

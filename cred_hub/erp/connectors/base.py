@@ -59,6 +59,8 @@ class Pace:
 
 	# Minimum seconds between two requests of the same heavy report (0 = none)
 	report_cooldown: int = 0
+	# Minimum seconds between any two calls of one client (0 = none)
+	min_interval: float = 0.0
 
 
 @dataclass
@@ -103,6 +105,25 @@ class Connector:
 		"""The system's HTTP client from the credential values ({fieldname: value}); kwargs: session, token,
 		on_token (shared token cache)."""
 		raise NotImplementedError
+
+	@classmethod
+	def read_credentials(cls, settings, secret) -> dict:
+		"""{fieldname: value} of the declared credentials, read from the settings document. `secret(doc, fieldname)`
+		decrypts a Password field; it is the only place a secret is decrypted. A connector whose credentials are
+		dynamic (ADR 0007 §3, e.g. the generic REST one) overrides this."""
+		return {
+			c.fieldname: (secret(settings, c.fieldname) if c.secret else (settings.get(c.fieldname) or ""))
+			for c in cls.credentials
+		}
+
+	@classmethod
+	def validate_settings(cls, settings):
+		"""Called when the settings are saved with this connector chosen: refuse (frappe.throw) or normalize what
+		only this connector knows. Default: nothing."""
+
+	@classmethod
+	def settings_saved(cls, settings):
+		"""Called after the settings were saved with this connector chosen. Default: nothing."""
 
 	@classmethod
 	def missing_credentials(cls, values: dict) -> list[str]:
