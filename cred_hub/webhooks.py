@@ -10,13 +10,15 @@ Entrega (outbox transacional):
   1 min, 5 min, 30 min e 2 h, no máximo 50 por webhook por rodada e disjuntor depois de 10 falhas seguidas.
 
 Corpo (versão 1, documentado em credtech docs/sistemas/cred-hub-api.md):
-	{"event", "version": 1, "event_id", "delivery_id", "attempt", "replay", "timestamp", "doctype", "data", "related"}
+	{"event", "version": 1, "event_id", "delivery_id", "attempt", "replay", "test", "timestamp", "doctype", "data", "related"}
 - `data` é o registro inteiro pela política de `cred_hub.api_schema` (campos `ch_*` incluídos; senhas, tabelas,
   campos desativados e marcas internas nunca saem), ou os dados do evento (checklist, crédito);
 - `related` traz organização(ões) e contatos do card, ou a organização do contato;
 - cada webhook pode limitar os campos (`payload_fields`), sem nunca passar da política;
 - `event_id` é um por evento; `delivery_id` um por webhook e evento, o mesmo em todas as tentativas e no reenvio
-  manual (que vem com `"replay": true`).
+  manual (que vem com `"replay": true`);
+- `test` vem sempre, booleano: `true` só nas entregas a webhooks de teste (eventos do Sandbox das chaves de teste,
+  que também levam o cabeçalho `X-HubTech-Test: 1`), `false` em produção (credtech#389, decisão 3-A).
 
 Assinaturas:
 - X-HubTech-Signature: sha256=HMAC(segredo, corpo) — a de sempre;
@@ -551,6 +553,7 @@ def build_body(
 	fields: list[str] | None = None,
 	event_id: str | None = None,
 	replay: bool = False,
+	test: bool = False,
 ) -> dict:
 	if doctype:
 		payload_data, related = _select(payload_data, related, fields or [])
@@ -561,6 +564,8 @@ def build_body(
 		"delivery_id": delivery_id,
 		"attempt": attempt,
 		"replay": bool(replay),
+		# always present: true only for test webhooks (Sandbox of the test keys), same as X-HubTech-Test (credtech#389)
+		"test": bool(test),
 		# UTC, with offset (audit L8)
 		"timestamp": datetime.now(timezone.utc).isoformat(),
 		"doctype": doctype,
@@ -642,6 +647,7 @@ def send_webhook(
 		fields=parse_payload_fields(doc.get("payload_fields")),
 		event_id=event_id,
 		replay=replay,
+		test=bool(doc.get("is_test")),
 	)
 	payload_json = frappe.as_json(body)
 

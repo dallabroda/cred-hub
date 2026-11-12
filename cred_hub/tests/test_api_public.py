@@ -235,10 +235,10 @@ class TestApiPublic(IntegrationTestCase):
 		body["timestamp"] = "<timestamp>"
 		self.assertEqual(
 			list(body),
-			["event", "version", "event_id", "delivery_id", "attempt", "replay", "timestamp", "doctype", "data", "related"],
+			["event", "version", "event_id", "delivery_id", "attempt", "replay", "test", "timestamp", "doctype", "data", "related"],
 		)
 		self.assertEqual(
-			{k: body[k] for k in ("event", "version", "event_id", "delivery_id", "attempt", "replay", "timestamp", "doctype")},
+			{k: body[k] for k in ("event", "version", "event_id", "delivery_id", "attempt", "replay", "test", "timestamp", "doctype")},
 			{
 				"event": "deal.created",
 				"version": 1,
@@ -246,6 +246,7 @@ class TestApiPublic(IntegrationTestCase):
 				"delivery_id": "wh_fixo",
 				"attempt": 1,
 				"replay": False,
+				"test": False,
 				"timestamp": "<timestamp>",
 				"doctype": DEAL,
 			},

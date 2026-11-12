@@ -18,6 +18,7 @@ A test key (`is_test`, token `hub_test<id>_<secret>`) is a normal key that can o
 - No paid or outbound side effects for sandbox records: no paid queries (scopes refused, automatic credit check
   skipped), no ERP cedente, no protest, no collection reminders, no CNPJ/company/e-mail lookups, no Google Calendar.
 - Webhooks: events of sandbox records go only to webhooks flagged `is_test`, and those get nothing else.
+  Deliveries to them carry `X-HubTech-Test: 1` and `"test": true` in the body (`false` for every other webhook).
 - Every answer to a test key carries `X-HubTech-Test: 1`.
 - A test key never assigns nor @mentions a person (owner fields refused, mentions become plain text).
 - The Sandbox pipeline stays while in use: nobody (admin included) deletes or renames it, nor deletes its stages,

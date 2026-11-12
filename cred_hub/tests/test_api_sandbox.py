@@ -269,14 +269,40 @@ class TestApiSandbox(IntegrationTestCase):
 		self.assertEqual(self.outbox(real_hook.name), ["deal.created"])
 
 	def test_test_webhook_delivery_is_marked(self):
-		hook = self.webhook(True)
+		"""Test webhooks: header `X-HubTech-Test: 1` and `"test": true` in the body; every other delivery says
+		`"test": false` and has no header (credtech#389, decision 3-A)."""
 		from cred_hub.email_company import safe_http
 
+		for test in (True, False):
+			hook = self.webhook(test)
+			session = MagicMock()
+			session.post.return_value = MagicMock(status_code=200, text="ok")
+			with patch.object(safe_http, "resolve_public"), patch.object(safe_http, "_session", return_value=session):
+				webhooks.send_webhook(hook.name, "deal.created", {"name": "X"})
+			kwargs = session.post.call_args.kwargs
+			self.assertEqual(kwargs["headers"].get(sandbox.TEST_HEADER), "1" if test else None)
+			body = json.loads(kwargs["data"])
+			self.assertIs(body["test"], test)
+			# signed as sent: the flag is covered by the HMAC
+			expected = webhooks.sign("segredo", kwargs["data"], int(kwargs["headers"]["X-HubTech-Timestamp"]))
+			self.assertEqual(kwargs["headers"]["X-HubTech-Signature"], expected["X-HubTech-Signature"])
+
+	def test_sandbox_event_reaches_the_test_webhook_with_the_flag_in_the_body(self):
+		"""End to end: a test key creates a Sandbox card, the outbox delivers it to the test webhook as test."""
+		from cred_hub.email_company import safe_http
+
+		hook = self.webhook(True)
+		self.as_test_key()
+		card = frappe.get_doc({"doctype": DEAL, "pipeline": self.sandbox}).insert()
+		frappe.set_user("Administrator")
+		frappe.local.credhub_api_key = None
+		row = frappe.get_last_doc(webhooks.OUTBOX_DOCTYPE, filters={"webhook": hook.name, "event": "deal.created"})
 		session = MagicMock()
 		session.post.return_value = MagicMock(status_code=200, text="ok")
 		with patch.object(safe_http, "resolve_public"), patch.object(safe_http, "_session", return_value=session):
-			webhooks.send_webhook(hook.name, "deal.created", {"name": "X"})
-		self.assertEqual(session.post.call_args.kwargs["headers"].get(sandbox.TEST_HEADER), "1")
+			webhooks.deliver(row.name)
+		body = json.loads(session.post.call_args.kwargs["data"])
+		self.assertEqual((body["event"], body["data"]["name"], body["test"]), ("deal.created", card.name, True))
 
 	def test_sandbox_card_never_triggers_the_paid_credit_check(self):
 		from cred_hub.credit_check import events
