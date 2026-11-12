@@ -1185,6 +1185,7 @@ def _create_technical_user(key_id: str, label: str) -> str:
 			"user_type": "System User",
 			"send_welcome_email": 0,
 			"credhub_api_key": key_id,
+			**{field: 0 for field in QUIET_USER_FIELDS},
 			"roles": [{"role": role} for role in TECHNICAL_ROLES],
 		}
 	)
@@ -1192,7 +1193,42 @@ def _create_technical_user(key_id: str, label: str) -> str:
 	user.flags.no_welcome_mail = True
 	user.flags.credhub_api_key_flow = True
 	user.insert()
+	mute_technical_user(user.name)
 	return user.name
+
+
+# A technical user never gets e-mail nor notifications: its address is a placeholder (`.invalid`), but an assignment,
+# mention, follow or thread e-mail would still queue (and try to send) a message to it
+QUIET_USER_FIELDS = (
+	"thread_notify",
+	"send_me_a_copy",
+	"document_follow_notify",
+	"follow_created_documents",
+	"follow_commented_documents",
+	"follow_liked_documents",
+	"follow_shared_documents",
+	"follow_assigned_documents",
+)
+QUIET_NOTIFICATION_FIELDS = ("enabled", "enable_email_notifications")
+
+
+def mute_technical_user(user: str):
+	"""No e-mail and no notification for a technical user, whatever the path: preferences off, notifications off and
+	a global unsubscribe of its address (Frappe drops it before creating the Email Queue). Idempotent."""
+	values = {field: 0 for field in QUIET_USER_FIELDS if frappe.get_meta("User").has_field(field)}
+	if values:
+		frappe.db.set_value("User", user, values, update_modified=False)
+	settings = frappe.db.exists("Notification Settings", user)
+	if not settings:
+		frappe.get_doc({"doctype": "Notification Settings", "name": user}).insert(ignore_permissions=True)
+	frappe.db.set_value(
+		"Notification Settings", user, {field: 0 for field in QUIET_NOTIFICATION_FIELDS}, update_modified=False
+	)
+	email = frappe.db.get_value("User", user, "email") or user
+	if not frappe.db.exists("Email Unsubscribe", {"email": email, "global_unsubscribe": 1}):
+		frappe.get_doc({"doctype": "Email Unsubscribe", "email": email, "global_unsubscribe": 1}).insert(
+			ignore_permissions=True
+		)
 
 
 def _sync_pipelines(user: str, pipelines: list[str]):
@@ -1484,6 +1520,9 @@ def install():
 		update=True,
 	)
 	install_sandbox()
+	# technical users created before they were muted (no e-mail, no notification)
+	for user in technical_users():
+		mute_technical_user(user)
 	if not frappe.db.exists("Role", API_ROLE):
 		frappe.get_doc({"doctype": "Role", "role_name": API_ROLE, "desk_access": 0}).insert(ignore_permissions=True)
 	# Migração pode mudar campos e eventos: a especificação OpenAPI e a lista de webhooks ativos são lidas de novo
