@@ -152,6 +152,7 @@ METHODS = {
 	# Busca unificada por CPF/CNPJ e especificação OpenAPI 3.1
 	"cred_hub.api_keys.lookup_by_document": "organizations_read",
 	"cred_hub.api_keys.get_openapi_spec": "pipelines_read",
+	"cred_hub.api_keys.get_postman_collection": "pipelines_read",
 	# Domínio de Crédito PJ & Pasta Digital
 	"cred_hub.credit_check.api.get_credit_onboarding": "credit_read",
 	# Pasta Digital pela API (credtech#375): ler o checklist item a item e enviar um documento a um item
@@ -1092,6 +1093,8 @@ def lookup_by_document(document: str) -> dict:
 					"organization_name",
 					"pipeline",
 					"status",
+					"outcome",
+					"deal_value",
 					"annual_revenue",
 					"deal_owner",
 					"credit_verdict",
@@ -1128,7 +1131,20 @@ def lookup_by_document(document: str) -> dict:
 				result["cards"] = frappe.get_list(
 					"CRM Deal",
 					filters={"organization": contact.company_name},
-					fields=["name", "organization", "organization_name", "pipeline", "status", "annual_revenue", "deal_owner", "modified"],
+					fields=[
+						"name",
+						"organization",
+						"organization_name",
+						"pipeline",
+						"status",
+						"outcome",
+						"deal_value",
+						"annual_revenue",
+						"deal_owner",
+						"credit_verdict",
+						"credit_report",
+						"modified",
+					],
 					order_by="modified desc",
 					limit_page_length=25,
 				)
@@ -1136,14 +1152,31 @@ def lookup_by_document(document: str) -> dict:
 	return _limit_lookup_to_scopes(result)
 
 
-@frappe.whitelist()
-def get_openapi_spec() -> dict:
-	"""OpenAPI 3.1 of this company's API (credtech#375): record schemas with the company's own fields, pipelines and
-	stages as enums. Built once and cached per site (cred_hub.api_schema); needs a key or a signed-in user, since it
-	shows how the company is set up."""
-	from cred_hub.api_schema import openapi_spec
+@frappe.whitelist(allow_guest=True)
+def get_openapi_spec(openapi_version: str | None = None, format: str | None = None) -> dict:
+	"""OpenAPI 3.1 (or 3.0.3) of this company's API (credtech#375).
 
-	return openapi_spec()
+	- Authenticated users/keys get custom fields and visible pipelines.
+	- Guests get the public canonical schema with generic pipeline names.
+	- format="postman" exports a ready Postman Collection v2.1.
+	- openapi_version="3.0" converts to OpenAPI 3.0.3 for legacy ERP tooling.
+	"""
+	from cred_hub.api_schema import openapi_spec, to_openapi_3_0, to_postman_collection
+
+	spec = openapi_spec()
+	if format == "postman":
+		return to_postman_collection(spec)
+	if openapi_version in ("3.0", "3.0.3"):
+		return to_openapi_3_0(spec)
+	return spec
+
+
+@frappe.whitelist(allow_guest=True)
+def get_postman_collection() -> dict:
+	"""Downloads a ready Postman Collection v2.1 (credtech#375)."""
+	from cred_hub.api_schema import openapi_spec, to_postman_collection
+
+	return to_postman_collection(openapi_spec())
 
 
 @frappe.whitelist()
