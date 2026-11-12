@@ -3,6 +3,8 @@
 import frappe
 from frappe import _
 
+from cred_hub import api_guard
+
 
 SUPPORTED_DOCTYPES = {"CRM Deal", "Contact", "CRM Organization"}
 MAX_BATCH_SIZE = 50
@@ -95,8 +97,11 @@ def bulk_upsert(doctype: str, records: list[dict] | str) -> dict:
 		savepoint = f"bulk_item_{index}"
 		try:
 			frappe.db.savepoint(savepoint)
+			exists = bool(name and frappe.db.exists(doctype, name))
+			# system-filled fields and child rows of another record are refused, as in the REST routes (audit M6)
+			api_guard.check_write(doctype, item, name if exists else None)
 
-			if name and frappe.db.exists(doctype, name):
+			if exists:
 				doc = frappe.get_doc(doctype, name)
 				doc.check_permission("write")
 				doc.update(item)
