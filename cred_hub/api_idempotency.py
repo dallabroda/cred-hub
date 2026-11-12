@@ -118,6 +118,24 @@ def _insert(name: str, api_key: str, fingerprint: str, route: str, request_id: s
 	return True
 
 
+def _stored(name: str):
+	return frappe.db.get_value(
+		DOCTYPE,
+		name,
+		[
+			"request_hash",
+			"status",
+			"response_status",
+			"response_content_type",
+			"response_body",
+			"body_omitted",
+			"request_id",
+			"expires_at",
+		],
+		as_dict=True,
+	)
+
+
 def begin(api_key: str, request_id: str) -> dict | None:
 	"""Called by authenticate for writes, once the key, the route and the rate limit passed. Returns the claim to
 	finish after the call, or raises: 400 bad key, 409 in flight, 422 reused, or the stored answer (replay)."""
@@ -132,24 +150,25 @@ def begin(api_key: str, request_id: str) -> dict | None:
 	name = row_name(api_key, value)
 	fingerprint = request_fingerprint()
 	route = f"{(frappe.request.method or 'GET').upper()} {unquote(frappe.request.path or '')}"
-	claimed = _insert(name, api_key, fingerprint, route, request_id)
-	if not claimed:
-		# an expired key is free again: drop it and claim once more (a concurrent claim then wins, and this one 409s)
-		frappe.db.sql(f"delete from `tab{DOCTYPE}` where name = %s and expires_at < %s", (name, now_datetime()))
+	try:
 		claimed = _insert(name, api_key, fingerprint, route, request_id)
+		row = None if claimed else _stored(name)
+		if row and row.expires_at and row.expires_at < now_datetime():
+			# a key past its 24 hours is free again: drop it and claim once more. Only after reading that it expired:
+			# a delete on a live claim would make concurrent waiters deadlock
+			frappe.db.delete(DOCTYPE, {"name": name, "expires_at": ("<", now_datetime())})
+			claimed = _insert(name, api_key, fingerprint, route, request_id)
+			row = None if claimed else _stored(name)
+	except frappe.QueryDeadlockError:
+		# several calls raced for the same key: the database picked one; the others are told to send again
+		frappe.db.rollback()
+		frappe.throw(_("A request with this Idempotency-Key is being processed. Send it again."), IdempotencyKeyInUse)
 	if claimed:
 		# committed before the call runs: another worker sees the claim at once
 		frappe.db.commit()
 		return {"name": name}
-	row = frappe.db.get_value(
-		DOCTYPE,
-		name,
-		["request_hash", "status", "response_status", "response_content_type", "response_body", "body_omitted",
-		 "request_id"],
-		as_dict=True,
-	)
 	if not row:
-		# the claim vanished between the insert and the read (cleanup or a freed key): ask for a resend
+		# the claim is not visible yet to this transaction, or was just freed: ask for a resend
 		frappe.throw(_("A request with this Idempotency-Key is being processed. Send it again."), IdempotencyKeyInUse)
 	if row.request_hash != fingerprint:
 		frappe.throw(

@@ -164,6 +164,23 @@ class TestApiIdempotency(IntegrationTestCase):
 		idem.finish(first, Response('{"data": 1}', status=201, content_type="application/json"))
 		self.assertEqual(self.call(key="pay-1").status_code, 201)
 
+	def test_racing_calls_that_deadlock_answer_409(self):
+		"""MariaDB may pick a deadlock victim among calls racing for one key: that call is told to send again."""
+		with (
+			patch.object(idem, "_insert", side_effect=frappe.QueryDeadlockError("1213")),
+			patch.object(frappe.db, "rollback"),
+		):
+			with self.assertRaises(idem.IdempotencyKeyInUse):
+				self.call(key="race-dl")
+
+	def test_live_claim_is_never_deleted_by_a_racing_call(self):
+		first = self.call(key="live")
+		with patch.object(frappe.db, "delete") as delete:
+			with self.assertRaises(idem.IdempotencyKeyInUse):
+				self.call(key="live")
+		delete.assert_not_called()
+		self.assertTrue(first["name"])
+
 	def test_claim_is_the_primary_key(self):
 		"""Two workers racing for one key: the database accepts exactly one claim."""
 		name = idem.row_name("k1", "race")
