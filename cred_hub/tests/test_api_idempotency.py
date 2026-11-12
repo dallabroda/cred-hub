@@ -87,7 +87,7 @@ class TestApiIdempotency(IntegrationTestCase):
 		self.assertIsNone(self.row("read-1"))
 
 	def test_invalid_keys_are_refused_with_400(self):
-		for value in ("", "x" * 256, "chave-é", "line\nbreak", "tab\there"):
+		for value in ("", "x" * 256, "chave-é", "tab\there", "bell\x07"):
 			with self.assertRaises(idem.InvalidIdempotencyKey) as ctx:
 				self.call(key=value)
 			self.assertEqual(ctx.exception.http_status_code, 400)
