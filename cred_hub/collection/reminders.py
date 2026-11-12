@@ -204,7 +204,10 @@ def save_reminders(enabled=None, inbox_id=None, steps=None):
 def _open_rows(due_dates):
 	"""Títulos of open cards of the collection funnel due on one of these dates."""
 	pipeline = collection_settings().get("collection_pipeline")
-	if not pipeline or not due_dates:
+	from cred_hub.sandbox import is_sandbox_pipeline
+
+	if not pipeline or not due_dates or is_sandbox_pipeline(pipeline):
+		# the Sandbox never sends WhatsApp to anyone (credtech#375)
 		return []
 	deals = frappe.get_all(
 		DEAL,

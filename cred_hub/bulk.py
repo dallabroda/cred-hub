@@ -98,6 +98,9 @@ def bulk_upsert(doctype: str, records: list[dict] | str) -> dict:
 		try:
 			frappe.db.savepoint(savepoint)
 			exists = bool(name and frappe.db.exists(doctype, name))
+			if exists and getattr(frappe.local, "credhub_api_is_test", False):
+				# a test key never learns that a real record exists: what it cannot read is created anew
+				exists = frappe.has_permission(doctype, "read", doc=name)
 			# system-filled fields and child rows of another record are refused, as in the REST routes (audit M6)
 			api_guard.check_write(doctype, item, name if exists else None)
 

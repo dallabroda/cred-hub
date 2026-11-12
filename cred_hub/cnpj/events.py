@@ -34,6 +34,11 @@ def validate(doc, method=None):
 def on_update(doc, method=None):
 	if doc.flags.cred_hub_enriching or not doc.get("cnpj") or not is_valid_cnpj(doc.cnpj):
 		return
+	from cred_hub.sandbox import skip_side_effects
+
+	if skip_side_effects(doc):
+		# sandbox data never goes out to the CNPJ services (credtech#375)
+		return
 	if not doc.has_value_changed("cnpj") and doc.get("cnpj_checked_on"):
 		return
 	digits = only_digits(doc.cnpj)

@@ -209,6 +209,11 @@ def sync_task_to_google_calendar(doc, method=None):
 	"""Hook doc_event do CRM Task para criar/atualizar evento no Google Calendar."""
 	if not doc.assigned_to:
 		return
+	from cred_hub.sandbox import skip_side_effects
+
+	if skip_side_effects(doc):
+		# tarefa do sandbox nunca vai para a agenda de ninguém (credtech#375)
+		return
 
 	access_token = get_valid_access_token(doc.assigned_to)
 	if not access_token:
