@@ -34,6 +34,7 @@
   "sync_deletes",
   "credit_read",
   "credit_write",
+  "credit_paid_queries",
   "pipelines",
   "security_section",
   "allowed_ips",
@@ -199,6 +200,13 @@
    "label": "Credit & Digital Folder: write"
   },
   {
+   "default": "0",
+   "description": "Lets the key run bureau queries that the company pays to the provider. Off by default.",
+   "fieldname": "credit_paid_queries",
+   "fieldtype": "Check",
+   "label": "Credit: run paid bureau queries"
+  },
+  {
    "fieldname": "pipelines",
    "fieldtype": "Table",
    "label": "Pipelines",
@@ -240,7 +248,7 @@
   }
  ],
  "links": [],
- "modified": "2026-11-05 16:40:00.000000",
+ "modified": "2026-11-11 22:00:00.000000",
  "modified_by": "Administrator",
  "module": "Cred Hub",
  "name": "Cred Hub API Key",

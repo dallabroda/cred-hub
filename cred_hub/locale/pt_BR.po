@@ -3750,3 +3750,46 @@ msgstr "O card {0} é de outra organização."
 
 msgid "The file could not be read. Send a valid document."
 msgstr "Não foi possível ler o arquivo. Envie um documento válido."
+msgid "fields must be a list of field names."
+msgstr "fields precisa ser uma lista de nomes de campos."
+
+msgid "Unknown fields: {0}"
+msgstr "Campos desconhecidos: {0}"
+
+msgid "updated_since must be a date and time like 2026-11-01 00:00:00."
+msgstr "updated_since precisa ser uma data e hora como 2026-11-01 00:00:00."
+
+msgid "filters must be JSON."
+msgstr "filters precisa ser JSON."
+
+msgid "Each filter must be [field, operator, value]."
+msgstr "Cada filtro precisa ser [campo, operador, valor]."
+
+msgid "At most {0} filters per call."
+msgstr "No máximo {0} filtros por chamada."
+
+msgid "Filter on a field that cannot be used: {0}"
+msgstr "Filtro em campo que não pode ser usado: {0}"
+
+msgid "Filter operator not allowed: {0}"
+msgstr "Operador de filtro não permitido: {0}"
+msgid "These fields are filled by the system and cannot be changed by the API: {0}"
+msgstr "Estes campos são preenchidos pelo sistema e não podem ser alterados pela API: {0}"
+
+msgid "Rows of {0} cannot set doctype, parent or the name of a row of another record."
+msgstr "Linhas de {0} não podem definir doctype, parent nem o nome de uma linha de outro registro."
+
+msgid "File type not allowed through the API: {0}"
+msgstr "Tipo de arquivo não permitido pela API: {0}"
+
+msgid "Credit: run paid bureau queries"
+msgstr "Crédito: fazer consultas pagas a bureaus"
+
+msgid "Lets the key run bureau queries that the company pays to the provider. Off by default."
+msgstr "Permite à chave fazer consultas a bureaus que a empresa paga ao provedor. Desligado por padrão."
+
+msgid "Too many failed authentications from this address. Wait a minute."
+msgstr "Muitas autenticações recusadas a partir deste endereço. Espere um minuto."
+
+msgid "Send the file in the multipart field file."
+msgstr "Envie o arquivo no campo multipart file."
