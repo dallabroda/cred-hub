@@ -31,7 +31,16 @@ import frappe
 from frappe import _
 from frappe.utils import cint, flt, format_datetime, now_datetime
 
-from cred_hub.billing import InsufficientCreditsError, spend_credits, wallet_balance
+from cred_hub.billing import (
+	CREDIT_AND_COLLECTION,
+	InsufficientCreditsError,
+	OpinionLimitReached,
+	PlanFeatureNotIncluded,
+	included_opinions,
+	plan_allows,
+	spend_credits,
+	wallet_balance,
+)
 from cred_hub.cnpj.mapping import only_digits
 from cred_hub.credit_check import dossier
 from cred_hub.credit_check import onboarding as onboarding_lib
@@ -168,18 +177,8 @@ def _settings_allow_extra() -> bool:
 
 
 def _plan_included_opinions() -> int:
-	try:
-		from cred_hub.billing import _plan, _tier_spec, billing_enabled, in_trial, plan_tier_of
-
-		if not billing_enabled() or frappe.conf.get("credhub_unlimited_users"):
-			return INCLUDED_PER_MONTH
-		plan = _plan()
-		if in_trial(plan):
-			return INCLUDED_PER_MONTH
-		tier = plan_tier_of(plan)
-		return cint(_tier_spec(tier).get("included_opinions", INCLUDED_PER_MONTH))
-	except Exception:
-		return INCLUDED_PER_MONTH
+	"""Pareceres incluídos no plano em vigor (cred_hub.billing.included_opinions, credtech#398)."""
+	return included_opinions()
 
 
 def config() -> tuple[int, float, str]:
@@ -269,7 +268,22 @@ def _notify_usage(used_after: int, included: int, opinion_name: str) -> None:
 def check(organization_name: str, confirm_extra_cost: Any = False, require_queries: bool = True) -> dict[str, Any]:
 	"""Se dá para pedir um parecer agora, sem lançar erro: {"ok", "reason", "is_extra", "needs_confirmation",
 	"insufficient"}. O pacote mínimo do dossiê usa com `require_queries=False`, porque as consultas vêm no mesmo pedido."""
-	answer = {"ok": False, "reason": "", "is_extra": False, "needs_confirmation": False, "insufficient": False}
+	answer = {
+		"ok": False,
+		"reason": "",
+		"is_extra": False,
+		"needs_confirmation": False,
+		"insufficient": False,
+		"limit_reached": False,
+		"not_in_plan": False,
+	}
+	if not plan_allows(CREDIT_AND_COLLECTION):
+		# Defesa extra: as rotas já barram antes (credtech#398)
+		return {
+			**answer,
+			"not_in_plan": True,
+			"reason": _("Your plan does not include Credit & Collection. An admin can change the plan in Users and Plan."),
+		}
 	if not is_configured():
 		return {**answer, "reason": _("The credit opinion AI is not configured on this site yet.")}
 	if require_queries and not dossier.collect(organization_name)["sections"]:
@@ -282,6 +296,7 @@ def check(organization_name: str, confirm_extra_cost: Any = False, require_queri
 		if not _settings_allow_extra():
 			return {
 				**answer,
+				"limit_reached": True,
 				"reason": _(
 					"The {0} opinions included this month are used up. An admin can allow paid extra opinions (R$ {1}) in the Credit settings."
 				).format(included, f"{price:.2f}"),
@@ -306,11 +321,22 @@ def check(organization_name: str, confirm_extra_cost: Any = False, require_queri
 	return {**answer, "ok": True}
 
 
+def _error_for(answer: dict[str, Any]) -> type[Exception]:
+	"""Stable exception (API `error.code`) for each reason check() refuses."""
+	if answer.get("not_in_plan"):
+		return PlanFeatureNotIncluded
+	if answer.get("limit_reached"):
+		return OpinionLimitReached
+	if answer.get("insufficient"):
+		return InsufficientCreditsError
+	return frappe.ValidationError
+
+
 def request(organization_name: str, deal_name: str | None = None, confirm_extra_cost: Any = False) -> dict[str, Any]:
 	"""Pede um parecer: confere limite e custo, cria o registro e gera em segundo plano."""
 	answer = check(organization_name, confirm_extra_cost)
 	if not answer["ok"]:
-		frappe.throw(answer["reason"], InsufficientCreditsError if answer["insufficient"] else frappe.ValidationError)
+		frappe.throw(answer["reason"], _error_for(answer))
 	return create(organization_name, deal_name, answer["is_extra"])
 
 

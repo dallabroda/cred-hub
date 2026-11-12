@@ -11,6 +11,7 @@ from frappe import _
 from frappe.utils import cint, flt, now_datetime
 from frappe.utils.background_jobs import is_job_enqueued
 
+from cred_hub.billing import CREDIT_AND_COLLECTION, requires_feature
 from cred_hub.cnpj.mapping import only_digits
 from cred_hub.credit_check.clients.directd import DirectDAuthError, DirectDError, fetch_fgts_regularidade
 from cred_hub.credit_check.clients.escavador import fetch_lawsuits
@@ -56,6 +57,7 @@ def _check_deal_and_org_permission(deal_name: str | None, organization_name: str
 
 
 @frappe.whitelist()
+@requires_feature(CREDIT_AND_COLLECTION)
 def trigger_check(
 	deal_name: str | None = None,
 	organization_name: str | None = None,
@@ -158,6 +160,7 @@ DOSSIE_PRINT_FORMAT = "Cred Hub - Dossiê de Crédito"
 
 
 @frappe.whitelist()
+@requires_feature(CREDIT_AND_COLLECTION)
 def generate_dossie_pdf(organization_name: str, report_name: str | None = None) -> dict[str, Any]:
 	"""Gera o dossiê de crédito em PDF (dados estruturados por seção) a partir do relatório mais
 	recente da Organização (ou de um relatório específico) e anexa nos Anexos da Organização."""
@@ -241,6 +244,7 @@ def _serasa_report(settings_doc, cnpj: str) -> dict[str, Any]:
 
 
 @frappe.whitelist()
+@requires_feature(CREDIT_AND_COLLECTION)
 def test_serasa_connection(client_id: str = "", client_secret: str = "", environment: str = "Production") -> dict[str, Any]:
 	"""Confere o client id e o client secret do contrato Serasa só entrando na API (login). Não faz consulta
 	nenhuma, então não custa nada. Sem valor digitado (ou com o segredo salvo, que volta mascarado), usa o salvo."""
@@ -272,6 +276,7 @@ def _is_masked(value: str) -> bool:
 
 
 @frappe.whitelist()
+@requires_feature(CREDIT_AND_COLLECTION)
 def test_provider_connection(provider: str, token: str, cnpj: str, confirm_cost: bool = False) -> dict[str, Any]:
 	"""Valida se o token informado conecta com sucesso ao provedor.
 
@@ -499,6 +504,7 @@ def get_final_bureau_options(deal_name: str | None = None, organization_name: st
 
 
 @frappe.whitelist()
+@requires_feature(CREDIT_AND_COLLECTION)
 def request_bureau_final(
 	deal_name: str | None = None,
 	organization_name: str | None = None,
@@ -627,6 +633,7 @@ def get_partners(organization_name: str) -> list[dict[str, Any]]:
 
 
 @frappe.whitelist()
+@requires_feature(CREDIT_AND_COLLECTION)
 def save_partner_cpf(organization_name: str, contact_name: str, cpf: str) -> dict[str, Any]:
 	"""Grava o CPF completo de um sócio (a Receita só mostra o CPF mascarado). Só aceita CPF válido."""
 	frappe.only_for(["System Manager", "Sales Manager", "Sales User"])
@@ -732,6 +739,7 @@ def get_credit_template_status() -> dict[str, Any]:
 
 
 @frappe.whitelist()
+@requires_feature(CREDIT_AND_COLLECTION)
 def install_credit_template() -> dict[str, Any]:
 	"""Instala o funil "Crédito PJ" (6 etapas de análise, um ganho e uma perda, e 4 campos de crédito no Card).
 	Só administrador; uma vez por site. Nada é obrigatório por etapa e nada custa: o funil só organiza o trabalho."""
@@ -741,6 +749,7 @@ def install_credit_template() -> dict[str, Any]:
 
 
 @frappe.whitelist()
+@requires_feature(CREDIT_AND_COLLECTION)
 def generate_credit_dossier(organization_name: str, deal_name: str | None = None) -> dict[str, Any]:
 	"""Gera o dossiê (PDF 1): o retorno completo de todas as consultas da empresa e dos sócios, sem recomendação,
 	mais o JSON original de cada uma. Anexa na Organização (e no card, se vier de um). Cada geração é um arquivo novo."""
@@ -766,6 +775,7 @@ def get_credit_opinion_status(organization_name: str) -> dict[str, Any]:
 
 
 @frappe.whitelist()
+@requires_feature(CREDIT_AND_COLLECTION)
 def request_credit_opinion(
 	organization_name: str, deal_name: str | None = None, confirm_extra_cost: bool = False
 ) -> dict[str, Any]:
@@ -792,6 +802,7 @@ def get_credit_policy() -> dict[str, Any]:
 
 
 @frappe.whitelist()
+@requires_feature(CREDIT_AND_COLLECTION)
 def save_credit_policy(methodology: str, parameters: Any = None) -> dict[str, Any]:
 	"""Salva uma versão nova da política de crédito. Só administradores."""
 	frappe.only_for("System Manager")
@@ -806,6 +817,7 @@ def get_dossier_package() -> dict[str, Any]:
 
 
 @frappe.whitelist()
+@requires_feature(CREDIT_AND_COLLECTION)
 def save_dossier_package(items: Any, reuse_days: Any) -> dict[str, Any]:
 	"""Salva o pacote mínimo do dossiê. Só administradores."""
 	frappe.only_for("System Manager")
@@ -896,6 +908,7 @@ def get_dossier_package_status(
 
 
 @frappe.whitelist()
+@requires_feature(CREDIT_AND_COLLECTION)
 def generate_credit_package(
 	organization_name: str,
 	deal_name: str | None = None,
@@ -1002,6 +1015,7 @@ def get_checklist_template() -> dict[str, Any]:
 
 
 @frappe.whitelist()
+@requires_feature(CREDIT_AND_COLLECTION)
 def save_checklist_template(items: Any) -> dict[str, Any]:
 	"""Salva o modelo de checklist de documentos de crédito. Só administradores."""
 	frappe.only_for("System Manager")
@@ -1018,6 +1032,7 @@ def get_rating_policy() -> dict[str, Any]:
 
 
 @frappe.whitelist()
+@requires_feature(CREDIT_AND_COLLECTION)
 def save_rating_policy(policy: Any = None, reset_default: bool = False) -> dict[str, Any]:
 	"""Salva (ou restaura para o padrão) os parâmetros do Rating Interno (AA–E) e Calculadora de Limite Sugerido."""
 	frappe.only_for("System Manager")
@@ -1128,6 +1143,7 @@ def get_document_checklist(organization: str | None = None, deal: str | None = N
 
 
 @frappe.whitelist(methods=["POST"])
+@requires_feature(CREDIT_AND_COLLECTION)
 def upload_checklist_document(
 	item_key: str,
 	organization: str | None = None,
@@ -1156,6 +1172,7 @@ def upload_checklist_document(
 
 
 @frappe.whitelist()
+@requires_feature(CREDIT_AND_COLLECTION)
 def update_checklist_item(
 	organization_name: str | None = None,
 	item_key: str = "",
@@ -1184,6 +1201,7 @@ def update_checklist_item(
 
 
 @frappe.whitelist()
+@requires_feature(CREDIT_AND_COLLECTION)
 def update_credit_checklist_item(
 	organization_name: str | None = None,
 	item_key: str = "",
@@ -1212,6 +1230,7 @@ def update_credit_checklist_item(
 
 
 @frappe.whitelist()
+@requires_feature(CREDIT_AND_COLLECTION)
 def save_visit_report(
 	organization_name: str | None = None,
 	visit_data: Any = None,
@@ -1230,6 +1249,7 @@ def save_visit_report(
 
 
 @frappe.whitelist()
+@requires_feature(CREDIT_AND_COLLECTION)
 def save_credit_visit_report(
 	organization_name: str | None = None,
 	visit_data: Any = None,
@@ -1248,6 +1268,7 @@ def save_credit_visit_report(
 
 
 @frappe.whitelist()
+@requires_feature(CREDIT_AND_COLLECTION)
 def add_custom_checklist_item(
 	organization_name: str | None = None,
 	label: str = "",
@@ -1270,6 +1291,7 @@ def add_custom_checklist_item(
 
 
 @frappe.whitelist()
+@requires_feature(CREDIT_AND_COLLECTION)
 def remove_custom_checklist_item(
 	organization_name: str | None = None,
 	item_key: str = "",
@@ -1288,6 +1310,7 @@ def remove_custom_checklist_item(
 
 
 @frappe.whitelist()
+@requires_feature(CREDIT_AND_COLLECTION)
 def generate_portal_link(
 	organization_name: str | None = None,
 	deal_name: str | None = None,
@@ -1306,6 +1329,7 @@ def generate_portal_link(
 
 
 @frappe.whitelist()
+@requires_feature(CREDIT_AND_COLLECTION)
 def create_onboarding_portal_link(
 	organization_name: str | None = None,
 	deal_name: str | None = None,
@@ -1340,6 +1364,7 @@ def revoke_portal_link(
 
 
 @frappe.whitelist()
+@requires_feature(CREDIT_AND_COLLECTION)
 def check_deal(
 	deal_name: str | None = None,
 	organization_name: str | None = None,
@@ -1370,6 +1395,7 @@ def public_verify_and_list(token: str, cnpj: str = "") -> dict[str, Any]:
 
 
 @frappe.whitelist(allow_guest=True)
+@requires_feature(CREDIT_AND_COLLECTION)
 def public_upload_document(
 	token: str,
 	cnpj: str,
@@ -1392,6 +1418,7 @@ def public_upload_document(
 
 
 @frappe.whitelist()
+@requires_feature(CREDIT_AND_COLLECTION)
 def analyze_checklist_document(
 	organization_name: str | None = None,
 	item_key: str = "",
@@ -1442,6 +1469,7 @@ def get_credit_committee(
 
 
 @frappe.whitelist()
+@requires_feature(CREDIT_AND_COLLECTION)
 def save_committee_proposal(
 	organization_name: str | None = None,
 	deal_name: str | None = None,
@@ -1474,6 +1502,7 @@ def save_committee_proposal(
 
 
 @frappe.whitelist()
+@requires_feature(CREDIT_AND_COLLECTION)
 def cast_committee_vote(
 	organization_name: str | None = None,
 	deal_name: str | None = None,
@@ -1533,6 +1562,7 @@ def get_bureau_vertical_catalog() -> dict[str, Any]:
 
 
 @frappe.whitelist(methods=["POST"])
+@requires_feature(CREDIT_AND_COLLECTION)
 def run_bureau_vertical_product(
 	product_key: str,
 	document: str,

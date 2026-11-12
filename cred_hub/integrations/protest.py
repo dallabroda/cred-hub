@@ -26,6 +26,7 @@ from crm.fcrm.doctype.crm_deal_title.crm_deal_title import balance_of
 from frappe import _
 from frappe.utils import cint, flt, getdate, now_datetime, today
 
+from cred_hub.billing import CREDIT_AND_COLLECTION, plan_allows, requires_feature
 from cred_hub.cnpj.mapping import is_valid_cnpj, only_digits
 from cred_hub.integrations import bureau_log, get_settings, secret
 from cred_hub.integrations.cenprot import (
@@ -174,6 +175,7 @@ def collection_funnel_status() -> dict:
 
 
 @frappe.whitelist()
+@requires_feature(CREDIT_AND_COLLECTION)
 def install_collection_template() -> dict:
 	"""Instala o funil "Debt Collection" (Cobrança) com as 6 etapas e campos de protesto.
 	Só administradores e gerentes. Pode ser instalado mesmo antes de configurar a CENPROT."""
@@ -667,6 +669,7 @@ def get_status(deal: str) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
+@requires_feature(CREDIT_AND_COLLECTION)
 def send(deal: str) -> dict:
 	doc = _deal(deal, "write")
 	try:
@@ -676,11 +679,13 @@ def send(deal: str) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
+@requires_feature(CREDIT_AND_COLLECTION)
 def refresh(deal: str) -> dict:
 	return refresh_title(_deal(deal, "read"))
 
 
 @frappe.whitelist(methods=["POST"])
+@requires_feature(CREDIT_AND_COLLECTION)
 def withdraw(deal: str, justification: str | None = None) -> dict:
 	return withdraw_title(_deal(deal, "write"), (justification or "").strip())
 
@@ -693,6 +698,7 @@ def server_ip() -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
+@requires_feature(CREDIT_AND_COLLECTION)
 def test_connection() -> dict:
 	"""Só autentica (não envia nem consulta título)."""
 	frappe.only_for("System Manager")
@@ -718,6 +724,9 @@ def on_deal_update(doc, method=None):
 	"""Card entrou na etapa de envio ou na de acordo, com a opção ligada: age em segundo plano. As duas opções
 	começam desligadas: o cartório cobra custas e quem decide gastar é o cliente (dono, 30/10/2026)."""
 	if doc.flags.cred_hub_protest or not doc.has_value_changed("status"):
+		return
+	if not plan_allows(CREDIT_AND_COLLECTION):
+		# Plano sem Crédito e Cobrança (credtech#398): a automação não roda
 		return
 	from cred_hub.sandbox import skip_side_effects
 
@@ -767,6 +776,9 @@ def withdraw_in_background(deal: str):
 
 def sync_all():
 	"""Todo dia: atualiza os títulos em andamento no cartório."""
+	if not plan_allows(CREDIT_AND_COLLECTION):
+		# Plano sem Crédito e Cobrança (credtech#398): a automação não roda
+		return
 	settings = get_settings()
 	if not settings.cenprot_enabled:
 		return
@@ -1274,6 +1286,7 @@ def preview_row(deal: str, title_row: str, codebtors=None) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
+@requires_feature(CREDIT_AND_COLLECTION)
 def send_row(deal: str, title_row: str, codebtors=None) -> dict:
 	doc = _deal(deal, "write")
 	try:
@@ -1283,6 +1296,7 @@ def send_row(deal: str, title_row: str, codebtors=None) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
+@requires_feature(CREDIT_AND_COLLECTION)
 def refresh_row(deal: str, title_row: str) -> dict:
 	doc = _deal(deal, "read")
 	row = _find_row(doc, title_row)
@@ -1292,5 +1306,6 @@ def refresh_row(deal: str, title_row: str) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
+@requires_feature(CREDIT_AND_COLLECTION)
 def withdraw_row(deal: str, title_row: str, justification: str | None = None) -> dict:
 	return withdraw_title_row(_deal(deal, "write"), title_row, (justification or "").strip())

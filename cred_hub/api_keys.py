@@ -29,6 +29,7 @@ from frappe.utils import add_days, cint, getdate, now_datetime, nowdate
 
 from cred_hub import api_guard
 from cred_hub.api_version import deprecation_headers, requested_version, set_version_headers
+from cred_hub.billing import CREDIT_AND_COLLECTION, require_feature
 from cred_hub.cnpj.mapping import format_cnpj, only_digits
 from cred_hub.sandbox import (
 	TEST_FORBIDDEN_SCOPES,
@@ -276,6 +277,9 @@ def authenticate():
 	}
 	# A pinned version that does not exist is refused (400) before anything runs, logged as any other error
 	frappe.local.credhub_api_key["api_version"] = requested_version()
+	# Plan features (credtech#398): a credit write or paid query answers 403 PlanFeatureNotIncluded when the company's
+	# plan lacks Credit & Collection; after credhub_api_key is set, so the refusal is logged and gets the error envelope
+	_check_plan_feature()
 	if _route()[1] == "upload_file":
 		# with the key's user set: the record the file goes to must be writable by this key (its pipelines)
 		api_guard.check_upload_record()
@@ -555,6 +559,24 @@ def _check_route(key_name: str) -> bool:
 				_check_save_pipeline(key_name)
 			return target in WRITE_METHODS
 	_deny()
+
+
+# Credit routes the plan gates (credtech#398). Reads of what already exists stay open (nothing disappears on a
+# downgrade, as in cred-hub#116); every gated method is also gated inside the function (billing.requires_feature).
+PLAN_GATED_SCOPES = {"credit_write", "credit_paid_queries"}
+PLAN_GATED_METHODS = {"cred_hub.credit_check.api.upload_checklist_document"}
+
+
+def _check_plan_feature():
+	kind, target, verb = _route()
+	scope = None
+	if kind == "resource":
+		read, write = RESOURCES.get(target, (None, None))
+		scope = read if verb in ("GET", "HEAD") else write
+	elif kind == "method":
+		scope = METHODS.get(target)
+	if scope in PLAN_GATED_SCOPES or (kind == "method" and target in PLAN_GATED_METHODS):
+		require_feature(CREDIT_AND_COLLECTION)
 
 
 # save_pipeline pela chave: só campos e regras de um funil da chave, nunca criar funil, membros ou distribuição

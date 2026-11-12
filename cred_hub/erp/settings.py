@@ -9,6 +9,8 @@ import time
 import frappe
 from frappe import _
 
+from cred_hub.billing import CREDIT_AND_COLLECTION, requires_feature
+
 from . import connectors
 from .base import ErpError, Token
 
@@ -127,6 +129,7 @@ def log(provider: str, operation: str, status: str, *, document: str = "", refer
 
 
 @frappe.whitelist(methods=["POST"])
+@requires_feature(CREDIT_AND_COLLECTION)
 def test_connection() -> dict:
 	"""Logs in with the saved credentials and runs the cheapest read. Admins only."""
 	frappe.only_for("System Manager")
@@ -146,6 +149,7 @@ def test_connection() -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
+@requires_feature(CREDIT_AND_COLLECTION)
 def reset_field_map() -> list:
 	"""Back to the suggested de-para of the chosen ERP. Admins only."""
 	frappe.only_for("System Manager")
@@ -161,6 +165,7 @@ def reset_field_map() -> list:
 
 
 @frappe.whitelist(methods=["POST"])
+@requires_feature(CREDIT_AND_COLLECTION)
 def send_cedente(deal: str) -> dict:
 	"""Register the card's company as a cedente in the ERP now (credit funnel; credtech#367)."""
 	from .cedente import send_now
@@ -263,6 +268,7 @@ def mapping_options() -> dict:
 
 
 @frappe.whitelist()
+@requires_feature(CREDIT_AND_COLLECTION)
 def mapping_lists() -> dict:
 	"""Names of the ERP lists the cedente fields use (operator, originator...). Apart from mapping_options because
 	it calls the ERP (slow the first time, then cached for an hour). Admins only."""
@@ -385,6 +391,7 @@ LISTS_KEY = "cred_hub_erp_lists"
 
 
 @frappe.whitelist()
+@requires_feature(CREDIT_AND_COLLECTION)
 def erp_lists() -> dict:
 	"""Names of the ERP's own managers and sectors, for the settings screen: the admin picks a name, never an id
 	(credtech#367). Admins only; cached for an hour (each list is one paid-by-quota call to the ERP)."""
