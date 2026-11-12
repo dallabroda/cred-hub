@@ -93,11 +93,11 @@ class TestApiVersion(IntegrationTestCase):
 	def test_old_user_keys_announce_their_sunset(self):
 		frappe.set_user("Administrator")
 		frappe.local.response_headers = Headers()
-		with (
-			patch.dict(frappe.conf, {"credhub_legacy_token_until": "2099-12-31"}),
-			patch.object(frappe, "session", frappe._dict(user="seller@example.com")),
-		):
+		frappe.set_user("Guest")
+		frappe.local.session.user = "seller-legacy@example.com"
+		with patch.dict(frappe.conf, {"credhub_legacy_token_until": "2099-12-31"}):
 			api_keys._check_legacy_token()
+		frappe.set_user("Administrator")
 		self.assertEqual(frappe.local.response_headers.get("Sunset"), "Thu, 31 Dec 2099 00:00:00 GMT")
 		self.assertTrue(frappe.local.response_headers.get("Deprecation").startswith("@"))
 
