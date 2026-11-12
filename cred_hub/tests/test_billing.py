@@ -672,6 +672,29 @@ class TestBilling(IntegrationTestCase):
 		p = billing.get_plan()
 		self.assertEqual((p["plan_tier"], p["limit"], p["amount"], p["upgrade"]), ("enterprise", billing.UNLIMITED, 990, None))
 
+	def test_unpaid_upgrade_from_legacy_plan_falls_back_to_legacy(self):
+		# Empresa antiga (grandfathering): plan_tier vazio no banco, 1 grátis + 1 extra a R$ 60
+		self.active_plan(1)
+		self.assertFalse(self.plan().plan_tier)
+		with patch.object(billing, "_asaas", FakeAsaas(upgrade_status="PENDING")):
+			billing.request_extra_users(1, plan_tier="vendas")
+		# o plano pago fica gravado com valor (nunca vazio), senão a volta não aconteceria
+		self.assertEqual(self.plan().upgrade_base_tier, "free_legacy")
+		users = [self.user(n).name for n in range(1, 4)]  # cabem no Vendas (2 + 1), não no legado (1 + 1)
+		with patch.object(billing, "_asaas", FakeAsaas(upgrade_status="OVERDUE")):
+			billing.apply_asaas_event("PAYMENT_OVERDUE", "pay_up", None)
+		p = billing.get_plan()
+		self.assertEqual((p["plan_tier"], p["extras"], p["limit"], p["amount"]), ("free_legacy", 1, 2, 60))
+		self.assertTrue(p["upgrade"]["overdue"])
+		# o mais recente é pausado, não apagado; pagando, volta com tudo
+		self.assertEqual(billing.active_users(), users[:2])
+		self.assertTrue(frappe.db.get_value("User", users[2], "credhub_paused"))
+		paid = self.pay_upgrade()
+		self.assertEqual(next(b for m, _, b in paid.calls if m == "PUT")["value"], 168)
+		p = billing.get_plan()
+		self.assertEqual((p["plan_tier"], p["extras"], p["limit"], p["amount"]), ("vendas", 1, 3, 168))
+		self.assertFalse(frappe.db.get_value("User", users[2], "credhub_paused"))
+
 	def test_daily_check_falls_back_to_the_paid_tier_without_webhook(self):
 		self.tier_plan("vendas", 1)
 		with patch.object(billing, "_asaas", FakeAsaas(upgrade_status="PENDING")):
