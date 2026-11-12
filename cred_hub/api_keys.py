@@ -233,7 +233,7 @@ def authenticate():
 		write = _check_route(key.name)
 	except KeyNotAllowed:
 		_refuse(key, request_id, start_time, 403, KeyNotAllowed)
-	rate_info = _rate_limit(key.name, write, key.custom_rate_limit)
+	rate_info = _rate_limit(key.name, write, key.custom_rate_limit, _write_weight() if write else 1)
 	# set_user zera o form_dict (os argumentos da chamada); o OAuth do Frappe faz o mesmo cuidado
 	form_dict = frappe.local.form_dict
 	frappe.set_user(key.technical_user)
@@ -541,7 +541,23 @@ def _limits(custom_limit) -> tuple[int, int]:
 	return custom, min(custom, max(WRITES_PER_MINUTE, custom // 2))
 
 
-def _rate_limit(key_name: str, write: bool, custom_limit: int | None = None) -> dict:
+def _write_weight() -> int:
+	"""A batch call counts one write per record (audit L4), up to the batch maximum."""
+	kind, target, _verb = _route()
+	if kind != "method" or target not in ("cred_hub.bulk.bulk_upsert", "cred_hub.bulk.bulk_delete"):
+		return 1
+	form = frappe.local.form_dict or {}
+	items = form.get("records") if target.endswith("upsert") else form.get("names")
+	try:
+		items = frappe.parse_json(items) if isinstance(items, str) else items
+	except Exception:
+		return 1
+	from cred_hub.bulk import MAX_BATCH_SIZE
+
+	return max(1, min(len(items), MAX_BATCH_SIZE)) if isinstance(items, list) else 1
+
+
+def _rate_limit(key_name: str, write: bool, custom_limit: int | None = None, weight: int = 1) -> dict:
 	now = now_datetime()
 	minute = now.strftime("%Y%m%d%H%M")
 	prev_minute = (now - timedelta(minutes=1)).strftime("%Y%m%d%H%M")
@@ -557,8 +573,11 @@ def _rate_limit(key_name: str, write: bool, custom_limit: int | None = None) -> 
 	for limit, counter in limits:
 		cache_key_curr = frappe.cache.make_key(f"credhub_api:{key_name}:{counter}:{minute}")
 		cache_key_prev = frappe.cache.make_key(f"credhub_api:{key_name}:{counter}:{prev_minute}")
-		curr_count = frappe.cache.incrby(cache_key_curr, 1)
-		if curr_count == 1:
+		# a batch weighs one write per record, but never more than the whole limit: with a small custom limit a full
+		# batch still fits an empty minute (and otherwise answers 429 with Retry-After)
+		step = min(weight, limit) if counter == "write" else 1
+		curr_count = frappe.cache.incrby(cache_key_curr, step)
+		if curr_count == step:
 			frappe.cache.expire(cache_key_curr, 180)
 		prev_count = cint(frappe.cache.get_value(cache_key_prev) or 0)
 		estimated_rate = (prev_count * weight_prev) + curr_count
@@ -596,14 +615,27 @@ def after_request(response=None, request=None):
 				response.headers["X-RateLimit-Remaining"] = str(rate_info.get("remaining", 0))
 				response.headers["X-RateLimit-Reset"] = str(rate_info.get("reset", 0))
 
-		frappe.db.set_value(
-			KEY,
-			info["name"],
-			{"last_used_on": now_datetime(), "last_used_ip": frappe.local.request_ip},
-			update_modified=False,
-		)
-		# Registra chamadas na auditoria (escritas, erros 4xx/5xx e leituras de API)
+		if status_code >= 400 and response is not None:
+			_error_envelope(response, request_id)
+		write = bool(info.get("write"))
+		# Último uso: no máximo uma gravação por minuto por chave em leituras (audit M12)
+		touch_key = f"credhub_api_last_used:{info['name']}"
+		touched = False
+		if write or status_code >= 400 or not frappe.cache.get_value(touch_key):
+			frappe.db.set_value(
+				KEY,
+				info["name"],
+				{"last_used_on": now_datetime(), "last_used_ip": frappe.local.request_ip},
+				update_modified=False,
+			)
+			frappe.cache.set_value(touch_key, 1, expires_in_sec=LAST_USED_THROTTLE_SECONDS)
+			touched = True
+		# Auditoria: escritas e erros; leituras com sucesso não viram linha (audit M12)
 		kind, target, verb = _route()
+		if not write and status_code < 400:
+			if touched:
+				frappe.db.commit()
+			return
 		log_meta = frappe.get_meta(LOG)
 		log_payload = {
 			"doctype": LOG,
@@ -624,8 +656,74 @@ def after_request(response=None, request=None):
 		frappe.log_error(title="Cred Hub API: falha ao registrar o uso da chave")
 
 
+LAST_USED_THROTTLE_SECONDS = 60
+CLEANUP_BATCH = 5000
+
+
+def _error_text(payload: dict, response) -> str:
+	for raw in frappe.parse_json(payload.get("_server_messages") or "[]") or []:
+		try:
+			message = frappe.parse_json(raw).get("message")
+		except Exception:
+			message = raw
+		if message:
+			return frappe.utils.strip_html(str(message))
+	exception = str(payload.get("exception") or "")
+	if exception:
+		return exception.split(":", 1)[-1].strip()
+	return getattr(response, "status", "") or "Error"
+
+
+def _error_envelope(response, request_id: str):
+	"""Errors to a key also carry {"error": {"code", "message", "request_id"}} (audit L2); Frappe's own keys stay for
+	clients that already read them."""
+	try:
+		if getattr(response, "mimetype", None) != "application/json":
+			return
+		payload = json.loads(response.get_data(as_text=True) or "{}")
+		if not isinstance(payload, dict) or "error" in payload:
+			return
+		payload["error"] = {
+			"code": payload.get("exc_type") or str(response.status_code),
+			"message": _error_text(payload, response),
+			"request_id": request_id,
+		}
+		response.set_data(json.dumps(payload, default=str))
+	except Exception:
+		pass
+
+
 def delete_old_logs():
-	frappe.db.delete(LOG, {"called_on": ("<", add_days(now_datetime(), -LOG_DAYS))})
+	"""Daily, in batches (a big log never holds one long delete)."""
+	cutoff = add_days(now_datetime(), -LOG_DAYS)
+	while True:
+		names = frappe.get_all(LOG, {"called_on": ("<", cutoff)}, pluck="name", limit_page_length=CLEANUP_BATCH)
+		if not names:
+			break
+		frappe.db.delete(LOG, {"name": ("in", names)})
+		frappe.db.commit()
+		if len(names) < CLEANUP_BATCH:
+			break
+
+
+# Índices das sincronizações e da auditoria (audit H3, M15): criados no migrate, idempotentes
+SYNC_INDEXES = (
+	("CRM Deal", ("modified", "name")),
+	("CRM Organization", ("modified", "name")),
+	("Contact", ("modified", "name")),
+	("CRM Task", ("modified", "name")),
+	("FCRM Note", ("modified", "name")),
+	("CRM Lead", ("modified", "name")),
+	("Deleted Document", ("deleted_doctype", "creation")),
+)
+
+
+def ensure_indexes():
+	for doctype, columns in SYNC_INDEXES:
+		try:
+			frappe.db.add_index(doctype, list(columns), index_name="credhub_" + "_".join(columns))
+		except Exception:
+			frappe.log_error(title=f"Cred Hub API: índice de {doctype} não criado")
 
 
 # ---------- Endpoints Padrão Ouro (Cursor Pagination, Lookup CPF/CNPJ, OpenAPI 3.1, Logs UI) ----------
@@ -642,7 +740,98 @@ def _decode_cursor(cursor: str) -> tuple[str, str]:
 		data = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8"))
 		return str(data["m"]), str(data["n"])
 	except Exception:
-		frappe.throw(_("Invalid pagination cursor."))
+		frappe.throw(_("Invalid pagination cursor."), InvalidParameter)
+
+
+class InvalidParameter(frappe.ValidationError):
+	"""A call argument the API cannot use (answered with 400, audit L2)."""
+
+	http_status_code = 400
+
+
+# Standard columns a listing may ask for besides the doctype's fields
+LISTABLE_STANDARD = ("name", "creation", "modified", "modified_by", "owner")
+
+
+def _cursor_fields(doctype: str, fields) -> list[str]:
+	if fields in (None, "", []):
+		return ["name", "modified", "creation"]
+	if isinstance(fields, str):
+		try:
+			fields = frappe.parse_json(fields)
+		except Exception:
+			fields = [f.strip() for f in fields.split(",") if f.strip()]
+	if not isinstance(fields, list) or not all(isinstance(f, str) for f in fields):
+		frappe.throw(_("fields must be a list of field names."), InvalidParameter)
+	unknown = [f for f in fields if not _listable(doctype, f)]
+	if unknown:
+		frappe.throw(_("Unknown fields: {0}").format(", ".join(unknown)), InvalidParameter)
+	for required_field in ("name", "modified"):
+		if required_field not in fields:
+			fields.append(required_field)
+	return fields
+
+
+# Filter operators a listing may use, and how many filters one call may send
+FILTER_OPERATORS = frozenset(
+	{"=", "!=", ">", "<", ">=", "<=", "like", "not like", "in", "not in", "is", "between", "timespan"}
+)
+MAX_FILTERS = 20
+
+
+def _listable(doctype: str, fieldname) -> bool:
+	"""A column a key may read or filter on: standard columns, or fields of the doctype that are not passwords and
+	have no field-level permission (permlevel > 0). Anything else could be read or probed through filters."""
+	if not isinstance(fieldname, str):
+		return False
+	if fieldname in LISTABLE_STANDARD:
+		return True
+	df = frappe.get_meta(doctype).get_field(fieldname)
+	return bool(df) and df.fieldtype != "Password" and not frappe.utils.cint(df.permlevel)
+
+
+def _cursor_filters(doctype: str, filters) -> list:
+	"""[[doctype, field, operator, value], ...] checked one by one (audit review of #105): same doctype, listable
+	field, known operator, at most MAX_FILTERS. Otherwise 400."""
+	if filters in (None, "", [], {}):
+		return []
+	if isinstance(filters, str):
+		try:
+			filters = frappe.parse_json(filters)
+		except Exception:
+			frappe.throw(_("filters must be JSON."), InvalidParameter)
+	if isinstance(filters, dict):
+		items = []
+		for field, value in filters.items():
+			if isinstance(value, list | tuple) and len(value) == 2 and isinstance(value[0], str):
+				items.append([doctype, field, value[0], value[1]])
+			else:
+				items.append([doctype, field, "=", value])
+	elif isinstance(filters, list):
+		items = []
+		for item in filters:
+			if not isinstance(item, list | tuple) or len(item) not in (3, 4):
+				frappe.throw(_("Each filter must be [field, operator, value]."), InvalidParameter)
+			items.append(list(item) if len(item) == 4 else [doctype, *item])
+	else:
+		frappe.throw(_("filters must be JSON."), InvalidParameter)
+	if len(items) > MAX_FILTERS:
+		frappe.throw(_("At most {0} filters per call.").format(MAX_FILTERS), InvalidParameter)
+	for dt, field, operator, _value in items:
+		if dt != doctype or not _listable(doctype, field):
+			frappe.throw(_("Filter on a field that cannot be used: {0}").format(field), InvalidParameter)
+		if str(operator).lower() not in FILTER_OPERATORS:
+			frappe.throw(_("Filter operator not allowed: {0}").format(operator), InvalidParameter)
+	return items
+
+
+def _since(value: str | None) -> str | None:
+	if not value:
+		return None
+	try:
+		return str(frappe.utils.get_datetime(str(value).strip()))
+	except Exception:
+		frappe.throw(_("updated_since must be a date and time like 2026-11-01 00:00:00."), InvalidParameter)
 
 
 @frappe.whitelist()
@@ -654,47 +843,37 @@ def list_records_cursor(
 	limit: int = 50,
 	cursor: str | None = None,
 ) -> dict:
-	"""Listagem determinística por cursor (modified, name) para sincronização de ERPs sem perda nem duplicidade."""
+	"""Listagem determinística por cursor (modified, name) para sincronização de ERPs sem perda nem duplicidade.
+
+	O cursor vai para o SQL: (modified > m) OR (modified = m AND name > n), escrito como
+	modified >= m AND (modified > m OR name > n), com limit + 1 linhas e índice (modified, name) — nenhuma página
+	depende do tamanho da tabela nem perde registros (audit H3)."""
 	if doctype not in RESOURCES:
 		frappe.throw(_("Unsupported resource doctype: {0}").format(doctype), frappe.PermissionError)
 
 	limit = max(1, min(cint(limit or 50), 200))
-	if isinstance(fields, str):
-		try:
-			fields = frappe.parse_json(fields)
-		except Exception:
-			fields = [f.strip() for f in fields.split(",") if f.strip()]
-	if not isinstance(fields, list) or not fields:
-		fields = ["name", "modified", "creation"]
-	for required_field in ("name", "modified"):
-		if required_field not in fields:
-			fields.append(required_field)
+	fields = _cursor_fields(doctype, fields)
 
-	if isinstance(filters, str):
-		filters = frappe.parse_json(filters)
-	base_filters = list(filters) if isinstance(filters, list) else []
-	if isinstance(filters, dict):
-		for k, v in filters.items():
-			base_filters.append([doctype, k, "=", v])
+	base_filters = _cursor_filters(doctype, filters)
 
-	if updated_since:
-		base_filters.append([doctype, "modified", ">=", str(updated_since).strip()])
+	since = _since(updated_since)
+	if since:
+		base_filters.append([doctype, "modified", ">=", since])
+
+	or_filters = None
+	if cursor:
+		cursor_mod, cursor_name = _decode_cursor(cursor)
+		base_filters.append([doctype, "modified", ">=", cursor_mod])
+		or_filters = [[doctype, "modified", ">", cursor_mod], [doctype, "name", ">", cursor_name]]
 
 	rows = frappe.get_list(
 		doctype,
 		fields=fields,
 		filters=base_filters,
+		or_filters=or_filters,
 		order_by="modified asc, name asc",
-		limit_page_length=limit + 200 if cursor else limit + 1,
+		limit_page_length=limit + 1,
 	)
-
-	if cursor:
-		cursor_mod, cursor_name = _decode_cursor(cursor)
-		rows = [
-			r
-			for r in rows
-			if (str(r.get("modified")), str(r.get("name"))) > (cursor_mod, cursor_name)
-		]
 
 	has_more = len(rows) > limit
 	page = rows[:limit]
@@ -1297,6 +1476,7 @@ def install():
 	)
 	if not frappe.db.exists("Role", API_ROLE):
 		frappe.get_doc({"doctype": "Role", "role_name": API_ROLE, "desk_access": 0}).insert(ignore_permissions=True)
+	ensure_indexes()
 	try:
 		from cred_hub.credit_check.onboarding import migrate_all_to_relational
 

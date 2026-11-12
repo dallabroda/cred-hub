@@ -14,7 +14,8 @@ def get_comments(reference_doctype: str, reference_name: str, limit: int = 50) -
 
 		scopes = _scopes(key_info["name"])
 		read_scope, _write = RESOURCES.get(reference_doctype, (None, None))
-		if read_scope and read_scope not in scopes:
+		# only records the API exposes, and only with their read scope (audit L5)
+		if not read_scope or read_scope not in scopes:
 			frappe.throw(_("This API key is not allowed to read {0}.").format(reference_doctype), frappe.PermissionError)
 
 	frappe.get_lazy_doc(reference_doctype, reference_name, check_permission="read")
@@ -28,5 +29,5 @@ def get_comments(reference_doctype: str, reference_name: str, limit: int = 50) -
 		},
 		fields=["name", "content", "comment_by", "comment_email", "creation", "modified"],
 		order_by="creation desc",
-		limit=min(int(limit or 50), 100),
+		limit=max(1, min(frappe.utils.cint(limit) or 50, 100)),
 	)
