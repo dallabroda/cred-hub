@@ -71,7 +71,20 @@ TITLE_FIELDS = [
 	},
 ]
 
+EXTERNAL_ID_FIELD = {
+	"fieldname": "external_id",
+	"fieldtype": "Data",
+	"label": "External ID",
+	"search_index": 1,
+	"in_standard_filter": 1,
+	"description": "Universal external identifier (ERP, billing system or external API key/code).",
+}
+
 DEAL_FIELDS = [
+	{
+		**EXTERNAL_ID_FIELD,
+		"insert_after": "organization",
+	},
 	{
 		"fieldname": "erp_run_id",
 		"fieldtype": "Data",
@@ -80,9 +93,28 @@ DEAL_FIELDS = [
 		"search_index": 1,
 		"in_standard_filter": 1,
 		"description": "The synchronization run that created this card: filter by it to undo a whole run.",
-	}
+	},
+]
+
+ORG_FIELDS = [
+	{
+		**EXTERNAL_ID_FIELD,
+		"insert_after": "organization_name",
+	},
+]
+
+CONTACT_FIELDS = [
+	{
+		**EXTERNAL_ID_FIELD,
+		"insert_after": "first_name",
+	},
 ]
 
 
 def erp_custom_fields() -> dict:
-	return {"CRM Deal Title": TITLE_FIELDS, "CRM Deal": DEAL_FIELDS}
+	return {
+		"CRM Deal Title": TITLE_FIELDS,
+		"CRM Deal": DEAL_FIELDS,
+		"CRM Organization": ORG_FIELDS,
+		"Contact": CONTACT_FIELDS,
+	}

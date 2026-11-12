@@ -14,15 +14,21 @@
   "events_section",
   "deal_created",
   "deal_stage_changed",
+  "deal_updated",
   "deal_won",
   "deal_lost",
   "deal_deleted",
+  "cedente_ready_to_register",
   "column_break_events",
   "contact_created",
   "contact_updated",
+  "organization_created",
+  "organization_updated",
   "checklist_item_rejected",
-  "credit_limit_decided",
   "checklist_item_attached",
+  "credit_limit_decided",
+  "title_promise_recorded",
+  "title_agreement_recorded",
   "pipelines_section",
   "pipelines",
   "payload_section",
@@ -99,6 +105,12 @@
    "label": "deal.stage_changed (Card mudou de etapa)"
   },
   {
+   "default": "0",
+   "fieldname": "deal_updated",
+   "fieldtype": "Check",
+   "label": "deal.updated (Card alterado)"
+  },
+  {
    "default": "1",
    "fieldname": "deal_won",
    "fieldtype": "Check",
@@ -117,6 +129,12 @@
    "label": "deal.deleted (Card excluído)"
   },
   {
+   "default": "1",
+   "fieldname": "cedente_ready_to_register",
+   "fieldtype": "Check",
+   "label": "cedente.ready_to_register (Cedente aprovado para cadastro no ERP)"
+  },
+  {
    "fieldname": "column_break_events",
    "fieldtype": "Column Break"
   },
@@ -131,6 +149,18 @@
    "fieldname": "contact_updated",
    "fieldtype": "Check",
    "label": "contact.updated (Contato alterado)"
+  },
+  {
+   "default": "0",
+   "fieldname": "organization_created",
+   "fieldtype": "Check",
+   "label": "organization.created (Organização criada)"
+  },
+  {
+   "default": "0",
+   "fieldname": "organization_updated",
+   "fieldtype": "Check",
+   "label": "organization.updated (Organização alterada)"
   },
   {
    "default": "1",
@@ -149,6 +179,18 @@
    "fieldname": "checklist_item_attached",
    "fieldtype": "Check",
    "label": "checklist.item_attached (Documento recebido na Pasta Digital)"
+  },
+  {
+   "default": "0",
+   "fieldname": "title_promise_recorded",
+   "fieldtype": "Check",
+   "label": "title.promise_recorded (Promessa de pagamento registrada)"
+  },
+  {
+   "default": "0",
+   "fieldname": "title_agreement_recorded",
+   "fieldtype": "Check",
+   "label": "title.agreement_recorded (Acordo de parcelamento registrado)"
   },
   {
    "fieldname": "pipelines_section",

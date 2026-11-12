@@ -479,16 +479,40 @@ def _method_paths() -> dict:
 			params=[("doctype", True), ("fields", False), ("updated_since", False), ("limit", False), ("cursor", False)],
 		),
 		f"{m}cred_hub.bulk.bulk_upsert": _method(
-			"Create or update up to 50 records",
+			"Create or update up to 50 records in batch with smart matching",
 			"Sync",
 			"post",
 			extra={"409": {"description": "Database busy: nothing saved, send the same call again"}},
+		),
+		f"{m}cred_hub.api_keys.upsert_record": _method(
+			"Create or update a single record with smart identity matching (name, external_id, CNPJ, CPF)",
+			"Sync",
+			"post",
+			body=_form_body({"doctype": {"type": "string"}, "record": {"type": "object"}}, ["doctype", "record"]),
 		),
 		f"{m}cred_hub.bulk.bulk_delete": _method(
 			"Delete up to 50 records (allow_delete)",
 			"Sync",
 			"post",
 			extra={"409": {"description": "Database busy: nothing deleted, send the same call again"}},
+		),
+		f"{m}cred_hub.erp.push.upsert_titles": _method(
+			"Push batch of open/overdue títulos from external ERP into collection funnel",
+			"ERP Push",
+			"post",
+			body=_form_body({"titles": {"type": "array", "items": {"type": "object"}}, "erp_source": {"type": "string"}}, ["titles"]),
+		),
+		f"{m}cred_hub.erp.push.settle_titles": _method(
+			"Push batch of settlements/liquidations from external ERP to close títulos",
+			"ERP Push",
+			"post",
+			body=_form_body({"settlements": {"type": "array", "items": {"type": "object"}}, "erp_source": {"type": "string"}}, ["settlements"]),
+		),
+		f"{m}cred_hub.erp.push.register_result": _method(
+			"Register ERP customer registration confirmation or error",
+			"ERP Push",
+			"post",
+			body=_form_body({"deal": {"type": "string"}, "status": {"type": "string"}, "erp_source": {"type": "string"}}, ["deal", "status", "erp_source"]),
 		),
 		f"{m}cred_hub.sync.get_deleted_records": _method("Deleted records since a date", "Sync"),
 		f"{m}cred_hub.credit_check.api.get_document_checklist": _method(
@@ -586,14 +610,20 @@ def _webhook_specs() -> dict:
 	events = {
 		"deal.created": "A new card was created in a pipeline",
 		"deal.stage_changed": "A card was moved to another stage",
+		"deal.updated": "A card value, owner or custom fields changed",
 		"deal.won": "A card reached a Won stage (outcome Won)",
 		"deal.lost": "A card reached a Lost stage (outcome Lost)",
 		"deal.deleted": "A card was deleted",
 		"contact.created": "A new contact was registered",
 		"contact.updated": "A contact phone, email or details changed",
+		"organization.created": "A new organization was registered",
+		"organization.updated": "An organization registration, address or details changed",
+		"cedente.ready_to_register": "A cedente was approved and is ready to be registered in the ERP",
 		"checklist.item_rejected": "A document in the Digital Folder was rejected",
 		"checklist.item_attached": "A document was attached to a Digital Folder checklist item",
 		"credit.limit_decided": "A credit limit decision was recorded by the credit committee",
+		"title.promise_recorded": "A payment promise was recorded on a collection título",
+		"title.agreement_recorded": "A debt settlement agreement was recorded on a card",
 	}
 
 	webhooks = {}

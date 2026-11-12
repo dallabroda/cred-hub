@@ -146,9 +146,14 @@ METHODS = {
 	"cred_hub.timeline.get_comments": "comments_read",
 	# Sincronização incremental com exclusões
 	"cred_hub.sync.get_deleted_records": "sync_deletes",
-	# Operações em lote (Batch API)
+	# Operações em lote e Upsert Inteligente (Batch & Single Upsert API)
 	"cred_hub.bulk.bulk_upsert": "cards_write",
 	"cred_hub.bulk.bulk_delete": "cards_write",
+	"cred_hub.api_keys.upsert_record": "cards_write",
+	# Porta B de ERPs (ADR 0007 §1, §4, §5)
+	"cred_hub.erp.push.upsert_titles": "cards_write",
+	"cred_hub.erp.push.settle_titles": "cards_write",
+	"cred_hub.erp.push.register_result": "cards_write",
 	# Busca unificada por CPF/CNPJ e especificação OpenAPI 3.1
 	"cred_hub.api_keys.lookup_by_document": "organizations_read",
 	"cred_hub.api_keys.get_openapi_spec": "pipelines_read",
@@ -532,7 +537,7 @@ def _check_route(key_name: str) -> bool:
 			if {"files_write", "credit_read"} <= scopes and verb == "POST":
 				return True
 			_deny()
-		if target in ("cred_hub.bulk.bulk_upsert", "cred_hub.bulk.bulk_delete"):
+		if target in ("cred_hub.bulk.bulk_upsert", "cred_hub.bulk.bulk_delete", "cred_hub.api_keys.upsert_record"):
 			doctype = frappe.local.form_dict.get("doctype")
 			req_scope = {
 				"CRM Deal": "cards_write",
@@ -1150,6 +1155,64 @@ def lookup_by_document(document: str) -> dict:
 				)
 
 	return _limit_lookup_to_scopes(result)
+
+
+@frappe.whitelist(methods=["POST"])
+def upsert_record(doctype: str, record: dict | str, match_by: str | None = None) -> dict:
+	"""Cria ou atualiza um único registro com resolução inteligente de identidade (credtech#375).
+
+	- Requer chave de API com escopo de escrita correspondente (cards_write, contacts_write, organizations_write).
+	- Resolve o registro automaticamente por name, external_id, cnpj/tax_id (14 dígitos) ou cpf/tax_id (11 dígitos) / email_id.
+	- Devolve o status ('created' ou 'updated'), o ID interno do Frappe (name) e o external_id.
+	"""
+	from cred_hub import api_guard
+	from cred_hub.bulk import SUPPORTED_DOCTYPES, SYSTEM_KEYS, resolve_record_name
+
+	if doctype not in SUPPORTED_DOCTYPES:
+		frappe.throw(_("Upsert operation is not supported for {0}.").format(doctype), frappe.ValidationError)
+
+	if isinstance(record, str):
+		try:
+			record = frappe.parse_json(record)
+		except Exception:
+			frappe.throw(_("Invalid JSON in record parameter."), frappe.ValidationError)
+
+	if not isinstance(record, dict) or not record:
+		frappe.throw(_("The 'record' parameter must be a non-empty JSON object."), frappe.ValidationError)
+
+	matched_name = resolve_record_name(doctype, record)
+	exists = bool(matched_name)
+	if exists and getattr(frappe.local, "credhub_api_is_test", False):
+		if not frappe.has_permission(doctype, "read", doc=matched_name):
+			exists = False
+			matched_name = None
+
+	data = {k: v for k, v in record.items() if k not in SYSTEM_KEYS}
+	api_guard.check_write(doctype, data, matched_name if exists else None)
+
+	if exists:
+		doc = frappe.get_doc(doctype, matched_name)
+		doc.check_permission("write")
+		doc.update(data)
+		doc.save()
+		action = "updated"
+	else:
+		doc_data = {k: v for k, v in data.items() if k != "name"}
+		doc = frappe.get_doc({"doctype": doctype, **doc_data})
+		doc.check_permission("create")
+		doc.insert()
+		action = "created"
+
+	frappe.db.commit()
+
+	return {
+		"ok": True,
+		"action": action,
+		"name": doc.name,
+		"doctype": doc.doctype,
+		"external_id": doc.get("external_id") or None,
+		"data": doc.as_dict(),
+	}
 
 
 @frappe.whitelist(allow_guest=True)

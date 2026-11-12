@@ -91,7 +91,8 @@ doc_events = {
 	# CPF é Contato e CNPJ é Organização (credtech#315): a validação do documento roda antes da do CNPJ
 	"CRM Organization": {
 		"validate": ["cred_hub.party.events.validate_organization", "cred_hub.cnpj.events.validate"],
-		"on_update": ["cred_hub.cnpj.events.on_update", "cred_hub.company.events.on_update"],
+		"after_insert": ["cred_hub.webhooks.on_organization_insert"],
+		"on_update": ["cred_hub.cnpj.events.on_update", "cred_hub.company.events.on_update", "cred_hub.webhooks.on_organization_update"],
 	},
 	# Card criado de um lead com CNPJ: o CNPJ vai para a Organização do card (épico #66)
 	# Mudança de etapa do funil dispara esteira progressiva de crédito se configurado (credtech#260)

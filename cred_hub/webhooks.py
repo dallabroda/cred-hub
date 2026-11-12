@@ -68,14 +68,20 @@ STALE_CLAIM_MINUTES = 10
 EVENT_FIELD_MAP = {
 	"deal.created": "deal_created",
 	"deal.stage_changed": "deal_stage_changed",
+	"deal.updated": "deal_updated",
 	"deal.won": "deal_won",
 	"deal.lost": "deal_lost",
 	"deal.deleted": "deal_deleted",
 	"contact.created": "contact_created",
 	"contact.updated": "contact_updated",
+	"organization.created": "organization_created",
+	"organization.updated": "organization_updated",
+	"cedente.ready_to_register": "cedente_ready_to_register",
 	"checklist.item_rejected": "checklist_item_rejected",
 	"checklist.item_attached": "checklist_item_attached",
 	"credit.limit_decided": "credit_limit_decided",
+	"title.promise_recorded": "title_promise_recorded",
+	"title.agreement_recorded": "title_agreement_recorded",
 }
 OUTCOME_EVENTS = {"Won": "deal.won", "Lost": "deal.lost"}
 
@@ -86,9 +92,8 @@ def on_deal_insert(doc, method=None):
 
 
 def on_deal_update(doc, method=None):
-	"""Card alterado: deal.stage_changed quando a etapa muda; deal.won/deal.lost quando o status do card (outcome,
-	credtech#315) vira Ganho/Perdido — mover para uma etapa do tipo Ganho também muda o outcome. A criação já dispara
-	deal.created e não repete nada aqui."""
+	"""Card alterado: deal.stage_changed quando a etapa muda; deal.won/deal.lost quando o status do card (outcome)
+	vira Ganho/Perdido; deal.updated para outras alterações relevantes nos campos públicos do card."""
 	if doc.flags.in_insert:
 		return
 	events = []
@@ -96,6 +101,9 @@ def on_deal_update(doc, method=None):
 		events.append("deal.stage_changed")
 	if doc.has_value_changed("outcome") and doc.get("outcome") in OUTCOME_EVENTS:
 		events.append(OUTCOME_EVENTS[doc.outcome])
+	before = doc.get_doc_before_save()
+	if not events and before is not None and _record_changed(before, doc):
+		events.append("deal.updated")
 	if events:
 		_trigger_record_event(events, doc, pipeline=doc.pipeline)
 
@@ -118,6 +126,21 @@ def on_contact_update(doc, method=None):
 	if before is not None and not _record_changed(before, doc):
 		return
 	_trigger_record_event("contact.updated", doc)
+
+
+def on_organization_insert(doc, method=None):
+	"""Disparado após criar uma organização (organization.created)."""
+	_trigger_record_event("organization.created", doc)
+
+
+def on_organization_update(doc, method=None):
+	"""organization.updated só quando algum campo que sai no corpo mudou."""
+	if doc.flags.in_insert:
+		return
+	before = doc.get_doc_before_save()
+	if before is not None and not _record_changed(before, doc):
+		return
+	_trigger_record_event("organization.updated", doc)
 
 
 def _record_changed(before, doc) -> bool:
@@ -201,6 +224,60 @@ def trigger_credit_limit_decided(
 		pipeline=_deal_pipeline(deal_name),
 		reference_doctype="CRM Deal" if deal_name else "CRM Organization",
 		reference_name=deal_name or organization_name,
+	)
+
+
+def trigger_cedente_ready_to_register(deal_name: str):
+	"""cedente.ready_to_register: card atingiu etapa de cadastro de cedente no ERP externo."""
+	deal = frappe.get_doc("CRM Deal", deal_name)
+	from cred_hub.erp.cedente import cedente_payload
+
+	payload = cedente_payload(deal)
+	_trigger_event(
+		"cedente.ready_to_register",
+		payload,
+		pipeline=deal.pipeline,
+		reference_doctype="CRM Deal",
+		reference_name=deal.name,
+	)
+
+
+def trigger_title_promise(deal_name: str, title_row_name: str, promise_date: str, promise_amount: float):
+	"""title.promise_recorded: promessa de pagamento registrada no card para um título."""
+	deal = frappe.get_doc("CRM Deal", deal_name)
+	row = next((r for r in deal.titles if r.name == title_row_name), None)
+	payload = {
+		"deal": deal.name,
+		"pipeline": deal.pipeline,
+		"title_row": title_row_name,
+		"erp_source": row.erp_source if row else None,
+		"erp_title_id": row.erp_title_id if row else None,
+		"promise_date": promise_date,
+		"promise_amount": promise_amount,
+	}
+	_trigger_event(
+		"title.promise_recorded",
+		payload,
+		pipeline=deal.pipeline,
+		reference_doctype="CRM Deal",
+		reference_name=deal.name,
+	)
+
+
+def trigger_title_agreement(deal_name: str, agreement_payload: dict):
+	"""title.agreement_recorded: acordo de parcelamento/repactuação registrado."""
+	deal = frappe.get_doc("CRM Deal", deal_name)
+	payload = {
+		"deal": deal.name,
+		"pipeline": deal.pipeline,
+		**agreement_payload,
+	}
+	_trigger_event(
+		"title.agreement_recorded",
+		payload,
+		pipeline=deal.pipeline,
+		reference_doctype="CRM Deal",
+		reference_name=deal.name,
 	)
 
 
