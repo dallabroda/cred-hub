@@ -544,8 +544,12 @@ def build_openapi_spec() -> dict:
 			"version": "2.0.0",
 			"description": (
 				"REST and RPC API of HubTech CRM for this company: cards, organizations, contacts, tasks, notes, "
-				"pipelines, fields and the Digital Folder. Record schemas include the company's own fields (x-custom)."
+				"pipelines, fields and the Digital Folder. Record schemas include the company's own fields (x-custom). "
+				"API version 1: every answer carries X-HubTech-API-Version; send the same header to pin it (an unknown "
+				"version answers 400). Breaking changes only in a new version, announced at least 90 days ahead with "
+				"Deprecation and Sunset headers."
 			),
+			"x-hubtech-api-version": "1",
 		},
 		"components": {
 			"securitySchemes": {
