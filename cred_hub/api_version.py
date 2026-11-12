@@ -33,7 +33,7 @@ class UnsupportedApiVersion(frappe.ValidationError):
 	http_status_code = 400
 
 
-def requested() -> str:
+def requested_version() -> str:
 	"""The version the client pinned, or the current one. An unknown version is refused (400)."""
 	value = (frappe.get_request_header(HEADER) or "").strip()
 	if not value:
@@ -76,7 +76,7 @@ def route_deprecation(verb: str, path: str) -> dict:
 	return deprecation_headers(entry.get("deprecated_on"), entry.get("sunset_on"))
 
 
-def set_headers(set_header, verb: str, path: str, version: str = CURRENT):
+def set_version_headers(set_header, verb: str, path: str, version: str = CURRENT):
 	"""Version header always; deprecation headers when the route is on its way out."""
 	set_header(HEADER, version)
 	for name, value in route_deprecation(verb, path).items():

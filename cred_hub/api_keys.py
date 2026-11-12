@@ -27,7 +27,8 @@ import frappe
 from frappe import _
 from frappe.utils import add_days, cint, getdate, now_datetime, nowdate
 
-from cred_hub import api_guard, api_version
+from cred_hub import api_guard
+from cred_hub.api_version import deprecation_headers, requested_version, set_version_headers
 from cred_hub.cnpj.mapping import format_cnpj, only_digits
 
 
@@ -220,7 +221,7 @@ def authenticate():
 	frappe.local.flags.disable_traceback = True
 	_set_header("X-Request-Id", request_id)
 	# Version that serves the call (and Deprecation/Sunset when the route is on its way out), on every answer
-	api_version.set_headers(_set_header, (frappe.request.method or "GET").upper(), unquote(frappe.request.path or ""))
+	set_version_headers(_set_header, (frappe.request.method or "GET").upper(), unquote(frappe.request.path or ""))
 	# An IP that keeps failing authentication is stopped before any lookup or hashing
 	_check_auth_failures()
 	key_id, secret = _split_token(token.strip())
@@ -260,7 +261,7 @@ def authenticate():
 		"rate_limit": rate_info,
 	}
 	# A pinned version that does not exist is refused (400) before anything runs, logged as any other error
-	frappe.local.credhub_api_key["api_version"] = api_version.requested()
+	frappe.local.credhub_api_key["api_version"] = requested_version()
 	if _route()[1] == "upload_file":
 		# with the key's user set: the record the file goes to must be writable by this key (its pipelines)
 		api_guard.check_upload_record()
@@ -365,7 +366,7 @@ def _check_legacy_token():
 	user = frappe.session.user
 	if until and getdate(nowdate()) <= until and user not in ("Guest", "Administrator"):
 		# the transition window is announced on every call made with an old key (RFC 9745 / RFC 8594)
-		for name, value in api_version.deprecation_headers(add_days(until, -LEGACY_NOTICE_DAYS), until).items():
+		for name, value in deprecation_headers(add_days(until, -LEGACY_NOTICE_DAYS), until).items():
 			_set_header(name, value)
 	if not until or getdate(nowdate()) <= until or user in ("Guest", "Administrator"):
 		return
