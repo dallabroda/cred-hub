@@ -268,6 +268,12 @@ def authenticate():
 			frappe.local.response_headers.set("X-RateLimit-Reset", str(rate_info["reset"]))
 	except Exception:
 		pass
+	if write:
+		# Idempotency-Key (credtech#375): last, after scopes, rate limit and the record checks; a resent call answers
+		# what the first one answered (or 409/422) without running again
+		from cred_hub import api_idempotency
+
+		frappe.local.credhub_api_key["idempotency"] = api_idempotency.begin(key.name, request_id)
 
 
 def _set_header(name: str, value: str):
@@ -644,6 +650,8 @@ def after_request(response=None, request=None):
 
 		if status_code >= 400 and response is not None:
 			_error_envelope(response, request_id)
+		if info.get("idempotency"):
+			_finish_idempotency(info["idempotency"], response)
 		write = bool(info.get("write"))
 		# Último uso: no máximo uma gravação por minuto por chave em leituras (audit M12)
 		touch_key = f"credhub_api_last_used:{info['name']}"
@@ -684,6 +692,17 @@ def after_request(response=None, request=None):
 		frappe.db.commit()
 	except Exception:
 		frappe.log_error(title="Cred Hub API: falha ao registrar o uso da chave")
+
+
+def _finish_idempotency(claim: dict, response):
+	"""Store the answer of an Idempotency-Key call (or free the key); a failure here leaves the key in flight (409)
+	rather than ever running the write twice."""
+	from cred_hub import api_idempotency
+
+	try:
+		api_idempotency.finish(claim, response)
+	except Exception:
+		frappe.log_error(title="Cred Hub API: falha ao guardar a resposta do Idempotency-Key")
 
 
 # Argumentos de uma chamada de "Campos e regras" guardados no log (quem mudou o quê); nunca segredos
