@@ -113,6 +113,13 @@ class TestApiVersion(IntegrationTestCase):
 		self.assertEqual(info["x-hubtech-api-version"], "1")
 		self.assertIn("X-HubTech-API-Version", info["description"])
 
+	def test_deprecated_routes_give_enough_notice(self):
+		"""Every route on its way out is announced at least MIN_NOTICE_DAYS before its sunset (policy, section 18)."""
+		for route, entry in api_version.DEPRECATED_ROUTES.items():
+			self.assertTrue(entry.get("deprecated_on") and entry.get("sunset_on"), route)
+			notice = (getdate(entry["sunset_on"]) - getdate(entry["deprecated_on"])).days
+			self.assertGreaterEqual(notice, api_version.MIN_NOTICE_DAYS, route)
+
 	def test_policy_constants(self):
 		self.assertEqual(api_version.SUPPORTED, ("1",))
 		self.assertGreaterEqual(api_version.MIN_NOTICE_DAYS, 90)

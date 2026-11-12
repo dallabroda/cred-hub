@@ -19,7 +19,10 @@ from frappe.utils import getdate
 HEADER = "X-HubTech-API-Version"
 CURRENT = "1"
 SUPPORTED = (CURRENT,)
-# Minimum notice between announcing a breaking change (Deprecation) and removing it (Sunset)
+# Minimum notice between announcing a breaking change (Deprecation) and removing it (Sunset). Every entry of
+# DEPRECATED_ROUTES must respect it (tested). Owner-decided exceptions, outside this table: the old user tokens
+# (`token api_key:api_secret`) got a 30-day transition (owner decision, credtech#175), announced with the same headers
+# by api_keys._check_legacy_token; security fixes may restrict a route without notice (credtech docs, section 18).
 MIN_NOTICE_DAYS = 90
 # Routes on their way out: "<VERB> <path>" or "* <path>" -> {"deprecated_on", "sunset_on" (YYYY-MM-DD)}.
 # Empty today: nothing in version 1 is deprecated.

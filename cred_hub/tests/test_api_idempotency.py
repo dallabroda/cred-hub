@@ -238,6 +238,64 @@ class TestApiIdempotency(IntegrationTestCase):
 		self.assertIsNone(self.row("drop"))
 		self.assertIn("cred_hub.api_idempotency.delete_expired", frappe.get_hooks("scheduler_events")["hourly"])
 
+	def test_cleanup_also_removes_expired_processing_and_interrupted(self):
+		self.call(key="stuck")  # claimed, never answered
+		self.call(key="cut", respond=None)
+		for key, status in (("stuck", "Processing"), ("cut", "Interrupted")):
+			frappe.db.set_value(
+				idem.DOCTYPE, self.row(key).name, {"status": status, "expires_at": add_to_date(now_datetime(), hours=-1)}
+			)
+		idem.delete_expired()
+		self.assertIsNone(self.row("stuck"))
+		self.assertIsNone(self.row("cut"))
+
+	# ---------- Calls that committed before failing ----------
+
+	def test_claim_watches_for_commits_of_the_call(self):
+		self.call(key="watch")
+		self.assertFalse(frappe.local.credhub_idempotency_committed)
+		frappe.db.after_commit.run()  # what a commit inside the route (or the final one) triggers
+		self.assertTrue(frappe.local.credhub_idempotency_committed)
+
+	def test_failure_after_a_commit_keeps_the_key(self):
+		for status in (500, 409, 429):
+			key = f"partial-{status}"
+			claim = self.call(key=key)
+			frappe.local.credhub_idempotency_committed = True  # the route committed, then failed
+			idem.finish(claim, Response("{}", status=status, content_type="application/json"))
+			self.assertEqual(self.row(key).status, "Interrupted", status)
+			with self.assertRaises(idem.IdempotencyKeyInterrupted) as ctx:
+				self.call(key=key)
+			self.assertEqual(ctx.exception.http_status_code, 409)
+			self.assertIn("NEW Idempotency-Key", str(ctx.exception))
+			self.assertIn(self.row(key).request_id, str(ctx.exception))
+
+	def test_failure_without_a_commit_frees_the_key(self):
+		claim = self.call(key="clean-500")
+		idem.finish(claim, Response("{}", status=500, content_type="application/json"))
+		self.assertIsNone(self.row("clean-500"))
+
+	def test_claim_left_processing_by_a_dead_call_says_check_the_record(self):
+		self.call(key="dead")
+		frappe.db.set_value(
+			idem.DOCTYPE, self.row("dead").name, "creation", add_to_date(now_datetime(), minutes=-(idem.STALE_MINUTES + 1))
+		)
+		with self.assertRaises(idem.IdempotencyKeyInterrupted):
+			self.call(key="dead")
+
+	def test_live_claim_says_wait_and_resend_with_the_same_key(self):
+		self.call(key="live-msg")
+		with self.assertRaises(idem.IdempotencyKeyInUse) as ctx:
+			self.call(key="live-msg")
+		self.assertNotIsInstance(ctx.exception, idem.IdempotencyKeyInterrupted)
+		self.assertIn("same key", str(ctx.exception))
+
+	def test_replays_count_as_writes_in_the_rate_limit(self):
+		self.call(key="rl", respond=(200, {}))
+		with patch.object(api_keys, "_rate_limit", wraps=api_keys._rate_limit) as rate:
+			self.call(key="rl")
+		self.assertTrue(rate.call_args.args[1])  # write=True: the replay spends a write
+
 	def test_openapi_writes_accept_the_header(self):
 		from cred_hub.api_schema import build_openapi_spec
 
