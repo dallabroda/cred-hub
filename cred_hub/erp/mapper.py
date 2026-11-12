@@ -42,6 +42,10 @@ TRANSFORMS = {
 	"street": formats.street_name,
 	"street_number": formats.street_number,
 	"person_type": formats.person_type,
+	# A number (money, quantity) as a whole integer: 1200000.0 -> 1200000 ("int" keeps only the digits of a text)
+	"integer": lambda v: int(formats.to_decimal(v)) if formats.to_decimal(v) is not None else None,
+	"document_formatted": formats.document_formatted,
+	"cep_formatted": formats.cep_formatted,
 	"bool": lambda v: str(v).strip().lower() in ("1", "true", "yes", "sim", "s"),
 	# "6204000 - Consultoria em TI" -> "6204000" (the CNAE code only, never digits of the description)
 	"cnae_code": lambda v: formats.digits(str(v).strip().split(" ")[0]),

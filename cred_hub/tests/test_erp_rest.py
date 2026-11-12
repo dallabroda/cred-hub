@@ -246,6 +246,10 @@ class TestConfig(unittest.TestCase):
 			"rest_secrets": SECRETS})
 		self.assertNotEqual(one, other_api)
 		self.assertNotIn("s3cr3t", one)
+		# HMAC with the site key: another site (key) gives another name, so the key name says nothing offline
+		cfg = rest.RestConfig.parse(SAMPLE)
+		self.assertNotEqual(cfg.auth_scope(SECRETS, "site-key-a"), cfg.auth_scope(SECRETS, "site-key-b"))
+		self.assertEqual(cfg.auth_scope(SECRETS, "site-key-a"), cfg.auth_scope(SECRETS, b"site-key-a"))
 
 	def test_lookup_needs_the_document_path(self):
 		register = copy.deepcopy(SAMPLE["endpoints"]["register_cedente"])

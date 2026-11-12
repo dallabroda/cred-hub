@@ -53,6 +53,7 @@ that repeats the previous one (a misconfigured pagination never loops forever).
 
 import base64
 import hashlib
+import hmac
 import json
 import re
 import time
@@ -547,13 +548,15 @@ class RestConfig:
 		found = placeholders_in([self.data["auth"], self.data["headers"], queries])
 		return sorted({p[7:] for p in found if p.startswith("secret:")})
 
-	def auth_scope(self, secrets: dict) -> str:
+	def auth_scope(self, secrets: dict, key: str | bytes = "") -> str:
 		"""Fingerprint of who we are on the API (address, auth block, headers and the secret values used): the
 		shared token cache and the shared pace are per credential, so a new client secret or another API never
-		reuses the old token."""
+		reuses the old token. HMAC with the site's own key (`key`), so the Redis key name cannot be used to guess a
+		weak client secret offline."""
 		used = {name: (secrets or {}).get(name, "") for name in self.secret_names()}
 		material = json.dumps([_origin_url(self.base_url), self.data["auth"], self.data["headers"], used], sort_keys=True)
-		return hashlib.sha256(material.encode()).hexdigest()[:24]
+		key = key.encode() if isinstance(key, str) else key
+		return hmac.new(key or b"cred_hub_erp_auth_scope", material.encode(), hashlib.sha256).hexdigest()[:32]
 
 	def register_fields(self) -> list[dict]:
 		spec = self.endpoint("register_cedente")

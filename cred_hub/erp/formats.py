@@ -121,6 +121,22 @@ def street_number(value) -> str:
 	return text if digits(text) and len(text) <= 10 else ""
 
 
+def document_formatted(value) -> str:
+	"""CPF/CNPJ with punctuation ("23.268.852/0001-60", "647.121.478-22"); other lengths stay as digits."""
+	number = digits(value)
+	if len(number) == 14:
+		return f"{number[:2]}.{number[2:5]}.{number[5:8]}/{number[8:12]}-{number[12:]}"
+	if len(number) == 11:
+		return f"{number[:3]}.{number[3:6]}.{number[6:9]}-{number[9:]}"
+	return number
+
+
+def cep_formatted(value) -> str:
+	""""01310100" -> "01310-100"; anything that is not 8 digits stays as digits."""
+	number = digits(value)
+	return f"{number[:5]}-{number[5:]}" if len(number) == 8 else number
+
+
 def person_type(document) -> str:
 	"""CPF (11 digits) -> "PF"; anything else with digits -> "PJ"."""
 	return "PF" if len(digits(document)) == 11 else "PJ"
