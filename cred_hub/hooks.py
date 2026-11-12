@@ -24,6 +24,8 @@ scheduler_events = {
 	# Status dos títulos em protesto no cartório (CENPROT, credtech#290)
 	"daily_long": ["cred_hub.integrations.protest.sync_all"],
 	# Rede de segurança dos leads da Meta: o que o webhook não trouxe (credtech#51)
+	# Idempotency-Key das escritas pela API: guardadas por 24 h (credtech#375)
+	"hourly": ["cred_hub.api_idempotency.delete_expired"],
 	"cron": {
 		"*/10 * * * *": ["cred_hub.meta_leads.catch_up"],
 		# Webhooks: envia o que está na outbox (o disparo logo após o commit adianta; credtech#375)

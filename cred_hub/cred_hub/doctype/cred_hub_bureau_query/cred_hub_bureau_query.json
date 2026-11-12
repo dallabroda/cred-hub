@@ -27,7 +27,7 @@
    "fieldname": "provider",
    "fieldtype": "Select",
    "label": "Provider",
-   "options": "Assertiva\nCENPROT\nWBA\nSmart Securities\nQI Tech",
+   "options": "Assertiva\nCENPROT\nWBA\nSmart Securities\nGeneric REST\nQI Tech",
    "in_list_view": 1,
    "in_standard_filter": 1
   },

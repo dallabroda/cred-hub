@@ -28,6 +28,7 @@ from frappe import _
 from frappe.utils import add_days, cint, getdate, now_datetime, nowdate
 
 from cred_hub import api_guard
+from cred_hub.api_version import deprecation_headers, requested_version, set_version_headers
 from cred_hub.cnpj.mapping import format_cnpj, only_digits
 
 
@@ -219,6 +220,8 @@ def authenticate():
 	# A key never gets a server traceback, whatever the site's allow_error_traceback says (audit M14)
 	frappe.local.flags.disable_traceback = True
 	_set_header("X-Request-Id", request_id)
+	# Version that serves the call (and Deprecation/Sunset when the route is on its way out), on every answer
+	set_version_headers(_set_header, (frappe.request.method or "GET").upper(), unquote(frappe.request.path or ""))
 	# An IP that keeps failing authentication is stopped before any lookup or hashing
 	_check_auth_failures()
 	key_id, secret = _split_token(token.strip())
@@ -257,6 +260,8 @@ def authenticate():
 		"start_time": start_time,
 		"rate_limit": rate_info,
 	}
+	# A pinned version that does not exist is refused (400) before anything runs, logged as any other error
+	frappe.local.credhub_api_key["api_version"] = requested_version()
 	if _route()[1] == "upload_file":
 		# with the key's user set: the record the file goes to must be writable by this key (its pipelines)
 		api_guard.check_upload_record()
@@ -268,6 +273,12 @@ def authenticate():
 			frappe.local.response_headers.set("X-RateLimit-Reset", str(rate_info["reset"]))
 	except Exception:
 		pass
+	if write:
+		# Idempotency-Key (credtech#375): last, after scopes, rate limit and the record checks; a resent call answers
+		# what the first one answered (or 409/422) without running again
+		from cred_hub import api_idempotency
+
+		frappe.local.credhub_api_key["idempotency"] = api_idempotency.begin(key.name, request_id)
 
 
 def _set_header(name: str, value: str):
@@ -344,6 +355,10 @@ def _refuse(key, request_id: str, start_time: float, status: int, exc):
 # ---------- Chaves antigas (token api_key:api_secret de um usuário) ----------
 
 
+# Old keys were announced as deprecated this many days before they stop (owner decision: 30-day transition)
+LEGACY_NOTICE_DAYS = 30
+
+
 def legacy_tokens_until():
 	"""Último dia das chaves antigas: `credhub_legacy_token_until` (AAAA-MM-DD), posto no deploy da API nova com
 	30 dias de transição (decisão do dono). Sem a config, as chaves antigas seguem como hoje."""
@@ -355,6 +370,10 @@ def _check_legacy_token():
 	"""O Frappe já autenticou o token do usuário; depois do prazo, só o Administrator do site segue usando."""
 	until = legacy_tokens_until()
 	user = frappe.session.user
+	if until and getdate(nowdate()) <= until and user not in ("Guest", "Administrator"):
+		# the transition window is announced on every call made with an old key (RFC 9745 / RFC 8594)
+		for name, value in deprecation_headers(add_days(until, -LEGACY_NOTICE_DAYS), until).items():
+			_set_header(name, value)
 	if not until or getdate(nowdate()) <= until or user in ("Guest", "Administrator"):
 		return
 	raise frappe.AuthenticationError(
@@ -644,6 +663,8 @@ def after_request(response=None, request=None):
 
 		if status_code >= 400 and response is not None:
 			_error_envelope(response, request_id)
+		if info.get("idempotency"):
+			_finish_idempotency(info["idempotency"], response)
 		write = bool(info.get("write"))
 		# Último uso: no máximo uma gravação por minuto por chave em leituras (audit M12)
 		touch_key = f"credhub_api_last_used:{info['name']}"
@@ -684,6 +705,17 @@ def after_request(response=None, request=None):
 		frappe.db.commit()
 	except Exception:
 		frappe.log_error(title="Cred Hub API: falha ao registrar o uso da chave")
+
+
+def _finish_idempotency(claim: dict, response):
+	"""Store the answer of an Idempotency-Key call (or free the key); a failure here leaves the key in flight (409)
+	rather than ever running the write twice."""
+	from cred_hub import api_idempotency
+
+	try:
+		api_idempotency.finish(claim, response)
+	except Exception:
+		frappe.log_error(title="Cred Hub API: falha ao guardar a resposta do Idempotency-Key")
 
 
 # Argumentos de uma chamada de "Campos e regras" guardados no log (quem mudou o quê); nunca segredos

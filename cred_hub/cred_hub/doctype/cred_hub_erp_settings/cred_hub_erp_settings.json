@@ -3,7 +3,7 @@
  "creation": "2026-11-10 18:00:00.000000",
  "doctype": "DocType",
  "engine": "InnoDB",
- "description": "Credentials, collection sync and field mapping of the WBA / Smart Securities ERP integration (credtech#367). Only admins.",
+ "description": "Credentials, collection sync and field mapping of the ERP / external system integration (credtech#367, ADR 0007). Only admins.",
  "field_order": [
   "erp_section",
   "erp_enabled",
@@ -19,6 +19,9 @@
   "smart_column",
   "smart_client_id",
   "smart_client_secret",
+  "rest_section",
+  "rest_config",
+  "rest_secrets",
   "qitech_section",
   "qitech_base_url",
   "qitech_algorithm",
@@ -68,7 +71,7 @@
    "fieldname": "erp_provider",
    "fieldtype": "Select",
    "label": "ERP",
-   "options": "\nWBA\nSmart Securities\nQI Tech",
+   "options": "\nWBA\nSmart Securities\nGeneric REST\nQI Tech",
    "mandatory_depends_on": "eval:doc.erp_enabled",
    "description": "Your company's back-office ERP. CredTech only connects; the ERP contract stays between you and the vendor."
   },
@@ -134,6 +137,28 @@
    "fieldtype": "Password",
    "label": "Smart Securities Client Secret",
    "mandatory_depends_on": "eval:doc.erp_enabled && doc.erp_provider=='Smart Securities'"
+  },
+  {
+   "fieldname": "rest_section",
+   "fieldtype": "Section Break",
+   "label": "Generic REST",
+   "depends_on": "eval:doc.erp_provider=='Generic REST'",
+   "description": "Any system with a REST/JSON API (ADR 0007). The configuration says the address, the authentication, the endpoints, the pagination and where each field is; secrets go in the table below and are referenced as {secret:NAME}."
+  },
+  {
+   "fieldname": "rest_config",
+   "fieldtype": "Code",
+   "options": "JSON",
+   "label": "REST configuration",
+   "mandatory_depends_on": "eval:doc.erp_enabled && doc.erp_provider=='Generic REST'",
+   "description": "JSON. Only https; private and internal addresses are blocked. Never put a password or token here: use {secret:NAME}."
+  },
+  {
+   "fieldname": "rest_secrets",
+   "fieldtype": "Table",
+   "options": "Cred Hub ERP Secret",
+   "label": "REST secrets",
+   "description": "Name + value (encrypted). Referenced in the configuration as {secret:NAME}."
   },
   {
    "fieldname": "qitech_section",
@@ -352,7 +377,7 @@
  ],
  "issingle": 1,
  "links": [],
- "modified": "2026-11-12 01:00:00.000000",
+ "modified": "2026-11-12 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Cred Hub",
  "name": "Cred Hub ERP Settings",

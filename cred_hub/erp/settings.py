@@ -16,6 +16,18 @@ SETTINGS = "Cred Hub ERP Settings"
 TOKEN_KEY = "cred_hub_erp_token"
 
 
+# CRM Pipeline flag of the company's Sandbox pipeline (test API keys, cred-hub#110). Checked defensively: the field
+# only exists where that change is installed
+SANDBOX_FLAG = "credhub_sandbox"
+
+
+def is_sandbox_pipeline(pipeline: str | None) -> bool:
+	"""A Sandbox card never goes to an ERP (registration, collection sync)."""
+	if not pipeline or not frappe.get_meta("CRM Pipeline").has_field(SANDBOX_FLAG):
+		return False
+	return bool(frappe.db.get_value("CRM Pipeline", pipeline, SANDBOX_FLAG))
+
+
 def get_settings():
 	return frappe.get_cached_doc(SETTINGS)
 
@@ -26,20 +38,28 @@ def _secret(settings, fieldname: str) -> str:
 
 def forget_token():
 	frappe.cache.delete_value(TOKEN_KEY)
+	# Tokens kept per credential (connectors with a cache_scope, e.g. the generic REST one)
+	frappe.cache.delete_keys(f"{TOKEN_KEY}:")
 	# New credentials or another ERP: the lists of names come from the new account
 	frappe.cache.delete_value("cred_hub_erp_lists")
 	frappe.cache.delete_value("cred_hub_erp_field_lists")
 
 
-def _cached_token() -> Token:
-	data = frappe.cache.get_value(TOKEN_KEY) or {}
+def _token_key(scope: str = "") -> str:
+	return f"{TOKEN_KEY}:{scope}" if scope else TOKEN_KEY
+
+
+def _cached_token(scope: str = "") -> Token:
+	data = frappe.cache.get_value(_token_key(scope)) or {}
 	return Token(data.get("value") or "", float(data.get("expires_at") or 0))
 
 
-def _store_token(token: Token):
+def _store_token(token: Token, scope: str = ""):
 	if token.value:
 		ttl = max(int(token.expires_at - time.time()), 1)
-		frappe.cache.set_value(TOKEN_KEY, {"value": token.value, "expires_at": token.expires_at}, expires_in_sec=ttl)
+		frappe.cache.set_value(
+			_token_key(scope), {"value": token.value, "expires_at": token.expires_at}, expires_in_sec=ttl
+		)
 
 
 def load_default_rules(settings):
@@ -56,10 +76,7 @@ def connector_class(settings=None):
 
 def credential_values(settings, cls) -> dict:
 	"""{fieldname: value} of the credentials the connector declares; secrets decrypted only here."""
-	return {
-		c.fieldname: (_secret(settings, c.fieldname) if c.secret else (settings.get(c.fieldname) or ""))
-		for c in cls.credentials
-	}
+	return cls.read_credentials(settings, _secret)
 
 
 def client(settings=None, session=None):
@@ -68,8 +85,11 @@ def client(settings=None, session=None):
 	cls = connector_class(settings)
 	if not cls:
 		frappe.throw(_("Choose the ERP in the ERP integration settings."))
+	values = credential_values(settings, cls)
+	# Per-credential token cache when the connector has one (a new secret never reuses the old token)
+	scope = cls.cache_scope(values)
 	return cls.make_client(
-		credential_values(settings, cls), session=session, token=_cached_token(), on_token=_store_token
+		values, session=session, token=_cached_token(scope), on_token=lambda token: _store_token(token, scope)
 	)
 
 
@@ -87,6 +107,9 @@ def user_message(error: ErpError) -> str:
 		return _("Could not reach the ERP. Try again in a few minutes.")
 	if error.code == "maintenance":
 		return _("The ERP is under maintenance. Try again later.")
+	if error.code in ("config", "blocked", "pagination", "too_large"):
+		# Our own checks (configuration, security, pagination, size): the text says what to fix
+		return _("ERP integration: {0}").format(error)
 	if error.code == "rate_limited":
 		return _("The ERP asked to wait before the next call. Try again in a few minutes.")
 	return _("The ERP answered with an error: {0}").format(error)
