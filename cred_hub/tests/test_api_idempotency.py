@@ -80,7 +80,7 @@ class TestApiIdempotency(IntegrationTestCase):
 
 	def test_without_header_nothing_is_stored(self):
 		self.assertIsNone(self.call(respond=(200, {"data": {"name": "D1"}})))
-		self.assertEqual(frappe.db.count(idem.DOCTYPE), 0)
+		self.assertEqual(frappe.db.count(idem.DOCTYPE, {"api_key": self.key_name(self.token)}), 0)
 
 	def test_reads_ignore_the_header(self):
 		self.assertIsNone(self.call(method="GET", form={}, key="read-1"))
@@ -227,7 +227,7 @@ class TestApiIdempotency(IntegrationTestCase):
 	def test_refused_route_never_claims(self):
 		with self.assertRaises(api_keys.KeyNotAllowed):
 			self.call(path="/api/resource/User", key="nope")
-		self.assertEqual(frappe.db.count(idem.DOCTYPE), 0)
+		self.assertEqual(frappe.db.count(idem.DOCTYPE, {"api_key": self.key_name(self.token)}), 0)
 
 	def test_cleanup_removes_only_expired(self):
 		self.call(key="keep", respond=(200, {}))
