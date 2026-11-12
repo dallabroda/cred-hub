@@ -202,6 +202,24 @@ class TestWebhooks(IntegrationTestCase):
 			self.assertEqual(webhooks.dispatch_outbox()["sent"], 1)
 		self.assertEqual(session.post.call_count, 3)
 
+	def test_claim_is_proved_by_reading_back_its_token(self):
+		wh = self.webhook(deal_created=1)
+		row = self.pending(wh)
+		# another run claimed it between our UPDATE and our check: we must not send
+		real_get_value = frappe.db.get_value
+
+		def stolen(doctype, name, field, *args, **kwargs):
+			if doctype == OUTBOX and field == "claim_token":
+				return "token-of-another-run"
+			return real_get_value(doctype, name, field, *args, **kwargs)
+
+		with patch.object(frappe.db, "get_value", side_effect=stolen):
+			self.assertFalse(webhooks._claim(row.name))
+		self.assertEqual(frappe.db.get_value(OUTBOX, row.name, "status"), "Sending")  # ours stayed unsent
+		fresh = self.pending(wh)
+		self.assertTrue(webhooks._claim(fresh.name))
+		self.assertFalse(webhooks._claim(fresh.name))  # the token of the first claim stays; a second run loses
+
 	def test_rows_are_claimed_once_and_stale_claims_come_back(self):
 		wh = self.webhook(deal_created=1)
 		row = self.pending(wh)

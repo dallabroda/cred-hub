@@ -406,12 +406,16 @@ def _release_stale_claims():
 
 
 def _claim(name: str) -> bool:
-	"""Atomic: only one run moves a row from Pending to Sending (committed before the HTTP call)."""
+	"""Atomic: only one run moves a row from Pending to Sending (committed before the HTTP call). The claim is
+	proved by reading back this run's own random token, never by driver internals: no claim, no send (fail
+	closed)."""
+	token = secrets.token_hex(12)
 	frappe.db.sql(
-		f"update `tab{OUTBOX_DOCTYPE}` set status='Sending', claimed_at=%s where name=%s and status='Pending'",
-		(now_datetime(), name),
+		f"update `tab{OUTBOX_DOCTYPE}` set status='Sending', claimed_at=%s, claim_token=%s "
+		"where name=%s and status='Pending'",
+		(now_datetime(), token, name),
 	)
-	claimed = bool(frappe.db._cursor.rowcount) if getattr(frappe.db, "_cursor", None) else True
+	claimed = frappe.db.get_value(OUTBOX_DOCTYPE, name, "claim_token") == token
 	if not getattr(frappe.flags, "in_test", False):
 		frappe.db.commit()
 	return claimed
