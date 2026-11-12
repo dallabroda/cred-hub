@@ -40,6 +40,8 @@ MAX_KEY_LENGTH = 255
 MAX_BODY_BYTES = 256 * 1024
 # Answers meaning "nothing was done, send the same call again": the key is freed instead of stored
 RETRY_STATUSES = frozenset({409, 429})
+# A claim still "Processing" after this long belongs to a call that died (gunicorn kills a worker at 120 s)
+STALE_MINUTES = 5
 CLEANUP_BATCH = 5000
 FILE_CHUNK = 64 * 1024
 
@@ -54,6 +56,11 @@ class IdempotencyKeyInUse(frappe.ValidationError):
 	"""A call with the same Idempotency-Key is still running (409): wait for its answer and send again."""
 
 	http_status_code = 409
+
+
+class IdempotencyKeyInterrupted(IdempotencyKeyInUse):
+	"""The first call with this key may have written before it failed or died (409): check the record, then send
+	the request again with a NEW key if it is not there."""
 
 
 class IdempotencyKeyReused(frappe.ValidationError):
@@ -131,6 +138,7 @@ def _stored(name: str):
 			"body_omitted",
 			"request_id",
 			"expires_at",
+			"creation",
 		],
 		as_dict=True,
 	)
@@ -166,6 +174,10 @@ def begin(api_key: str, request_id: str) -> dict | None:
 	if claimed:
 		# committed before the call runs: another worker sees the claim at once
 		frappe.db.commit()
+		# any commit from here on is the call's own (a route that commits midway, or the final commit): if the call
+		# then fails, its writes may be in the database and the key must not be freed for a second run
+		frappe.local.credhub_idempotency_committed = False
+		frappe.db.after_commit.add(_note_commit)
 		return {"name": name}
 	if not row:
 		# the claim is not visible yet to this transaction, or was just freed: ask for a resend
@@ -175,12 +187,37 @@ def begin(api_key: str, request_id: str) -> dict | None:
 			_("This Idempotency-Key was already used for a different request. Use a new key for a new request."),
 			IdempotencyKeyReused,
 		)
+	if row.status == "Interrupted" or (
+		row.status != "Completed" and row.creation and row.creation < add_to_date(now_datetime(), minutes=-STALE_MINUTES)
+	):
+		_interrupted(name, row, request_id)
 	if row.status != "Completed":
 		frappe.throw(
-			_("A request with this Idempotency-Key is still being processed. Wait for its answer and send it again."),
+			_(
+				"A request with this Idempotency-Key is still being processed. Wait for its answer and send it again "
+				"with the same key."
+			),
 			IdempotencyKeyInUse,
 		)
 	_replay(row)
+
+
+def _note_commit():
+	frappe.local.credhub_idempotency_committed = True
+
+
+def _interrupted(name: str, row, request_id: str):
+	"""409 for a key whose first call failed or died after its writes may have been committed: never run it again."""
+	frappe.logger("cred_hub.api").warning(
+		f"Idempotency-Key interrupted: key row {name}, first request {row.request_id}, this request {request_id}"
+	)
+	frappe.throw(
+		_(
+			"The first request with this Idempotency-Key did not finish and may have written (request {0}). Check the "
+			"record before retrying, and retry with a NEW Idempotency-Key."
+		).format(row.request_id or "?"),
+		IdempotencyKeyInterrupted,
+	)
 
 
 def _replay(row):
@@ -214,7 +251,17 @@ def finish(claim: dict | None, response) -> None:
 		return
 	status = getattr(response, "status_code", None) or 500
 	if status >= 500 or status in RETRY_STATUSES:
-		frappe.db.delete(DOCTYPE, {"name": claim["name"]})
+		if getattr(frappe.local, "credhub_idempotency_committed", False):
+			# the call committed something before failing (credit routes, enrichment...): a retry with this key could
+			# write twice, so the key stays taken (409 "check the record, then a new key") until it expires
+			frappe.db.set_value(
+				DOCTYPE, claim["name"], {"status": "Interrupted", "response_status": status}, update_modified=False
+			)
+			frappe.logger("cred_hub.api").warning(
+				f"Idempotency-Key kept after a failed call that committed: key row {claim['name']}, status {status}"
+			)
+		else:
+			frappe.db.delete(DOCTYPE, {"name": claim["name"]})
 		frappe.db.commit()
 		return
 	body = None
@@ -246,7 +293,8 @@ def finish(claim: dict | None, response) -> None:
 
 
 def delete_expired():
-	"""Hourly, in batches: keys past their 24 hours."""
+	"""Hourly, in batches: keys past their 24 hours, whatever their status (Completed, Processing or Interrupted).
+	The stored answers may carry personal data; nothing is kept longer than TTL_HOURS (plus up to an hour)."""
 	if not frappe.db.exists("DocType", DOCTYPE):
 		return
 	while True:

@@ -32,8 +32,9 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Status",
-   "options": "Processing\nCompleted",
-   "read_only": 1
+   "options": "Processing\nCompleted\nInterrupted",
+   "read_only": 1,
+   "description": "Interrupted: the call failed after committing something; the key stays taken until it expires"
   },
   {
    "fieldname": "route",
@@ -99,7 +100,7 @@
  ],
  "in_create": 1,
  "links": [],
- "modified": "2026-11-12 00:00:00.000000",
+ "modified": "2026-11-12 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Cred Hub",
  "name": "Cred Hub API Idempotency",
