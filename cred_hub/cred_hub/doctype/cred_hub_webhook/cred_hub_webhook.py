@@ -13,7 +13,22 @@ class CredHubWebhook(Document):
 		if not self.secret:
 			# Gera segredo HMAC automaticamente se não fornecido
 			self.secret = secrets.token_hex(24)
+		self.validate_url()
 		self.validate_payload_fields()
+
+	def validate_url(self):
+		"""Only https and a public host name (audit L8): the body carries personal data and is signed with the
+		secret; localhost and private addresses are refused here and again, resolved, at delivery."""
+		from cred_hub.email_company import safe_http
+
+		url = (self.webhook_url or "").strip()
+		if not url.lower().startswith("https://"):
+			frappe.throw(_("The webhook address must start with https://"))
+		try:
+			safe_http.check_url(url)
+		except safe_http.BlockedAddress:
+			frappe.throw(_("This webhook address is not allowed (local or private network)."))
+		self.webhook_url = url
 
 	def validate_payload_fields(self):
 		"""Only fields the payload policy lets out (cred_hub.api_schema); a typo or a denied field is refused here,
