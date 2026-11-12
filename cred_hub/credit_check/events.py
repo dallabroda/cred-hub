@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import frappe
+from cred_hub.billing import CREDIT_AND_COLLECTION, automation_allowed
 from cred_hub.cnpj.mapping import is_valid_cnpj
 from cred_hub.credit_check.enrich import get_credit_settings
 
@@ -10,6 +11,9 @@ from cred_hub.credit_check.enrich import get_credit_settings
 def on_deal_update(doc, method=None):
 	"""Dispara a esteira assíncrona quando o card é movido para a etapa configurada."""
 	if not doc.has_value_changed("status"):
+		return
+	if not automation_allowed(CREDIT_AND_COLLECTION):
+		# Plano sem Crédito e Cobrança (credtech#398): a automação não roda
 		return
 
 	settings = get_credit_settings()

@@ -23,6 +23,7 @@ from frappe import _
 from frappe.utils import add_days, cint, fmt_money, formatdate, getdate, today
 
 from cred_hub import welcome
+from cred_hub.billing import CREDIT_AND_COLLECTION, plan_allows, requires_feature
 from cred_hub.integrations import get_settings as collection_settings
 from cred_hub.integrations.protest import row_status
 
@@ -175,6 +176,7 @@ def get_reminders():
 
 
 @frappe.whitelist(methods=["POST"])
+@requires_feature(CREDIT_AND_COLLECTION)
 def save_reminders(enabled=None, inbox_id=None, steps=None):
 	welcome._only_managers()
 	doc = frappe.get_single(SETTINGS)
@@ -297,6 +299,9 @@ def _sacado_name(deal, row):
 
 
 def scheduled():
+	if not plan_allows(CREDIT_AND_COLLECTION):
+		# Plano sem Crédito e Cobrança (credtech#398): a automação não roda
+		return
 	settings = frappe.get_single(SETTINGS)
 	if not settings.enabled or not settings.steps:
 		return
@@ -305,6 +310,9 @@ def scheduled():
 
 def run(on_day=None):
 	"""Sends today's step of every open título of the collection funnel (each step once per título)."""
+	if not plan_allows(CREDIT_AND_COLLECTION):
+		# Plano sem Crédito e Cobrança (credtech#398): a automação não roda
+		return {}
 	settings = frappe.get_single(SETTINGS)
 	if not settings.enabled or not settings.steps:
 		return {}

@@ -3811,3 +3811,12 @@ msgstr "Muitas autenticações recusadas a partir deste endereço. Espere um min
 
 msgid "Send the file in the multipart field file."
 msgstr "Envie o arquivo no campo multipart file."
+
+msgid "Your plan does not include Credit & Collection. An admin can change the plan in Users and Plan."
+msgstr "Seu plano não inclui Crédito e Cobrança. Um administrador pode mudar o plano em Usuários e plano."
+
+msgid "Not included in your plan"
+msgstr "Não incluído no seu plano"
+
+msgid "This upload is unavailable right now. Please contact the company that sent you the link."
+msgstr "Este envio está indisponível no momento. Fale com a empresa que enviou o link."

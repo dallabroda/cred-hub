@@ -288,6 +288,11 @@ def run_background_check(
 	tier_1_only: bool = False,
 ) -> str | None:
 	"""Executa a triagem jurídica e fiscal da organização ligada."""
+	from cred_hub.billing import CREDIT_AND_COLLECTION, automation_allowed
+
+	if not automation_allowed(CREDIT_AND_COLLECTION):
+		# Plano sem Crédito e Cobrança (credtech#398): nenhuma consulta paga, nem de um job já na fila
+		return None
 	settings = get_credit_settings()
 	if not settings.get("enabled"):
 		return None

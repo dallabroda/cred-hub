@@ -16,6 +16,8 @@ import json
 import frappe
 from frappe import _
 
+from cred_hub.billing import CREDIT_AND_COLLECTION, requires_feature
+
 from .connectors.rest import GENERIC
 from .rest import ConfigError, RestConfig, TokenHostNotConfirmed
 
@@ -36,6 +38,7 @@ def export_template() -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
+@requires_feature(CREDIT_AND_COLLECTION)
 def import_template(template, base_url: str = "", confirm_token_url: str = "") -> dict:
 	"""Loads a template as the site's generic REST configuration. The API address is the one given (or the one
 	already saved); secrets are filled afterwards in the REST secrets table. Returns the secret names to fill, or

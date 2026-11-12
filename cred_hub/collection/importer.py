@@ -23,6 +23,7 @@ import frappe
 from frappe import _
 from frappe.utils import flt, getdate
 
+from cred_hub.billing import CREDIT_AND_COLLECTION, requires_feature
 from cred_hub.cnpj.mapping import format_cnpj, only_digits, parse_brl_number
 from cred_hub.integrations import get_settings
 from cred_hub.integrations.protest import SENDABLE, row_status
@@ -351,6 +352,7 @@ def get_context(pipeline: str | None = None) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
+@requires_feature(CREDIT_AND_COLLECTION)
 def columns(file_url: str) -> dict:
 	"""Cabeçalhos da planilha, mapeamento sugerido e as 3 primeiras linhas para conferir."""
 	_check_access()
@@ -365,6 +367,7 @@ def columns(file_url: str) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
+@requires_feature(CREDIT_AND_COLLECTION)
 def preview(file_url: str, mapping) -> dict:
 	"""O que a importação faria, sem gravar nada."""
 	settings = _check_access()
@@ -418,6 +421,7 @@ def preview(file_url: str, mapping) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
+@requires_feature(CREDIT_AND_COLLECTION)
 def start(file_url: str, mapping) -> dict:
 	"""Importa em segundo plano; o operador recebe uma notificação com o resumo."""
 	_check_access()

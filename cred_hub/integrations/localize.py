@@ -20,6 +20,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint, now_datetime
 
+from cred_hub.billing import CREDIT_AND_COLLECTION, requires_feature
 from cred_hub.cnpj.enrich import person_name
 from cred_hub.cnpj.mapping import is_valid_cnpj, only_digits
 from cred_hub.integrations import bureau_log, get_settings, secret
@@ -152,6 +153,7 @@ def get_status(organization: str) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
+@requires_feature(CREDIT_AND_COLLECTION)
 def enrich_organization(organization: str, force: int | str = 0) -> dict:
 	org = frappe.get_doc("CRM Organization", organization)
 	org.check_permission("write")
@@ -368,6 +370,7 @@ def _set_primary_phones(contact, found_phones):
 
 
 @frappe.whitelist(methods=["POST"])
+@requires_feature(CREDIT_AND_COLLECTION)
 def test_connection() -> dict:
 	"""Só gera o token (não é consulta paga): confere Client ID e Client Secret."""
 	frappe.only_for("System Manager")

@@ -25,6 +25,7 @@ tolerância antes de pausar, e pausar começa pelo usuário mais recente, sem ap
 Variáveis de ambiente: ASAAS_API_KEY, ASAAS_ENVIRONMENT (production/sandbox), CREDHUB_ASAAS_WEBHOOK_TOKEN.
 """
 
+import functools
 import hmac
 import json
 import os
@@ -116,6 +117,14 @@ class UserLimitError(frappe.ValidationError):
 
 class InsufficientCreditsError(frappe.ValidationError):
 	"""Saldo de créditos insuficiente pra pagar um bureau Premium (exc_type na resposta da API)."""
+
+
+class PlanFeatureNotIncluded(frappe.PermissionError):
+	"""The company's plan does not include this feature (credtech#398). Stable `exc_type` / API `error.code`."""
+
+
+class OpinionLimitReached(frappe.ValidationError):
+	"""The AI credit opinions included in the plan for this month are used up (credtech#398). Stable `exc_type`."""
 
 
 # Plano e uso
@@ -210,6 +219,88 @@ def user_limit(plan=None):
 	return FREE_USERS
 
 
+# Recursos do plano (credtech#398, opção A do dono em 12/11/2026): o servidor só libera o que o plano inclui
+
+CREDIT_AND_COLLECTION = "credit_and_collection"
+# Recurso -> chave do PLAN_CATALOG que diz se o nível inclui
+PLAN_FEATURES = {CREDIT_AND_COLLECTION: "has_credit_and_collection"}
+# Pareceres de IA no teste grátis (o que get_plan sempre mostrou) e sem plano aplicado (cobrança desligada)
+TRIAL_OPINIONS = 30
+
+
+def _plan_unrestricted() -> bool:
+	"""Sem cobrança ligada não há plano a aplicar (como sempre foi); a empresa da própria CredTech também não tem trava."""
+	return not billing_enabled() or bool(frappe.conf.get("credhub_unlimited_users"))
+
+
+def plan_allows(feature: str, plan=None) -> bool:
+	"""Se o plano em vigor inclui o recurso. Segue o nível efetivo (plan_tier_of): depois do rollback de um aumento
+	não pago (#116) a trava volta junto. Teste grátis: tudo liberado, como vendido. Plano Legado: como antes (libera)."""
+	if feature not in PLAN_FEATURES:
+		raise ValueError(f"Unknown plan feature: {feature}")
+	if _plan_unrestricted():
+		return True
+	plan = plan or _plan()
+	if in_trial(plan):
+		return True
+	return bool(_tier_spec(plan_tier_of(plan)).get(PLAN_FEATURES[feature]))
+
+
+def require_feature(feature: str) -> None:
+	"""Barra (PlanFeatureNotIncluded, HTTP 403) quando o plano não inclui o recurso. Chamado em toda porta de entrada:
+	tela, chave da API, agendador e eventos de documento."""
+	if not plan_allows(feature):
+		if frappe.session.user == "Guest":
+			# Rotas públicas (portal da Pasta Digital): quem vê é o cliente final da empresa, não o admin
+			frappe.throw(
+				_("This upload is unavailable right now. Please contact the company that sent you the link."),
+				PlanFeatureNotIncluded,
+			)
+		frappe.throw(
+			_("Your plan does not include Credit & Collection. An admin can change the plan in Users and Plan."),
+			PlanFeatureNotIncluded,
+			title=_("Not included in your plan"),
+		)
+
+
+def automation_allowed(feature: str) -> bool:
+	"""Para eventos de documento e jobs: nunca quebra o salvamento do card. Se a leitura do plano falhar (migração no
+	meio, doctype ausente), registra no Error Log e trata como trava ligada: a automação não roda."""
+	try:
+		return plan_allows(feature)
+	except Exception:  # noqa: BLE001 - a broken plan read never blocks saving a card
+		frappe.log_error(title="Cred Hub: leitura do plano falhou (automação de Crédito e Cobrança pulada)")
+		return False
+
+
+def requires_feature(feature: str):
+	"""Decorador das rotas: `@frappe.whitelist()` em cima, `@requires_feature(...)` embaixo. Marca a função com
+	`credhub_plan_feature`, que os testes usam para conferir que nenhuma rota do módulo ficou sem trava."""
+	if feature not in PLAN_FEATURES:
+		raise ValueError(f"Unknown plan feature: {feature}")
+
+	def decorator(fn):
+		@functools.wraps(fn)
+		def wrapper(*args, **kwargs):
+			require_feature(feature)
+			return fn(*args, **kwargs)
+
+		wrapper.credhub_plan_feature = feature
+		return wrapper
+
+	return decorator
+
+
+def included_opinions(plan=None) -> int:
+	"""Pareceres de IA incluídos por mês no plano em vigor (o mesmo número que get_plan mostra)."""
+	if _plan_unrestricted():
+		return TRIAL_OPINIONS
+	plan = plan or _plan()
+	if in_trial(plan):
+		return TRIAL_OPINIONS
+	return cint(_tier_spec(plan_tier_of(plan)).get("included_opinions"))
+
+
 def active_users(exclude=None):
 	# Usuários técnicos das chaves da API não ocupam vaga (credtech#175)
 	filters = {
@@ -281,8 +372,9 @@ def get_plan():
 		"pending_plan_tier": plan.get("pending_plan_tier"),
 		"base_price": cint(spec["base_price"]),
 		"included_users": cint(spec["included_users"]),
-		"included_opinions": 30 if trial_active else cint(spec["included_opinions"]),
-		"has_credit_and_collection": True if trial_active else bool(spec["has_credit_and_collection"]),
+		# Os mesmos valores que o servidor aplica (plan_allows / included_opinions, credtech#398)
+		"included_opinions": included_opinions(plan),
+		"has_credit_and_collection": plan_allows(CREDIT_AND_COLLECTION, plan),
 		"plans_catalog": PLAN_CATALOG,
 		# Teste grátis com usuários ilimitados até trial_ends_on (inclusive)
 		"in_trial": trial_active,

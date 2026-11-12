@@ -27,6 +27,7 @@ import frappe
 from frappe import _
 from frappe.utils import add_days, flt, getdate, now_datetime, today
 
+from cred_hub.billing import CREDIT_AND_COLLECTION, plan_allows, requires_feature
 from cred_hub.collection import importer
 from cred_hub.integrations import get_settings as collection_settings
 from cred_hub.integrations import protest
@@ -50,12 +51,16 @@ OUTCOME_REASON = {"paid": PAID, "repurchased": REPURCHASED}
 
 def scheduled():
 	"""Daily job (hooks cron). Does nothing unless the company turned the integration on."""
+	if not plan_allows(CREDIT_AND_COLLECTION):
+		# Plano sem Crédito e Cobrança (credtech#398): a automação não roda
+		return
 	settings = get_settings()
 	if settings.erp_enabled and settings.erp_provider:
 		run()
 
 
 @frappe.whitelist(methods=["POST"])
+@requires_feature(CREDIT_AND_COLLECTION)
 def sync_now() -> dict:
 	"""Admin button: queue a run now (it still respects the ERP's 10-minute cooldown)."""
 	frappe.only_for("System Manager")
@@ -120,6 +125,9 @@ def _report(stats: dict) -> str:
 def run(session=None, dry_run: bool | None = None) -> dict:
 	"""One full run. Returns the counters (also saved in the settings and the history). `dry_run=None` follows the
 	"Simulation mode" switch of the settings."""
+	if not plan_allows(CREDIT_AND_COLLECTION):
+		# Plano sem Crédito e Cobrança (credtech#398): um job já na fila também não roda
+		return {"skipped": "plan"}
 	if not _acquire_lock():
 		return {"skipped": "running"}
 	settings = get_settings()
