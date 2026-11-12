@@ -6,12 +6,14 @@ import hashlib
 import json
 import unittest
 from datetime import datetime, timezone
+from unittest.mock import patch
 
 import jwt
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
 from cred_hub.erp import connectors
+from cred_hub.erp import qitech as qitech_client
 from cred_hub.erp.base import ErpAuthError, ErpError, ErpMaintenance, ErpRateLimited
 from cred_hub.erp.connectors.qitech import QITECH, normalize_pem
 from cred_hub.erp.mapper import Rule, build
@@ -83,6 +85,32 @@ class TestSigning(unittest.TestCase):
 		sent = session.sent[0]
 		self.assertEqual(claims_of(sent)["uri"], f"/assignor_registry/assignor_registries?{sent['query']}")
 		self.assertEqual(sent["params"]["document_number"], "33.333.333%2F0001-91")
+
+	def test_signed_uri_is_byte_for_byte_the_url_sent(self):
+		class Capture:
+			def __init__(self):
+				self.calls = []
+
+			def request(self, method, url, **kwargs):
+				self.calls.append((method, url, kwargs))
+				return listing([])
+
+		capture = Capture()
+		conn, _ = qitech({})
+		conn.client.session = capture
+		conn.client.find_assignor("12.345.678/0001-90")
+		_method, url, kwargs = capture.calls[0]
+		sent_uri = url[len("https://assignor-api.sandbox.qidtvm.com.br"):]
+		self.assertEqual(claims_of({"headers": kwargs["headers"]})["uri"], sent_uri)
+		self.assertEqual(sent_uri, "/assignor_registry/assignor_registries?document_number=12.345.678%2F0001-90&page=0&limit=50")
+		self.assertNotIn("params", kwargs)
+		self.assertIs(kwargs["allow_redirects"], False)
+
+	def test_redirect_is_never_followed(self):
+		conn, session = qitech({("GET", "/authentication_test"): [FakeResponse(302, {})]})
+		with self.assertRaisesRegex(ErpError, "redirect"):
+			conn.ping()
+		self.assertIs(session.sent[0]["allow_redirects"], False)
 
 	def test_post_body_md5_is_over_the_exact_bytes_sent(self):
 		conn, session = qitech({
@@ -172,16 +200,30 @@ class TestCedentes(unittest.TestCase):
 	def test_registry_pages_until_the_last_and_gives_document_and_name(self):
 		second = {**ASSIGNOR, "assignor_registry_key": "k2", "document_number": "647.121.478-22", "name": "Pessoa"}
 		conn, session = qitech({("GET", "/assignor_registry/assignor_registries"): [
-			listing([ASSIGNOR], 0, last=False), listing([second], 1, last=True)]})
-		rows = list(conn.cedentes())
+			listing([ASSIGNOR], 0, last=False, limit=1), listing([second], 1, last=True, limit=1)]})
+		with patch.object(qitech_client, "LIST_LIMIT", 1):
+			rows = list(conn.cedentes())
 		self.assertEqual([r["CPF/CNPJ"] for r in rows], ["33333333000191", "64712147822"])
 		self.assertEqual(rows[0]["address.city"], "São Paulo")
 		self.assertEqual([s["params"]["page"] for s in session.sent], ["0", "1"])
 
 	def test_repeated_page_never_loops(self):
-		conn, _ = qitech({("GET", "/assignor_registry/assignor_registries"): [listing([ASSIGNOR], last=False)]})
-		with self.assertRaisesRegex(ErpError, "same page"):
+		conn, _ = qitech({("GET", "/assignor_registry/assignor_registries"): [listing([ASSIGNOR], last=False, limit=1)]})
+		with patch.object(qitech_client, "LIST_LIMIT", 1), self.assertRaisesRegex(ErpError, "same page"):
 			list(conn.cedentes())
+
+	def test_answer_without_is_last_page_keeps_reading_full_pages(self):
+		second = {**ASSIGNOR, "assignor_registry_key": "k2", "document_number": "647.121.478-22"}
+		pages = [FakeResponse(200, {"data": [ASSIGNOR]}), FakeResponse(200, {"data": [second]}), FakeResponse(200, {"data": []})]
+		conn, session = qitech({("GET", "/assignor_registry/assignor_registries"): pages})
+		with patch.object(qitech_client, "LIST_LIMIT", 1):
+			rows = list(conn.cedentes())
+		self.assertEqual(len(rows), 2)
+		self.assertEqual(len(session.sent), 3)
+		# A short page (fewer rows than the limit) is the last one
+		conn, session = qitech({("GET", "/assignor_registry/assignor_registries"): [FakeResponse(200, {"data": [ASSIGNOR]})]})
+		self.assertEqual(len(list(conn.cedentes())), 1)
+		self.assertEqual(len(session.sent), 1)
 
 	def test_existing_cedente_is_not_sent(self):
 		conn, session = qitech({("GET", "/assignor_registry/assignor_registries"): [listing([ASSIGNOR])]})

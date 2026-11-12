@@ -91,7 +91,7 @@ class QiTechClient(BaseClient):
 
 		claims = {"timestamp": timestamp(self.now() if self.now else None), "method": method.upper(), "uri": uri}
 		if body is not None:
-			claims["payload_md5"] = hashlib.md5(body).hexdigest()
+			claims["payload_md5"] = hashlib.md5(body, usedforsecurity=False).hexdigest()
 		try:
 			return jwt.encode(claims, self.private_key, algorithm=self.algorithm, headers={"typ": "JWT"})
 		except (ValueError, TypeError, jwt.PyJWTError) as e:
@@ -112,7 +112,10 @@ class QiTechClient(BaseClient):
 		self._throttle()
 		self.calls += 1
 		try:
-			return self.session.request(method, f"{self.base_url}{uri}", headers=headers, timeout=TIMEOUT, data=data)
+			# Never follow a redirect: requests would carry API-CLIENT-KEY to wherever the Location points
+			return self.session.request(
+				method, f"{self.base_url}{uri}", headers=headers, timeout=TIMEOUT, data=data, allow_redirects=False
+			)
 		except requests.RequestException as e:
 			raise ErpError("Could not reach QI Tech. Try again in a few minutes.", "network") from e
 
@@ -120,6 +123,11 @@ class QiTechClient(BaseClient):
 		status = response.status_code
 		if 200 <= status < 300:
 			return
+		if 300 <= status < 400:
+			raise ErpError(
+				f"QI Tech answered with a redirect ({status}); the connector does not follow it. Check the API URL.",
+				"error", status,
+			)
 		code, text = error_parts(response)
 		label = f"{text} ({code})" if code else text
 		if status == 429:
@@ -147,7 +155,8 @@ class QiTechClient(BaseClient):
 		body = self.get(PING) or {}
 		return {"status": "ok" if body.get("success") else "unexpected", "endpoint": PING}
 
-	def pages(self, path: str, params: dict | None = None, limit: int = LIST_LIMIT):
+	def pages(self, path: str, params: dict | None = None, limit: int | None = None):
+		limit = limit or LIST_LIMIT
 		seen = set()
 		for page in range(MAX_PAGES):
 			body = self.get(path, {**(params or {}), "page": page, "limit": limit}) or {}
@@ -157,7 +166,9 @@ class QiTechClient(BaseClient):
 				raise ErpError("QI Tech returned the same page twice.", "pagination")
 			seen.add(mark)
 			yield from rows
-			if body.get("is_last_page") is not False or not rows:
+			# The documented end is is_last_page; a short page also ends (an answer without the flag never stops
+			# after the first page, nor loops: the repeated-page guard above and MAX_PAGES)
+			if body.get("is_last_page") is True or len(rows) < limit:
 				return
 		raise ErpError(f"The QI Tech list passed {MAX_PAGES} pages.", "pagination")
 
