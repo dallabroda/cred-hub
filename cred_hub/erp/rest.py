@@ -443,11 +443,13 @@ class RestConfig:
 			name = str((f or {}).get("erp_field") or "").strip()
 			if not name or name in seen:
 				raise ConfigError("Each register_cedente field needs a unique erp_field.")
-			if (f.get("transform") or "") not in TRANSFORMS:
-				raise ConfigError(f"Unknown transform {f.get('transform')!r} in {name}.")
+			# "none" is the engine's alias of "" (the de-para rows only accept "")
+			transform = "" if f.get("transform") in (None, "none") else f.get("transform")
+			if transform not in TRANSFORMS:
+				raise ConfigError(f"Unknown transform {transform!r} in {name}.")
 			seen.add(name)
 			clean.append({
-				"erp_field": name, "label": str(f.get("label") or name), "transform": f.get("transform") or "",
+				"erp_field": name, "label": str(f.get("label") or name), "transform": transform,
 				"required": bool(f.get("required")), "source": str(f.get("source") or ""),
 				"default_value": f.get("default_value"),
 			})
