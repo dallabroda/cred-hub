@@ -12,8 +12,12 @@ by doc_events when a field, a pipeline or a stage changes (hooks.py).
 import copy
 import re
 
-import frappe
-from frappe.model import no_value_fields, table_fields
+try:
+	import frappe
+	from frappe.model import no_value_fields, table_fields
+except (ImportError, TypeError):
+	frappe = None
+	no_value_fields, table_fields = (), ()
 
 # Records the API documents and the webhooks describe
 DEAL = "CRM Deal"
@@ -525,6 +529,15 @@ def _method_paths() -> dict:
 		f"{m}cred_hub.credit_check.api.create_onboarding_portal_link": _method(
 			"Create or get the client's external upload link", "Digital Folder", "post"
 		),
+		f"{m}cred_hub.api_keys.get_openapi_spec": _method(
+			"OpenAPI specification for this site (3.1 or 3.0.3, or format=postman)",
+			"Schema",
+			params=[("openapi_version", False), ("format", False)],
+		),
+		f"{m}cred_hub.api_keys.get_postman_collection": _method(
+			"Ready-to-import Postman Collection v2.1 for this site",
+			"Schema",
+		),
 	}
 
 
@@ -552,6 +565,64 @@ def _add_idempotency(paths: dict):
 			operation["parameters"] = [*operation.get("parameters", []), IDEMPOTENCY_PARAMETER]
 			for code, response in IDEMPOTENCY_RESPONSES.items():
 				operation.setdefault("responses", {}).setdefault(code, response)
+
+
+def _webhook_specs() -> dict:
+	"""Webhooks of HubTech CRM in OpenAPI 3.1 format (credtech#375)."""
+	envelope_properties = {
+		"event": {"type": "string", "example": "deal.stage_changed"},
+		"version": {"type": "integer", "example": 1},
+		"event_id": {"type": "string", "example": "evt_01931f82b2c47a98"},
+		"delivery_id": {"type": "string", "example": "del_01931f82b2e58c12"},
+		"attempt": {"type": "integer", "example": 1},
+		"replay": {"type": "boolean", "example": False},
+		"test": {"type": "boolean", "description": "true for test webhooks on the Sandbox pipeline", "example": False},
+		"timestamp": {"type": "string", "format": "date-time", "example": "2026-11-12T18:00:00Z"},
+		"doctype": {"type": "string", "example": "CRM Deal"},
+		"data": {"type": "object", "description": "Full record payload with ch_* fields"},
+		"related": {"type": "object", "description": "Linked organizations and contacts"},
+	}
+
+	events = {
+		"deal.created": "A new card was created in a pipeline",
+		"deal.stage_changed": "A card was moved to another stage",
+		"deal.won": "A card reached a Won stage (outcome Won)",
+		"deal.lost": "A card reached a Lost stage (outcome Lost)",
+		"deal.deleted": "A card was deleted",
+		"contact.created": "A new contact was registered",
+		"contact.updated": "A contact phone, email or details changed",
+		"checklist.item_rejected": "A document in the Digital Folder was rejected",
+		"checklist.item_attached": "A document was attached to a Digital Folder checklist item",
+		"credit.limit_decided": "A credit limit decision was recorded by the credit committee",
+	}
+
+	webhooks = {}
+	for event_name, summary in events.items():
+		webhooks[event_name] = {
+			"post": {
+				"summary": summary,
+				"tags": ["Webhooks"],
+				"requestBody": {
+					"required": True,
+					"content": {
+						"application/json": {
+							"schema": {
+								"type": "object",
+								"properties": {
+									**envelope_properties,
+									"event": {"type": "string", "example": event_name},
+								},
+								"required": ["event", "version", "event_id", "delivery_id", "attempt", "timestamp", "data"],
+							}
+						}
+					},
+				},
+				"responses": {
+					"200": {"description": "Webhook received successfully"},
+				},
+			}
+		}
+	return webhooks
 
 
 def build_openapi_spec() -> dict:
@@ -591,10 +662,110 @@ def build_openapi_spec() -> dict:
 		},
 		"security": [{"BearerAuth": []}],
 		"paths": paths,
+		"webhooks": _webhook_specs(),
 	}
 
 
-def openapi_spec() -> dict:
+def to_openapi_3_0(spec_3_1: dict) -> dict:
+	"""Converts OpenAPI 3.1 to OpenAPI 3.0.3 for legacy ERP tooling (ADR 0007, credtech#375)."""
+	spec = copy.deepcopy(spec_3_1)
+	spec["openapi"] = "3.0.3"
+	if "webhooks" in spec:
+		spec["x-webhooks"] = spec.pop("webhooks")
+
+	def _transform(obj):
+		if isinstance(obj, dict):
+			t = obj.get("type")
+			if isinstance(t, list):
+				types = [x for x in t if x != "null"]
+				if "null" in t:
+					obj["nullable"] = True
+				obj["type"] = types[0] if len(types) == 1 else (types or "string")
+			if "enum" in obj and isinstance(obj["enum"], list):
+				if None in obj["enum"]:
+					obj["enum"] = [x for x in obj["enum"] if x is not None]
+					obj["nullable"] = True
+			for v in obj.values():
+				_transform(v)
+		elif isinstance(obj, list):
+			for item in obj:
+				_transform(item)
+
+	_transform(spec)
+	return spec
+
+
+def to_postman_collection(spec: dict) -> dict:
+	"""Generates a ready Postman Collection v2.1 from the OpenAPI specification (credtech#375)."""
+	base_url = (spec.get("servers") or [{}])[0].get("url") or "{{baseUrl}}"
+	collection = {
+		"info": {
+			"name": spec.get("info", {}).get("title") or "HubTech CRM API",
+			"description": spec.get("info", {}).get("description") or "",
+			"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+			"version": spec.get("info", {}).get("version") or "2.0.0",
+		},
+		"auth": {
+			"type": "bearer",
+			"bearer": [{"key": "token", "value": "{{hubtech_token}}", "type": "string"}],
+		},
+		"variable": [
+			{"key": "baseUrl", "value": base_url, "type": "string"},
+			{"key": "hubtech_token", "value": "hub_id_segredo", "type": "string"},
+		],
+		"item": [],
+	}
+
+	folders = {}
+	for path, path_item in (spec.get("paths") or {}).items():
+		for verb in ("get", "post", "put", "patch", "delete"):
+			op = path_item.get(verb)
+			if not op:
+				continue
+			tags = op.get("tags") or ["General"]
+			tag = tags[0]
+			if tag not in folders:
+				folders[tag] = {"name": tag, "item": []}
+
+			headers = [
+				{"key": "Accept", "value": "application/json", "type": "text"},
+				{"key": "X-HubTech-API-Version", "value": "1", "type": "text"},
+			]
+			if verb.upper() in ("POST", "PUT", "PATCH", "DELETE"):
+				headers.append({"key": "Idempotency-Key", "value": "{{$guid}}", "type": "text"})
+				headers.append({"key": "Content-Type", "value": "application/json", "type": "text"})
+
+			query_params = []
+			for param in op.get("parameters") or []:
+				if param.get("in") == "query":
+					query_params.append({
+						"key": param.get("name"),
+						"value": str(param.get("example") or ""),
+						"disabled": not param.get("required", False),
+						"description": param.get("description", ""),
+					})
+
+			req_item = {
+				"name": op.get("summary") or f"{verb.upper()} {path}",
+				"request": {
+					"method": verb.upper(),
+					"header": headers,
+					"url": {
+						"raw": "{{baseUrl}}" + path,
+						"host": ["{{baseUrl}}"],
+						"path": [p for p in path.strip("/").split("/") if p],
+						"query": query_params,
+					},
+					"description": op.get("description") or op.get("summary") or "",
+				},
+			}
+			folders[tag]["item"].append(req_item)
+
+	collection["item"] = list(folders.values())
+	return collection
+
+
+def openapi_spec(openapi_version: str | None = None) -> dict:
 	"""Cached per site; the server URL is filled in per call (the same site answers on more than one host)."""
 	spec = frappe.cache.get_value(OPENAPI_CACHE_KEY)
 	if not spec:
@@ -602,6 +773,8 @@ def openapi_spec() -> dict:
 		frappe.cache.set_value(OPENAPI_CACHE_KEY, spec, expires_in_sec=OPENAPI_CACHE_SECONDS)
 	spec = _visible_enums(copy.copy(spec))
 	spec["servers"] = [{"url": frappe.utils.get_url()}]
+	if openapi_version in ("3.0", "3.0.3"):
+		return to_openapi_3_0(spec)
 	return spec
 
 
@@ -612,6 +785,34 @@ def _visible_enums(spec: dict) -> dict:
 	from crm.permissions.pipeline import is_admin
 
 	if is_admin():
+		return spec
+	if getattr(frappe.session, "user", None) == "Guest":
+		schemas = dict(spec["components"]["schemas"])
+		card = dict(schemas["Card"])
+		properties = dict(card["properties"])
+		canonical_enums = {
+			"pipeline": (["vendas", "credito"], {"vendas": "Vendas", "credito": "Crédito"}),
+			"status": (
+				["novo", "qualificacao", "proposta", "ganho", "perdido"],
+				{
+					"novo": "Novo",
+					"qualificacao": "Qualificação",
+					"proposta": "Proposta",
+					"ganho": "Ganho",
+					"perdido": "Perdido",
+				},
+			),
+		}
+		for field, (names, labels) in canonical_enums.items():
+			prop = properties.get(field)
+			if prop and "enum" in prop:
+				prop = dict(prop)
+				prop["enum"] = names
+				prop["x-enum-labels"] = labels
+				properties[field] = prop
+		card["properties"] = properties
+		schemas["Card"] = card
+		spec["components"] = {**spec["components"], "schemas": schemas}
 		return spec
 	pipelines = set(frappe.get_list("CRM Pipeline", pluck="name"))
 	stages = set(frappe.get_all("CRM Deal Status", {"pipeline": ("in", list(pipelines) or [""])}, pluck="name"))

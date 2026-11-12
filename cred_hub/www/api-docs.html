@@ -167,10 +167,16 @@
   <header>
     <div class="container">
       <div class="top-bar">
-        <span class="badge">HUBTECH CRM · REST API PADRÃO OURO v1.2</span>
+        <span class="badge">HUBTECH CRM · REST API PADRÃO OURO (v1)</span>
         <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
           <a class="btn-action" href="/api/method/cred_hub.api_keys.get_openapi_spec" target="_blank" rel="noopener">
-            ⬇ Baixar OpenAPI 3.1 (JSON)
+            ⬇ OpenAPI 3.1 (JSON)
+          </a>
+          <a class="btn-action" href="/api/method/cred_hub.api_keys.get_openapi_spec?openapi_version=3.0" target="_blank" rel="noopener">
+            ⬇ OpenAPI 3.0 (Legacy)
+          </a>
+          <a class="btn-action" href="/api/method/cred_hub.api_keys.get_postman_collection" target="_blank" rel="noopener">
+            ⬇ Postman Collection
           </a>
           <a class="btn-back" href="/crm/settings/api">← Voltar para Configurações de API</a>
         </div>
@@ -193,12 +199,12 @@
         <p style="margin: 0.4rem 0 0;"><code>Authorization: Bearer hub_&lt;id&gt;_&lt;segredo&gt;</code></p>
       </div>
       <div class="card">
-        <strong>Headers de Telemetria</strong>
-        <p style="margin: 0.4rem 0 0;"><code>X-Request-Id</code> · <code>X-RateLimit-Limit</code> · <code>X-RateLimit-Remaining</code></p>
+        <strong>Versão &amp; Idempotência</strong>
+        <p style="margin: 0.4rem 0 0;"><code>X-HubTech-API-Version: 1</code> · <code>Idempotency-Key</code></p>
       </div>
       <div class="card">
-        <strong>Especificação OpenAPI 3.1</strong>
-        <p style="margin: 0.4rem 0 0;"><a href="/api/method/cred_hub.api_keys.get_openapi_spec" target="_blank" style="color: var(--accent);">/api/method/cred_hub.api_keys.get_openapi_spec</a></p>
+        <strong>Downloads &amp; Postman</strong>
+        <p style="margin: 0.4rem 0 0;"><a href="/api/method/cred_hub.api_keys.get_openapi_spec" target="_blank" style="color: var(--accent);">OpenAPI 3.1</a> · <a href="/api/method/cred_hub.api_keys.get_openapi_spec?openapi_version=3.0" target="_blank" style="color: var(--accent);">3.0</a> · <a href="/api/method/cred_hub.api_keys.get_postman_collection" target="_blank" style="color: var(--accent);">Postman</a></p>
       </div>
     </div>
 
@@ -277,6 +283,22 @@ curl "{{ base_url }}/api/method/cred_hub.api_keys.list_records_cursor?doctype=CR
       <p>Consulta os itens da Pasta Digital (Checklist), status de conferência, Link Externo Blindado e Relatório de Visita da Organização.</p>
 <pre><code>curl "{{ base_url }}/api/method/cred_hub.credit_check.api.get_credit_onboarding?organization=Acme%20Ltda" \
   -H "Authorization: Bearer hub_&lt;id&gt;_&lt;segredo&gt;"</code></pre>
+
+      <h3><span class="method GET">GET</span> <code>/api/method/cred_hub.credit_check.api.get_document_checklist</code></h3>
+      <p>Consulta detalhada item a item do checklist da Pasta Digital (com status de conferência, pendências e links dos arquivos anexados).</p>
+<pre><code>curl "{{ base_url }}/api/method/cred_hub.credit_check.api.get_document_checklist?organization=Acme%20Ltda" \
+  -H "Authorization: Bearer hub_&lt;id&gt;_&lt;segredo&gt;"</code></pre>
+
+      <h3><span class="method POST">POST</span> <code>/api/method/cred_hub.credit_check.api.upload_checklist_document</code></h3>
+      <p>Envia um arquivo (PDF, imagens, planilhas) diretamente para um item do checklist da Pasta Digital (requer escopos <code>files_write</code> e <code>credit_read</code>).</p>
+<pre><code>curl -X POST "{{ base_url }}/api/method/cred_hub.credit_check.api.upload_checklist_document" \
+  -H "Authorization: Bearer hub_&lt;id&gt;_&lt;segredo&gt;" \
+  -H "Idempotency-Key: up-2026-00045" \
+  -H "X-HubTech-API-Version: 1" \
+  -F "item_key=contrato_social" \
+  -F "organization=Acme Ltda" \
+  -F "file=@contrato.pdf"</code></pre>
+
       <h3><span class="method POST">POST</span> <code>/api/method/cred_hub.credit_check.api.create_onboarding_portal_link</code></h3>
       <p>Gera (ou recupera) o link da Caixa de Correio Blindada protegido por CNPJ para envio ao cliente via WhatsApp/SmartChat ou ERP.</p>
 <pre><code>curl -X POST "{{ base_url }}/api/method/cred_hub.credit_check.api.create_onboarding_portal_link" \
@@ -298,13 +320,16 @@ curl "{{ base_url }}/api/method/crm.api.pipeline.get_field_catalog" \
 curl -X POST "{{ base_url }}/api/resource/CRM%20Deal" \
   -H "Authorization: Bearer hub_&lt;id&gt;_&lt;segredo&gt;" \
   -H "Content-Type: application/json" \
-  -H "X-Idempotency-Key: op-2026-00091" \
-  -d '{"pipeline": "&lt;chave_do_funil&gt;", "organization": "Acme Ltda", "annual_revenue": 150000}'
+  -H "Idempotency-Key: op-2026-00091" \
+  -H "X-HubTech-API-Version: 1" \
+  -d '{"pipeline": "&lt;chave_do_funil&gt;", "organization": "Acme Ltda", "deal_value": 150000}'
 
 # Mover Card de Etapa (valida Stage Gate da Pasta Digital e campos obrigatórios)
 curl -X POST "{{ base_url }}/api/method/crm.api.pipeline.move_card" \
   -H "Authorization: Bearer hub_&lt;id&gt;_&lt;segredo&gt;" \
   -H "Content-Type: application/json" \
+  -H "Idempotency-Key: op-2026-00092" \
+  -H "X-HubTech-API-Version: 1" \
   -d '{"deal": "CRM-DEAL-2026-00001", "stage": "&lt;chave_da_etapa&gt;"}'</code></pre>
     </div>
 
@@ -315,15 +340,29 @@ curl -X POST "{{ base_url }}/api/method/crm.api.pipeline.move_card" \
 <pre><code>curl -X POST "{{ base_url }}/api/method/cred_hub.bulk.bulk_upsert" \
   -H "Authorization: Bearer hub_&lt;id&gt;_&lt;segredo&gt;" \
   -H "Content-Type: application/json" \
-  -d '{"doctype": "CRM Deal", "records": [{"pipeline": "&lt;funil&gt;", "organization": "Acme Ltda"}]}'</code></pre>
+  -H "Idempotency-Key: batch-2026-00101" \
+  -H "X-HubTech-API-Version: 1" \
+  -d '{"doctype": "CRM Deal", "records": [{"pipeline": "&lt;funil&gt;", "organization": "Acme Ltda", "deal_value": 150000}]}'</code></pre>
       <h3><span class="method POST">POST</span> <code>/api/method/cred_hub.bulk.bulk_delete</code> — Exclusão em Lote</h3>
       <p>Exclui até 50 registros por requisição. Exige chave de API com escopo de escrita no doctype e permissão explícita <code>allow_delete</code>.</p>
 <pre><code>curl -X POST "{{ base_url }}/api/method/cred_hub.bulk.bulk_delete" \
   -H "Authorization: Bearer hub_&lt;id&gt;_&lt;segredo&gt;" \
   -H "Content-Type: application/json" \
+  -H "Idempotency-Key: del-2026-00102" \
+  -H "X-HubTech-API-Version: 1" \
   -d '{"doctype": "CRM Deal", "names": ["CRM-DEAL-2026-00001", "CRM-DEAL-2026-00002"]}'</code></pre>
-      <h3>Webhooks de Saída (Assinatura <code>X-HubTech-Signature: sha256=...</code>)</h3>
-      <p>Eventos suportados: <code>deal.created</code>, <code>deal.stage_changed</code>, <code>deal.won</code>, <code>deal.lost</code>, <code>deal.deleted</code>, <code>contact.created</code>, <code>contact.updated</code> e <code>checklist.item_rejected</code>. Possui <strong>auto-retry até 3 tentativas</strong> em caso de erro <code>5xx</code>/timeout.</p>
+      <h3>Webhooks de Saída (Assinaturas <code>X-HubTech-Signature</code> e <code>X-HubTech-Signature-V2</code>)</h3>
+      <p>Entregas em tempo real via <strong>Transactional Outbox</strong> garantindo consistência estrita: se a transação do banco sofrer rollback, o evento não é disparado. Possui <strong>re-tentativas automáticas com espera exponencial (5 entregas: imediata, 1m, 5m, 30m, 2h)</strong> e disjuntor automático após 10 falhas consecutivas.</p>
+      <p><strong>Cabeçalhos de Segurança da Entrega:</strong></p>
+      <ul>
+        <li><code>X-HubTech-Signature-V2</code>: <code>sha256=HMAC(segredo, timestamp + "." + body)</code> (anti-replay)</li>
+        <li><code>X-HubTech-Signature</code>: <code>sha256=HMAC(segredo, body)</code> (assinatura V1 compatível)</li>
+        <li><code>X-HubTech-Timestamp</code>: Unix epoch em segundos</li>
+        <li><code>X-HubTech-Delivery</code>: UUID único da entrega para deduplicação no receptor</li>
+        <li><code>X-HubTech-Test: 1</code>: presente apenas em eventos gerados no funil Sandbox das chaves de teste</li>
+      </ul>
+      <p><strong>Eventos Suportados (10 eventos):</strong></p>
+      <p><code>deal.created</code>, <code>deal.stage_changed</code>, <code>deal.won</code>, <code>deal.lost</code>, <code>deal.deleted</code>, <code>contact.created</code>, <code>contact.updated</code>, <code>checklist.item_rejected</code>, <code>checklist.item_attached</code> e <code>credit.limit_decided</code>. O corpo sempre traz o campo booleano <code>"test"</code> (<code>true</code> no Sandbox, <code>false</code> em produção).</p>
     </div>
 
     <h2>7. Códigos de Retorno e Cabeçalhos HTTP</h2>
@@ -335,8 +374,15 @@ curl -X POST "{{ base_url }}/api/method/crm.api.pipeline.move_card" \
         <tr><td><code>200 OK</code></td><td>Sucesso</td><td>Operação concluída com sucesso.</td></tr>
         <tr><td><code>401 Unauthorized</code></td><td><code>AuthenticationError</code></td><td>Chave inválida, revogada, expirada ou IP de origem fora da lista permitida.</td></tr>
         <tr><td><code>403 Forbidden</code></td><td><code>PermissionError</code></td><td>A chave não possui o escopo exigido pela rota ou o Card pertence a outro funil.</td></tr>
-        <tr><td><code>417 Expectation Failed</code></td><td><code>ValidationError</code></td><td>Campo obrigatório ausente na etapa ou bloqueio de Stage Gate da Pasta Digital/Dossiê.</td></tr>
+        <tr><td><code>409 Conflict</code></td><td><code>IdempotencyKeyInUse</code> / <code>BatchRetryable</code></td><td>Chamada idêntica ainda em processamento ou deadlock transitório no banco de dados. Repita a requisição.</td></tr>
+        <tr><td><code>417 Expectation Failed</code></td><td><code>ValidationError</code> / <code>WriteRefused</code></td><td>Campo obrigatório ausente na etapa ou tentativa de alterar campo read-only protegido.</td></tr>
+        <tr><td><code>422 Unprocessable Entity</code></td><td><code>IdempotencyKeyReused</code></td><td>A mesma chave de idempotência foi reutilizada com um payload diferente em menos de 24 horas.</td></tr>
         <tr><td><code>429 Too Many Requests</code></td><td><code>RateLimitExceededError</code></td><td>Limite por minuto atingido; aguarde os segundos informados em <code>Retry-After</code>.</td></tr>
+        <tr><td><code>X-HubTech-API-Version</code></td><td>Header de Versão</td><td>Versão que serviu a chamada (padrão <code>1</code>). Envie o mesmo header para fixar a versão da API.</td></tr>
+        <tr><td><code>Idempotency-Key</code></td><td>Header de Idempotência</td><td>Identificador único da chamada de escrita (UUID/string ASCII). Repetições em 24h devolvem a mesma resposta sem gravar duas vezes.</td></tr>
+        <tr><td><code>Idempotent-Replayed</code></td><td>Header de Idempotência</td><td>Retornado com valor <code>true</code> quando a resposta foi recuperada do cache de idempotência.</td></tr>
+        <tr><td><code>X-HubTech-Test</code></td><td>Header de Sandbox</td><td>Retornado com valor <code>1</code> quando a chamada foi executada por uma chave de teste (Sandbox).</td></tr>
+        <tr><td><code>Retry-After</code></td><td>Header de Rate Limit</td><td>Segundos que o cliente deve aguardar antes de enviar uma nova requisição após HTTP 429.</td></tr>
         <tr><td><code>X-Request-Id</code></td><td>Header de Auditoria</td><td>Identificador único da chamada (ex.: <code>req_a8f19c02d41e3b10</code>) registrado nos logs.</td></tr>
         <tr><td><code>X-RateLimit-*</code></td><td>Headers de Cota</td><td><code>X-RateLimit-Limit</code>, <code>X-RateLimit-Remaining</code> e <code>X-RateLimit-Reset</code> (epoch).</td></tr>
       </tbody>
@@ -362,15 +408,19 @@ curl -X POST "{{ base_url }}/api/method/crm.api.pipeline.move_card" \
         headersEl.textContent = "Aguardando resposta...";
         outEl.querySelector("code").textContent = "";
         try {
-          const headers = { "Accept": "application/json" };
+          const headers = {
+            "Accept": "application/json",
+            "X-HubTech-API-Version": "1",
+          };
           if (token) headers["Authorization"] = `Bearer ${token}`;
           const t0 = performance.now();
           const res = await fetch(url, { headers });
           const ms = Math.round(performance.now() - t0);
           const reqId = res.headers.get("X-Request-Id") || "—";
+          const apiVer = res.headers.get("X-HubTech-API-Version") || "1";
           const rlLim = res.headers.get("X-RateLimit-Limit") || "—";
           const rlRem = res.headers.get("X-RateLimit-Remaining") || "—";
-          headersEl.innerHTML = `<strong>HTTP ${res.status}</strong> (${ms} ms) · <code>X-Request-Id: ${reqId}</code> · <code>X-RateLimit-Limit: ${rlLim}</code> · <code>X-RateLimit-Remaining: ${rlRem}</code>`;
+          headersEl.innerHTML = `<strong>HTTP ${res.status}</strong> (${ms} ms) · <code>API-Version: ${apiVer}</code> · <code>X-Request-Id: ${reqId}</code> · <code>RateLimit: ${rlRem}/${rlLim}</code>`;
           const json = await res.json();
           outEl.querySelector("code").textContent = JSON.stringify(json, null, 2);
         } catch (err) {
