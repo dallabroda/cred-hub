@@ -299,7 +299,8 @@ def get_plan():
 			"extras": cint(plan.pending_extra_users),
 			"paid_extras": cint(plan.upgrade_base_users),
 			"due_date": plan.upgrade_due_date,
-			"overdue": cint(plan.extra_users) < cint(plan.pending_extra_users),
+			"overdue": cint(plan.extra_users) < cint(plan.pending_extra_users)
+			or bool(plan.get("pending_plan_tier") and plan_tier_of(plan) != plan.pending_plan_tier),
 			"invoice_url": plan.invoice_url,
 		}
 		if plan.upgrade_payment_id
@@ -457,6 +458,7 @@ def _cleared():
 		"pending_plan_tier": None,
 		"upgrade_payment_id": None,
 		"upgrade_base_users": 0,
+		"upgrade_base_tier": None,
 		"upgrade_due_date": None,
 		"scheduled_extra_users": 0,
 		"scheduled_from": None,
@@ -560,6 +562,8 @@ def _change_active_plan(plan, quantity, target_tier="free_legacy"):
 		extra_users=quantity,
 		pending_extra_users=quantity,
 		upgrade_base_users=paid,
+		# Plano já pago: volta a ele se a diferença não for paga ou o aumento for trocado (credtech#395)
+		upgrade_base_tier=current_tier,
 		upgrade_payment_id=payment["id"],
 		upgrade_due_date=due,
 		invoice_url=payment.get("invoiceUrl"),
@@ -584,14 +588,20 @@ def _drop_upgrade_payment(plan):
 	if payment and not payment.get("deleted"):
 		# Pago no meio do caminho, o Asaas recusa o DELETE (erro na tela) e o webhook aplica o pagamento
 		_asaas("DELETE", f"/payments/{plan.upgrade_payment_id}", allow_missing=True)
+	values = {}
+	if plan.get("upgrade_base_tier"):
+		# O plano também sai junto: o novo cálculo parte do plano pago, nunca do que não foi pago (credtech#395)
+		values.update(plan_tier=plan.upgrade_base_tier, pending_plan_tier=None)
 	_save_plan(
 		plan,
 		extra_users=cint(plan.upgrade_base_users),
 		pending_extra_users=0,
 		upgrade_payment_id=None,
 		upgrade_base_users=0,
+		upgrade_base_tier=None,
 		upgrade_due_date=None,
 		invoice_url=None,
+		**values,
 	)
 	return None
 
@@ -1066,6 +1076,7 @@ def _apply_upgrade_payment(plan, event, payment_id):
 		pending_extra_users=0,
 		upgrade_payment_id=None,
 		upgrade_base_users=0,
+		upgrade_base_tier=None,
 		upgrade_due_date=None,
 		applied_upgrade_payment_id=payment_id,
 		invoice_url=None,
@@ -1075,11 +1086,18 @@ def _apply_upgrade_payment(plan, event, payment_id):
 
 
 def _upgrade_overdue(plan, payment):
-	"""Prazo da diferença venceu: as vagas voltam às pagas e os usuários novos (os mais recentes) são pausados.
-	A cobrança continua aberta: pagando, eles voltam (o e-mail leva o link dela, não o da mensalidade)."""
-	if cint(plan.extra_users) <= cint(plan.upgrade_base_users):
+	"""Prazo da diferença venceu: as vagas e o plano voltam aos pagos e os usuários novos (os mais recentes) são
+	pausados. A cobrança continua aberta: pagando, eles voltam (o e-mail leva o link dela, não o da mensalidade).
+	pending_plan_tier e pending_extra_users ficam: são o que _apply_upgrade_payment aplica quando ela for paga."""
+	base_tier = plan.get("upgrade_base_tier")
+	tier_unpaid = bool(base_tier) and plan_tier_of(plan) != base_tier
+	if not tier_unpaid and cint(plan.extra_users) <= cint(plan.upgrade_base_users):
 		return
-	_save_plan(plan, extra_users=cint(plan.upgrade_base_users))
+	values = {"extra_users": cint(plan.upgrade_base_users)}
+	if tier_unpaid:
+		# Upgrade de plano sem pagamento: os recursos e as vagas do plano novo saem até pagar (credtech#395)
+		values["plan_tier"] = base_tier
+	_save_plan(plan, **values)
 	pause_over_limit("upgrade_unpaid", payment.get("invoiceUrl"))
 
 
