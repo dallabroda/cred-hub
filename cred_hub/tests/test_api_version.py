@@ -1,11 +1,13 @@
 """API version header, pinning and deprecation headers (credtech#375, ADR 0007 section 11).
 Run: `bench --site <site> run-tests --app cred_hub --module cred_hub.tests.test_api_version`."""
 
-from datetime import date
+from datetime import date, datetime, time, timezone
+from email.utils import format_datetime
 from unittest.mock import MagicMock, patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
+from frappe.utils import add_days, getdate, nowdate
 from werkzeug.datastructures import Headers
 
 from cred_hub import api_keys, api_version
@@ -95,10 +97,13 @@ class TestApiVersion(IntegrationTestCase):
 		frappe.local.response_headers = Headers()
 		frappe.set_user("Guest")
 		frappe.local.session.user = "seller-legacy@example.com"
-		with patch.dict(frappe.conf, {"credhub_legacy_token_until": "2099-12-31"}):
+		# inside the 30-day transition (the new keys went live 20 days ago): Deprecation and Sunset on every call
+		until = add_days(nowdate(), 10)
+		with patch.dict(frappe.conf, {"credhub_legacy_token_until": until}):
 			api_keys._check_legacy_token()
 		frappe.set_user("Administrator")
-		self.assertEqual(frappe.local.response_headers.get("Sunset"), "Thu, 31 Dec 2099 00:00:00 GMT")
+		expected = format_datetime(datetime.combine(getdate(until), time.min, tzinfo=timezone.utc), usegmt=True)
+		self.assertEqual(frappe.local.response_headers.get("Sunset"), expected)
 		self.assertTrue(frappe.local.response_headers.get("Deprecation").startswith("@"))
 
 	def test_openapi_states_the_version(self):
