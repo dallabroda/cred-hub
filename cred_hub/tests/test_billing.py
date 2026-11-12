@@ -599,12 +599,24 @@ class TestBilling(IntegrationTestCase):
 		self.assertEqual(billing.active_users(), [paused.name])
 		self.assertFalse(frappe.db.get_value("User", paused.name, "credhub_paused"))
 
-	def test_three_tier_plans_vendas_credito_enterprise(self):
+	def tier_plan(self, tier, extras=0):
+		"""Assinatura ativa no plano `tier`, com o próximo vencimento daqui a 15 dias (cobrança proporcional > mínimo)."""
+		with patch.object(billing, "_asaas", FakeAsaas()):
+			billing.request_extra_users(extras, PAYER, plan_tier=tier)
+			billing.apply_asaas_event("PAYMENT_CONFIRMED", "pay_1", "sub_1")
+		frappe.db.set_single_value(billing.PLAN, "next_due_date", self.days(15))
+
+	def pay_upgrade(self):
+		"""Confirma a cobrança da diferença que está em aberto (o id que o Asaas devolveu, nunca um fixo)."""
+		payment_id = self.plan().upgrade_payment_id
+		self.assertTrue(payment_id)
 		fake = FakeAsaas()
 		with patch.object(billing, "_asaas", fake):
-			res = billing.request_extra_users(1, PAYER, plan_tier="vendas")
-			self.assertTrue(res["ok"])
-			billing.apply_asaas_event("PAYMENT_CONFIRMED", "pay_1", "sub_1")
+			billing.apply_asaas_event("PAYMENT_CONFIRMED", payment_id, None)
+		return fake
+
+	def test_three_tier_plans_vendas_credito_enterprise(self):
+		self.tier_plan("vendas", 1)
 		p = billing.get_plan()
 		self.assertEqual(p["plan_tier"], "vendas")
 		self.assertEqual(p["limit"], 3)  # 2 incluídos + 1 extra
@@ -612,10 +624,12 @@ class TestBilling(IntegrationTestCase):
 		self.assertEqual(p["included_opinions"], 0)
 		self.assertFalse(p["has_credit_and_collection"])
 
-		fake_pro = FakeAsaas()
+		fake_pro = FakeAsaas(upgrade_status="PENDING")
 		with patch.object(billing, "_asaas", fake_pro):
-			billing.request_extra_users(2, plan_tier="credito_cobranca")
-			billing.apply_asaas_event("PAYMENT_CONFIRMED", "pay_up", None)
+			res = billing.request_extra_users(2, plan_tier="credito_cobranca")
+		expected = billing._prorated_amount(449 + 2 * 59 - (119 + 49), self.days(15))
+		self.assertEqual(res["amount"], expected)
+		self.pay_upgrade()
 		p2 = billing.get_plan()
 		self.assertEqual(p2["plan_tier"], "credito_cobranca")
 		self.assertEqual(p2["limit"], 7)  # 5 incluídos + 2 extras
@@ -623,12 +637,86 @@ class TestBilling(IntegrationTestCase):
 		self.assertEqual(p2["included_opinions"], 30)
 		self.assertTrue(p2["has_credit_and_collection"])
 
-		fake_ent = FakeAsaas()
+		# Cada cobrança do Asaas tem id próprio: o upgrade seguinte não pode ser confundido com o já aplicado
+		fake_ent = FakeAsaas(upgrade_status="PENDING")
+		fake_ent.upgrades = 1  # a próxima cobrança é pay_up2
 		with patch.object(billing, "_asaas", fake_ent):
-			billing.request_extra_users(10, plan_tier="enterprise")
-			billing.apply_asaas_event("PAYMENT_CONFIRMED", "pay_up", None)
+			res = billing.request_extra_users(10, plan_tier="enterprise")  # extras não existem no Enterprise
+		self.assertEqual(res["amount"], billing._prorated_amount(990 - 567, self.days(15)))
+		paid = self.pay_upgrade()
+		self.assertIn(("PUT", "/subscriptions/sub_1"), [(m, path) for m, path, _ in paid.calls])
+		self.assertEqual(next(b for m, _, b in paid.calls if m == "PUT")["value"], 990)
 		p3 = billing.get_plan()
 		self.assertEqual(p3["plan_tier"], "enterprise")
 		self.assertEqual(p3["limit"], billing.UNLIMITED)
 		self.assertEqual(p3["amount"], 990)
 		self.assertEqual(p3["included_opinions"], 100)
+		self.assertIsNone(p3["upgrade"])
+
+	def test_unpaid_tier_upgrade_falls_back_to_the_paid_tier_until_paid(self):
+		# credtech#395: Crédito & Cobrança + 2 extras -> Enterprise sem pagar a diferença
+		self.tier_plan("credito_cobranca", 2)
+		with patch.object(billing, "_asaas", FakeAsaas(upgrade_status="PENDING")):
+			billing.request_extra_users(0, plan_tier="enterprise")
+		self.assertEqual(billing.user_limit(), billing.UNLIMITED)  # liberado na hora, como os extras
+		overdue = FakeAsaas(upgrade_status="OVERDUE")
+		with patch.object(billing, "_asaas", overdue):
+			billing.apply_asaas_event("PAYMENT_OVERDUE", "pay_up", None)
+		p = billing.get_plan()
+		self.assertEqual((p["plan_tier"], p["extras"], p["limit"], p["amount"]), ("credito_cobranca", 2, 7, 567))
+		self.assertTrue(p["upgrade"]["overdue"])
+		self.assertFalse([c for c in overdue.calls if c[0] == "PUT"])  # a mensalidade continua a paga
+		# pagou depois do prazo: o Enterprise volta e a mensalidade sobe
+		paid = self.pay_upgrade()
+		self.assertEqual(next(b for m, _, b in paid.calls if m == "PUT")["value"], 990)
+		p = billing.get_plan()
+		self.assertEqual((p["plan_tier"], p["limit"], p["amount"], p["upgrade"]), ("enterprise", billing.UNLIMITED, 990, None))
+
+	def test_daily_check_falls_back_to_the_paid_tier_without_webhook(self):
+		self.tier_plan("vendas", 1)
+		with patch.object(billing, "_asaas", FakeAsaas(upgrade_status="PENDING")):
+			billing.request_extra_users(0, plan_tier="credito_cobranca")
+		self.assertTrue(billing.get_plan()["has_credit_and_collection"])
+		frappe.db.set_single_value(billing.PLAN, "upgrade_due_date", self.days(-1))
+		with patch.object(billing, "_asaas", FakeAsaas(upgrade_status="PENDING")):
+			billing.daily_check()
+		p = billing.get_plan()
+		self.assertEqual((p["plan_tier"], p["extras"], p["limit"], p["amount"]), ("vendas", 1, 3, 168))
+		self.assertFalse(p["has_credit_and_collection"])
+		self.assertTrue(p["upgrade"]["overdue"])
+
+	def test_changing_an_unpaid_tier_upgrade_starts_from_the_paid_tier(self):
+		self.tier_plan("credito_cobranca", 2)
+		fake = FakeAsaas(upgrade_status="PENDING")
+		with patch.object(billing, "_asaas", fake):
+			billing.request_extra_users(0, plan_tier="enterprise")
+			# pediu o Enterprise de novo: a diferença continua sendo cobrada, nunca liberada de graça
+			again = billing.request_extra_users(0, plan_tier="enterprise")
+		self.assertEqual(again["amount"], billing._prorated_amount(990 - 567, self.days(15)))
+		self.assertEqual(self.plan().upgrade_payment_id, "pay_up2")
+		self.assertIn(("DELETE", "/payments/pay_up"), [(m, path) for m, path, _ in fake.calls])
+		self.assertFalse([c for c in fake.calls if c[0] == "PUT"])  # mensalidade só sobe quando pagar
+		self.assertEqual(self.plan().monthly_amount, 567)
+		# desistiu e voltou ao plano pago: nada a cobrar nem a agendar, e o Enterprise sai na hora
+		with patch.object(billing, "_asaas", FakeAsaas(upgrade_status="PENDING")):
+			back = billing.request_extra_users(2, plan_tier="credito_cobranca")
+		self.assertEqual(back, {"ok": True, "invoice_url": None, "status": "Active"})
+		p = billing.get_plan()
+		self.assertEqual((p["plan_tier"], p["limit"], p["amount"]), ("credito_cobranca", 7, 567))
+		self.assertIsNone(p["upgrade"])
+		self.assertIsNone(p["scheduled_from"])
+
+	def test_enterprise_downgrade_to_credito_at_the_next_invoice(self):
+		self.tier_plan("enterprise")
+		fake = FakeAsaas()
+		with patch.object(billing, "_asaas", fake):
+			res = billing.request_extra_users(2, plan_tier="credito_cobranca")
+		self.assertEqual(res["scheduled_from"], self.plan().next_due_date)
+		self.assertEqual(next(b for m, _, b in fake.calls if m == "PUT")["value"], 567)  # a próxima fatura já vem menor
+		self.assertFalse([c for c in fake.calls if c[:2] == ("POST", "/payments")])
+		self.assertEqual(billing.get_plan()["plan_tier"], "enterprise")  # pago até o vencimento
+		frappe.db.set_single_value(billing.PLAN, "scheduled_from", frappe.utils.getdate())
+		with patch.object(billing, "_asaas", FakeAsaas()):
+			billing.daily_check()
+		p = billing.get_plan()
+		self.assertEqual((p["plan_tier"], p["extras"], p["limit"], p["amount"]), ("credito_cobranca", 2, 7, 567))
