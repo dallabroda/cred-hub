@@ -21,7 +21,11 @@ class CredHubERPSettings(Document):
 				frappe.throw(_("The ERP API URL must start with https://"))
 			self.set(field, url)
 		credentials = ("erp_provider", "wba_base_url", "wba_tenant_id", "wba_username", "wba_password",
-			"smart_base_url", "smart_client_id", "smart_client_secret")
+			"smart_base_url", "smart_client_id", "smart_client_secret", "rest_config", "rest_secrets")
+		cls = settings.connector_class(self)
+		if cls:
+			# What only the chosen connector knows (e.g. the generic REST configuration), before the maps below
+			cls.validate_settings(self)
 		if any(self.has_value_changed(field) for field in credentials):
 			settings.forget_token()
 		if self.has_value_changed("erp_provider"):
@@ -38,6 +42,13 @@ class CredHubERPSettings(Document):
 		settings.validate_maps(self)
 		self.validate_cedente_trigger()
 
+	def on_update(self):
+		from cred_hub.erp import settings
+
+		cls = settings.connector_class(self)
+		if cls:
+			cls.settings_saved(self)
+
 	def validate_cedente_trigger(self):
 		"""Cedente registration (credtech#367): only the credit funnel, and the stage must belong to it."""
 		if not self.get("cedente_send_enabled"):
@@ -46,6 +57,10 @@ class CredHubERPSettings(Document):
 			self.cedente_pipeline = frappe.db.get_single_value("Cred Hub Credit Settings", "credit_pipeline")
 		if not self.get("cedente_pipeline"):
 			frappe.throw(_("Choose the credit funnel for the cedente registration."))
+		from cred_hub.erp.settings import is_sandbox_pipeline
+
+		if is_sandbox_pipeline(self.cedente_pipeline):
+			frappe.throw(_("The Sandbox funnel holds test data and never registers cedentes in the ERP."))
 		collection = frappe.db.get_single_value("Cred Hub Provider Settings", "collection_pipeline")
 		if collection and self.cedente_pipeline == collection:
 			frappe.throw(_("The cedente registration is for the credit funnel: collection cedentes are already in the ERP."))

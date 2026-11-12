@@ -26,9 +26,17 @@ def _implements(cls, method: str) -> bool:
 	return getattr(cls, method) is not getattr(Connector, method)
 
 
+def conformance_connectors():
+	"""Every registered connector, plus the generic REST one bound to a full configuration (its capabilities come
+	from the configuration, ADR 0007 §9, so unbound it declares nothing)."""
+	from cred_hub.tests.test_erp_rest import config
+
+	return [*connectors.all_connectors(), connectors.get("Generic REST").with_config(config())]
+
+
 class TestEveryConnector(unittest.TestCase):
 	def test_smart_and_wba_are_registered(self):
-		self.assertEqual(set(connectors.keys()), {"Smart Securities", "WBA"})
+		self.assertLessEqual({"Smart Securities", "WBA", "Generic REST"}, set(connectors.keys()))
 
 	def test_settings_offer_exactly_the_registered_systems(self):
 		path = os.path.join(
@@ -39,7 +47,7 @@ class TestEveryConnector(unittest.TestCase):
 		self.assertEqual({o for o in field["options"].split("\n") if o}, set(connectors.keys()))
 
 	def test_description_is_complete(self):
-		for cls in connectors.all_connectors():
+		for cls in conformance_connectors():
 			with self.subTest(cls.key):
 				self.assertTrue(cls.label)
 				self.assertTrue(cls.credentials, "declares its access fields")
@@ -48,7 +56,7 @@ class TestEveryConnector(unittest.TestCase):
 				self.assertTrue(_implements(cls, "make_client") and _implements(cls, "ping"))
 
 	def test_declared_capabilities_are_implemented(self):
-		for cls in connectors.all_connectors():
+		for cls in conformance_connectors():
 			for capability, methods in REQUIRED.items():
 				if getattr(cls.capabilities, capability):
 					for method in methods:
@@ -56,7 +64,7 @@ class TestEveryConnector(unittest.TestCase):
 							self.assertTrue(_implements(cls, method), f"{cls.key} declares {capability}")
 
 	def test_cedente_registration_has_catalog_and_suggested_de_para(self):
-		for cls in connectors.all_connectors():
+		for cls in conformance_connectors():
 			if cls.capabilities.register_cedente:
 				with self.subTest(cls.key):
 					catalog = {f["erp_field"] for f in cls.catalog()}
@@ -66,7 +74,7 @@ class TestEveryConnector(unittest.TestCase):
 					self.assertLessEqual({r["erp_field"] for r in rules}, catalog, "suggested fields exist")
 
 	def test_missing_credentials_are_named(self):
-		for cls in connectors.all_connectors():
+		for cls in conformance_connectors():
 			with self.subTest(cls.key):
 				missing = cls.missing_credentials({})
 				self.assertEqual(missing, [c.label for c in cls.credentials if c.required])
@@ -159,6 +167,82 @@ class TestSmartConformance(unittest.TestCase):
 		with self.assertRaises(ErpError) as caught:
 			conn.lists("setor")
 		self.assertNotIn("csecret", str(caught.exception))
+
+
+class TestGenericRestConformance(unittest.TestCase):
+	"""The same shared behaviors on the generic REST connector (canned FakeSession, configuration from
+	test_erp_rest.SAMPLE). Its specific rules (pagination, SSRF, templates...) are in test_erp_rest."""
+
+	def connector(self, routes):
+		from cred_hub.tests.test_erp_rest import generic
+
+		return generic(routes)
+
+	def test_titles_come_in_the_common_shape(self):
+		from cred_hub.tests.test_erp_rest import ITEM, page
+
+		conn, _session = self.connector({("GET", "/v2/titulos"): [page([ITEM], last=True)]})
+		titles = list(conn.overdue_titles(date(2026, 11, 1)))
+		self.assertEqual(set(titles[0]), TITLE_KEYS)
+		self.assertIn(titles[0]["outcome"], TITLE_OUTCOMES)
+
+	def test_401_twice_is_a_credential_error(self):
+		conn, _session = self.connector({("GET", "/v2/health"): [FakeResponse(401, {"message": "no"})]})
+		with self.assertRaises(ErpAuthError):
+			conn.ping()
+
+	def test_maintenance_stops(self):
+		conn, _session = self.connector({("GET", "/v2/health"): [FakeResponse(500, {"message": "Sistema em manutenção"})]})
+		with self.assertRaises(ErpMaintenance):
+			conn.ping()
+
+	def test_429_is_a_rate_limit(self):
+		conn, _session = self.connector({("GET", "/v2/titulos"): [FakeResponse(429, {"message": "wait"})]})
+		with self.assertRaises(ErpRateLimited):
+			list(conn.overdue_titles(date(2026, 11, 1)))
+
+	def test_timeout_is_a_network_error(self):
+		import requests
+
+		class Slow:
+			def request(self, *args, **kwargs):
+				raise requests.Timeout("read timed out")
+
+		from cred_hub.tests.test_erp_rest import SECRETS, config
+
+		cls = connectors.get("Generic REST").with_config(config(auth={"type": "none"}, headers={}))
+		conn = cls(cls.make_client({"rest_config": cls.config.data, "rest_secrets": SECRETS}, session=Slow()))
+		with self.assertRaises(ErpError) as caught:
+			conn.ping()
+		self.assertEqual(caught.exception.code, "network")
+
+	def test_pagination_never_loops(self):
+		from cred_hub.tests.test_erp_rest import ITEM, page
+
+		conn, _session = self.connector({("GET", "/v2/titulos"): [page([ITEM, {**ITEM, "id": 2}])]})
+		with self.assertRaises(ErpError):
+			list(conn.overdue_titles(date(2026, 11, 1)))
+
+	def test_register_outcome_is_standard(self):
+		from cred_hub.tests.test_erp_rest import PAYLOAD, Pending
+
+		conn, _session = self.connector({
+			("GET", "/v2/cedentes"): [FakeResponse(200, {"itens": []})],
+			("POST", "/v2/cedentes"): [FakeResponse(201, {"data": {"id": 1}})],
+		})
+		outcome = conn.send_registration(PAYLOAD, "23268852000160", Pending())
+		self.assertIn(outcome.status, connectors.base.OUTCOMES)
+
+	def test_pace_is_declared(self):
+		from cred_hub.tests.test_erp_rest import config
+
+		self.assertEqual(connectors.get("Generic REST").with_config(config()).pace.report_cooldown, 300)
+
+	def test_errors_never_carry_the_secret(self):
+		conn, _session = self.connector({("GET", "/v2/health"): [FakeResponse(400, {"message": "s3cr3t-value-xyz"})]})
+		with self.assertRaises(ErpError) as caught:
+			conn.ping()
+		self.assertNotIn("s3cr3t-value-xyz", str(caught.exception))
 
 
 if __name__ == "__main__":

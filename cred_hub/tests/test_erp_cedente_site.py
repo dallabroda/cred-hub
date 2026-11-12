@@ -96,6 +96,31 @@ class TestCedenteRegistration(IntegrationTestCase):
 		self.assertEqual(len(calls), 1)
 		self.assertEqual(calls[0].kwargs["deal"], self.deal.name)
 
+	def test_sandbox_cards_never_go_to_the_erp(self):
+		# cred-hub#110 flags the test-key pipeline with CRM Pipeline.credhub_sandbox; checked only when it exists
+		sandbox = patch("cred_hub.erp.settings.is_sandbox_pipeline", side_effect=lambda p: p == self.pipeline)
+		with sandbox, patch.object(frappe, "enqueue") as enqueue:
+			self.deal.status = self.stage
+			self.deal.save(ignore_permissions=True)
+			answer = cedente.send_now(self.deal.name)
+			doc = frappe.get_doc(erp_settings.SETTINGS)
+			doc.cedente_send_enabled = 1
+			with self.assertRaisesRegex(frappe.ValidationError, "Sandbox"):
+				doc.save(ignore_permissions=True)
+		self.assertFalse([c for c in enqueue.call_args_list if c.args and c.args[0] == "cred_hub.erp.cedente.send_for_deal"])
+		self.assertFalse(answer["ok"])
+		self.assertIn("Sandbox", answer["message"])
+
+	def test_sandbox_check_is_defensive(self):
+		has_flag = frappe.get_meta("CRM Pipeline").has_field(erp_settings.SANDBOX_FLAG)
+		self.assertFalse(erp_settings.is_sandbox_pipeline(None))
+		if not has_flag:
+			# Without cred-hub#110 installed nothing is a sandbox, and nothing breaks
+			self.assertFalse(erp_settings.is_sandbox_pipeline(self.pipeline))
+		else:
+			frappe.db.set_value("CRM Pipeline", self.pipeline, erp_settings.SANDBOX_FLAG, 1)
+			self.assertTrue(erp_settings.is_sandbox_pipeline(self.pipeline))
+
 	def test_another_stage_or_switched_off_does_nothing(self):
 		frappe.db.set_single_value(erp_settings.SETTINGS, "cedente_send_enabled", 0)
 		frappe.clear_document_cache(erp_settings.SETTINGS, erp_settings.SETTINGS)

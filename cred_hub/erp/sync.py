@@ -456,6 +456,11 @@ def _collection_pipeline() -> str:
 		protest.create_collection_pipeline(doc)
 		doc.save(ignore_permissions=True)
 		settings = collection_settings()
+	from .settings import is_sandbox_pipeline
+
+	if is_sandbox_pipeline(settings.collection_pipeline):
+		# Test data never mixes with the ERP's títulos (cred-hub#110)
+		raise ErpError("The collection funnel is the Sandbox funnel: choose the real collection funnel.", "config")
 	return settings.collection_pipeline
 
 

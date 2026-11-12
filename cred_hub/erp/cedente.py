@@ -126,7 +126,7 @@ def on_deal_update(doc, method=None):
 		return
 	import frappe
 
-	from .settings import get_settings
+	from .settings import get_settings, is_sandbox_pipeline
 
 	settings = get_settings()
 	if not (settings.erp_enabled and settings.get("cedente_send_enabled")):
@@ -134,6 +134,8 @@ def on_deal_update(doc, method=None):
 	if settings.get("cedente_trigger") != STAGE or not settings.get("cedente_stage"):
 		return
 	if doc.pipeline != settings.get("cedente_pipeline") or doc.status != settings.cedente_stage:
+		return
+	if is_sandbox_pipeline(doc.pipeline):
 		return
 	_enqueue(frappe, doc.name)
 
@@ -154,7 +156,7 @@ def send_now(deal: str) -> dict:
 	import frappe
 	from frappe import _
 
-	from .settings import get_settings
+	from .settings import get_settings, is_sandbox_pipeline
 
 	doc = frappe.get_doc("CRM Deal", deal)
 	doc.check_permission("write")
@@ -165,6 +167,8 @@ def send_now(deal: str) -> dict:
 		return {"ok": False, "message": _("Only cards of the credit funnel register the cedente in the ERP.")}
 	if not doc.get("organization"):
 		return {"ok": False, "message": _("The card has no company to register.")}
+	if is_sandbox_pipeline(doc.pipeline):
+		return {"ok": False, "message": _("Cards of the Sandbox funnel are test data and never go to the ERP.")}
 	_enqueue(frappe, deal)
 	return {"ok": True, "message": _("Sending to the ERP. The result appears in the card's activity.")}
 
