@@ -3,13 +3,14 @@
 import frappe
 from frappe import _
 
-from cred_hub import api_guard
+from cred_hub import api_guard, sandbox
 from cred_hub.cnpj.mapping import format_cnpj
 from cred_hub.party.document import format_cpf, only_digits
 
 
 SUPPORTED_DOCTYPES = {"CRM Deal", "Contact", "CRM Organization"}
 MAX_BATCH_SIZE = 50
+ALLOWED_MATCH_BY = frozenset({"name", "external_id", "cnpj", "cpf", "tax_id", "email_id", "email"})
 
 
 class BatchRetryable(frappe.ValidationError):
@@ -48,53 +49,176 @@ SYSTEM_KEYS = frozenset({
 })
 
 
-def resolve_record_name(doctype: str, item: dict) -> str | None:
-	"""Localiza o nome (ID interno) de um registro para upsert inteligente sem pré-consulta.
+def _space_filters(doctype: str) -> dict:
+	"""Garante isolamento estrito entre registros reais e registros do Sandbox nas buscas de identidade."""
+	if doctype == "CRM Deal":
+		sb = sandbox.sandbox_pipeline()
+		if sandbox.is_test_user():
+			return {"pipeline": sb or ""}
+		return {"pipeline": ("!=", sb)} if sb else {}
+	return sandbox.same_space(doctype)
 
-	Prioridades de correspondência:
-	1. Match por name se fornecido e existente no banco.
+
+def resolve_record_name(doctype: str, item: dict, match_by: str | None = None) -> str | None:
+	"""Localiza o nome (ID interno) de um registro no MESMO espaço (produção vs sandbox) sem pré-consulta.
+
+	Prioridades de correspondência (ou restrito a `match_by` quando informado):
+	1. Match por name se fornecido, existente no banco e pertencente ao mesmo espaço.
 	2. Match por external_id se fornecido (identificador universal de ERP).
 	3. Para CRM Organization: match por cnpj ou tax_id (14 dígitos normalizados, formatado ou raw).
-	4. Para Contact: match por cpf ou tax_id (11 dígitos normalizados, formatado ou raw), ou email_id.
+	4. Para Contact: match por cpf ou tax_id (11 dígitos normalizados, formatado ou raw), ou email_id/email.
 	5. Para CRM Deal: match por external_id.
 	"""
-	name = item.get("name")
-	if name and frappe.db.exists(doctype, name):
-		return name
+	if match_by is not None:
+		match_by = str(match_by).strip()
+		if match_by and match_by not in ALLOWED_MATCH_BY:
+			frappe.throw(_("Unsupported match_by field: {0}.").format(match_by), frappe.ValidationError)
+		if not match_by:
+			match_by = None
 
-	external_id = item.get("external_id")
-	if external_id and str(external_id).strip():
-		found = frappe.db.get_value(doctype, {"external_id": str(external_id).strip()}, "name")
-		if found:
-			return found
+	space = _space_filters(doctype)
 
-	if doctype == "CRM Organization":
-		raw_cnpj = item.get("cnpj") or item.get("tax_id")
+	if match_by in (None, "name"):
+		name = item.get("name")
+		if name and frappe.db.exists(doctype, name):
+			if sandbox.is_sandbox_record(doctype, name) == sandbox.is_test_user():
+				return name
+
+	if match_by in (None, "external_id"):
+		external_id = item.get("external_id")
+		if external_id and str(external_id).strip():
+			found = frappe.db.get_value(
+				doctype,
+				{"external_id": str(external_id).strip(), **space},
+				"name",
+				order_by="creation asc",
+			)
+			if found:
+				return found
+
+	if doctype == "CRM Organization" and match_by in (None, "cnpj", "tax_id"):
+		raw_cnpj = (
+			item.get("cnpj")
+			if match_by == "cnpj"
+			else (item.get("tax_id") if match_by == "tax_id" else (item.get("cnpj") or item.get("tax_id")))
+		)
 		if raw_cnpj:
 			digits = only_digits(raw_cnpj)
 			if len(digits) == 14:
 				formatted = format_cnpj(digits)
-				found = frappe.db.get_value("CRM Organization", {"cnpj": ("in", [digits, formatted])}, "name")
+				found = frappe.db.get_value(
+					"CRM Organization",
+					{"cnpj": ("in", [digits, formatted]), **space},
+					"name",
+					order_by="creation asc",
+				)
 				if found:
 					return found
 
 	elif doctype == "Contact":
-		raw_cpf = item.get("cpf") or item.get("tax_id")
-		if raw_cpf:
-			digits = only_digits(raw_cpf)
-			if len(digits) == 11:
-				formatted = format_cpf(digits)
-				found = frappe.db.get_value("Contact", {"cpf": ("in", [digits, formatted])}, "name")
+		if match_by in (None, "cpf", "tax_id"):
+			raw_cpf = (
+				item.get("cpf")
+				if match_by == "cpf"
+				else (item.get("tax_id") if match_by == "tax_id" else (item.get("cpf") or item.get("tax_id")))
+			)
+			if raw_cpf:
+				digits = only_digits(raw_cpf)
+				if len(digits) == 11:
+					formatted = format_cpf(digits)
+					found = frappe.db.get_value(
+						"Contact",
+						{"cpf": ("in", [digits, formatted]), **space},
+						"name",
+						order_by="creation asc",
+					)
+					if found:
+						return found
+		if match_by in (None, "email_id", "email"):
+			email = (
+				item.get("email_id")
+				if match_by == "email_id"
+				else (item.get("email") if match_by == "email" else (item.get("email_id") or item.get("email")))
+			)
+			if email and str(email).strip():
+				clean_email = str(email).strip().lower()
+				found = frappe.db.get_value(
+					"Contact",
+					{"email_id": clean_email, **space},
+					"name",
+					order_by="creation asc",
+				)
 				if found:
 					return found
-		email = item.get("email_id") or item.get("email")
-		if email and str(email).strip():
-			clean_email = str(email).strip().lower()
-			found = frappe.db.get_value("Contact", {"email_id": clean_email}, "name")
-			if found:
-				return found
 
 	return None
+
+
+def prepare_upsert_payload(doctype: str, item: dict) -> dict:
+	"""Remove chaves internas de sistema e normaliza aliases de integração (tax_id, email) para os campos reais do Frappe."""
+	data = {k: v for k, v in item.items() if k not in SYSTEM_KEYS}
+	if doctype == "CRM Organization" and "tax_id" in data:
+		raw_tax = data.pop("tax_id")
+		if not data.get("cnpj") and raw_tax:
+			digits = only_digits(raw_tax)
+			if len(digits) == 14:
+				data["cnpj"] = digits
+	elif doctype == "Contact":
+		if "tax_id" in data:
+			raw_tax = data.pop("tax_id")
+			if not data.get("cpf") and raw_tax:
+				digits = only_digits(raw_tax)
+				if len(digits) == 11:
+					data["cpf"] = digits
+		if "email" in data:
+			raw_email = data.pop("email")
+			if not data.get("email_id") and raw_email:
+				data["email_id"] = str(raw_email).strip().lower()
+	else:
+		data.pop("tax_id", None)
+	return data
+
+
+def sync_contact_channels(doc, item_data: dict):
+	"""No Frappe, Contact.validate recalcula email_id, phone e mobile_no a partir de email_ids e phone_nos.
+	Em atualizações planas via API, sincroniza as tabelas filhas primárias para não perder o novo valor."""
+	if doc.doctype != "Contact":
+		return
+	if "email_id" in item_data and item_data["email_id"]:
+		new_email = str(item_data["email_id"]).strip().lower()
+		matched_row = None
+		for row in doc.get("email_ids") or []:
+			row.is_primary = 0
+			if (row.get("email_id") or "").strip().lower() == new_email:
+				matched_row = row
+		if matched_row:
+			matched_row.is_primary = 1
+		else:
+			doc.append("email_ids", {"email_id": new_email, "is_primary": 1})
+
+	if "mobile_no" in item_data and item_data["mobile_no"]:
+		new_mobile = str(item_data["mobile_no"]).strip()
+		matched_row = None
+		for row in doc.get("phone_nos") or []:
+			row.is_primary_mobile_no = 0
+			if (row.get("phone") or "").strip() == new_mobile:
+				matched_row = row
+		if matched_row:
+			matched_row.is_primary_mobile_no = 1
+		else:
+			doc.append("phone_nos", {"phone": new_mobile, "is_primary_mobile_no": 1})
+
+	if "phone" in item_data and item_data["phone"]:
+		new_phone = str(item_data["phone"]).strip()
+		matched_row = None
+		for row in doc.get("phone_nos") or []:
+			row.is_primary_phone = 0
+			if (row.get("phone") or "").strip() == new_phone:
+				matched_row = row
+		if matched_row:
+			matched_row.is_primary_phone = 1
+		else:
+			doc.append("phone_nos", {"phone": new_phone, "is_primary_phone": 1})
 
 
 @frappe.whitelist(methods=["POST"])
@@ -154,18 +278,20 @@ def bulk_upsert(doctype: str, records: list[dict] | str) -> dict:
 					exists = False
 					matched_name = None
 			# system-filled fields and child rows of another record are refused, as in the REST routes (audit M6)
-			item_data = {k: v for k, v in item.items() if k not in SYSTEM_KEYS}
+			item_data = prepare_upsert_payload(doctype, item)
 			api_guard.check_write(doctype, item_data, matched_name if exists else None)
 
 			if exists:
 				doc = frappe.get_doc(doctype, matched_name)
 				doc.check_permission("write")
 				doc.update(item_data)
+				sync_contact_channels(doc, item_data)
 				doc.save()
 				action = "updated"
 			else:
 				doc_data = {k: v for k, v in item_data.items() if k != "name"}
 				doc = frappe.get_doc({"doctype": doctype, **doc_data})
+				sync_contact_channels(doc, doc_data)
 				doc.check_permission("create")
 				doc.insert()
 				action = "created"

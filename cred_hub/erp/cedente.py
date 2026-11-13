@@ -121,11 +121,12 @@ def smart_regime(tax_regime, regimes: list[dict]) -> dict | None:
 
 
 def on_deal_update(doc, method=None):
-	"""CRM Deal on_update: the card entered the configured stage of the configured funnel -> send in background."""
+	"""CRM Deal on_update: the card entered the configured stage of the configured funnel -> emit webhook (Porta B) and/or send in background (Porta A)."""
 	if not doc.has_value_changed("status") or not doc.get("organization"):
 		return
 	import frappe
 
+	from cred_hub import webhooks
 	from cred_hub.billing import CREDIT_AND_COLLECTION, automation_allowed
 
 	from .settings import get_settings, is_sandbox_pipeline
@@ -135,11 +136,19 @@ def on_deal_update(doc, method=None):
 		return
 
 	settings = get_settings()
-	if not (settings.erp_enabled and settings.get("cedente_send_enabled")):
-		return
 	if settings.get("cedente_trigger") != STAGE or not settings.get("cedente_stage"):
 		return
-	if doc.pipeline != settings.get("cedente_pipeline") or doc.status != settings.cedente_stage:
+	if settings.get("cedente_pipeline") and doc.pipeline != settings.get("cedente_pipeline"):
+		return
+	if doc.status != settings.cedente_stage:
+		return
+
+	# Porta B (Push / Webhook Outbox): dispara para webhooks ativos inscritos em cedente.ready_to_register
+	if settings.get("cedente_send_enabled") or webhooks.has_active_subscribers("cedente.ready_to_register", pipeline=doc.pipeline):
+		webhooks.trigger_cedente_ready_to_register(doc)
+
+	# Porta A (Conector nativo / REST Genérico): envia ao ERP somente quando habilitado e fora do Sandbox
+	if not (settings.erp_enabled and settings.get("cedente_send_enabled")):
 		return
 	if is_sandbox_pipeline(doc.pipeline):
 		return
@@ -279,6 +288,64 @@ def ensure_enriched(org):
 	if changed:
 		org.flags.cred_hub_enriching = True
 		org.save(ignore_permissions=True)
+
+
+def cedente_payload(deal, org=None) -> dict:
+	"""Monta o payload público e sanitizado para o webhook cedente.ready_to_register (Porta B, ADR 0007 §4)."""
+	import frappe
+
+	from cred_hub import api_schema, sandbox
+	from .settings import get_settings
+
+	if isinstance(deal, str):
+		deal = frappe.get_doc("CRM Deal", deal)
+	if org is None and deal.get("organization") and frappe.db.exists("CRM Organization", deal.organization):
+		org = frappe.get_doc("CRM Organization", deal.organization)
+
+	if org is not None and not sandbox.skip_side_effects(deal):
+		ensure_enriched(org)
+
+	primary_contact_doc = None
+	primary_name = next((c.contact for c in deal.get("contacts") or [] if c.get("is_primary")), None)
+	primary_name = primary_name or next((c.contact for c in deal.get("contacts") or []), None)
+	if not primary_name and org is not None:
+		primary_name = frappe.db.get_value(
+			"Contact",
+			{"company_name": org.name, **sandbox.same_space("Contact")},
+			"name",
+			order_by="creation asc",
+		)
+	if primary_name and frappe.db.exists("Contact", primary_name):
+		primary_contact_doc = frappe.get_doc("Contact", primary_name)
+
+	committee = frappe.get_all(
+		"Cred Hub Credit Committee",
+		{"deal": deal.name, "status": ("in", ("Approved", "Approved with Reservations"))},
+		["approved_limit", "status"],
+		order_by="modified desc",
+		limit=1,
+	)
+	credit_info = committee[0] if committee else {}
+
+	mapped_fields = {}
+	if org is not None:
+		settings = get_settings()
+		if settings.get("cedente_field_map"):
+			records = _records(deal, org)
+			mapped_fields = _build(settings, records).payload
+
+	return {
+		"deal": deal.name,
+		"deal_external_id": deal.get("external_id") or None,
+		"pipeline": deal.pipeline,
+		"stage": deal.status,
+		"deal_value": deal.get("deal_value"),
+		"approved_limit": credit_info.get("approved_limit"),
+		"committee_status": credit_info.get("status"),
+		"organization": api_schema.record(org) if org is not None else None,
+		"primary_contact": api_schema.record(primary_contact_doc) if primary_contact_doc is not None else None,
+		"mapped_fields": mapped_fields,
+	}
 
 
 def _records(doc, org) -> dict:

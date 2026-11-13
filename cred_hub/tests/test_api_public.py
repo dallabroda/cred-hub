@@ -443,13 +443,30 @@ class TestApiPublic(IntegrationTestCase):
 			self.assertEqual(build.call_count, 3)
 		_catalog().update_field(self.deal_field, label=DEAL_TEXT[0])
 
-	def test_openapi_needs_a_key_or_a_signed_in_user(self):
+	def test_openapi_guest_hides_custom_fields_and_authenticated_shows_them(self):
+		api_schema.openapi_spec()  # populate site cache with custom fields and pipelines
 		frappe.set_user("Guest")
-		with self.assertRaises(frappe.PermissionError):
-			frappe.is_whitelisted(api_keys.get_openapi_spec)
+		frappe.local.credhub_api_key = None
+		frappe.is_whitelisted(api_keys.get_openapi_spec)
+		guest_spec = api_keys.get_openapi_spec()
+		guest_card = guest_spec["components"]["schemas"]["Card"]["properties"]
+		guest_contact = guest_spec["components"]["schemas"]["Contact"]["properties"]
+		self.assertNotIn(self.deal_field, guest_card)
+		self.assertNotIn(self.deal_select, guest_card)
+		self.assertNotIn(self.contact_field, guest_contact)
+		self.assertNotIn(self.pipeline, guest_card["pipeline"]["enum"])
+		self.assertNotIn(self.other, guest_card["pipeline"]["enum"])
+		self.assertEqual(guest_card["pipeline"]["enum"], ["vendas", "credito"])
+
 		token = self.create(("pipelines_read",))["token"]
 		self.call(token, "/api/method/cred_hub.api_keys.get_openapi_spec")
-		self.assertIn("paths", api_keys.get_openapi_spec())
+		auth_spec = api_keys.get_openapi_spec()
+		auth_card = auth_spec["components"]["schemas"]["Card"]["properties"]
+		auth_contact = auth_spec["components"]["schemas"]["Contact"]["properties"]
+		self.assertIn("paths", auth_spec)
+		self.assertIn(self.deal_field, auth_card)
+		self.assertIn(self.contact_field, auth_contact)
+		self.assertIn(self.pipeline, auth_card["pipeline"]["enum"])
 
 	def test_openapi_enums_show_only_the_key_pipelines(self):
 		api_schema.openapi_spec()  # base cached with every pipeline

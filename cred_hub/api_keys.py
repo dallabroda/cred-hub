@@ -570,7 +570,12 @@ def _check_route(key_name: str) -> bool:
 # Credit routes the plan gates (credtech#398). Reads of what already exists stay open (nothing disappears on a
 # downgrade, as in cred-hub#116); every gated method is also gated inside the function (billing.requires_feature).
 PLAN_GATED_SCOPES = {"credit_write", "credit_paid_queries"}
-PLAN_GATED_METHODS = {"cred_hub.credit_check.api.upload_checklist_document"}
+PLAN_GATED_METHODS = {
+	"cred_hub.credit_check.api.upload_checklist_document",
+	"cred_hub.erp.push.upsert_titles",
+	"cred_hub.erp.push.settle_titles",
+	"cred_hub.erp.push.register_result",
+}
 
 
 def _check_plan_feature():
@@ -635,10 +640,16 @@ def _limits(custom_limit) -> tuple[int, int]:
 def _write_weight() -> int:
 	"""A batch call counts one write per record (audit L4), up to the batch maximum."""
 	kind, target, _verb = _route()
-	if kind != "method" or target not in ("cred_hub.bulk.bulk_upsert", "cred_hub.bulk.bulk_delete"):
+	batch_arg = {
+		"cred_hub.bulk.bulk_upsert": "records",
+		"cred_hub.bulk.bulk_delete": "names",
+		"cred_hub.erp.push.upsert_titles": "titles",
+		"cred_hub.erp.push.settle_titles": "settlements",
+	}.get(target if kind == "method" else None)
+	if not batch_arg:
 		return 1
 	form = frappe.local.form_dict or {}
-	items = form.get("records") if target.endswith("upsert") else form.get("names")
+	items = form.get(batch_arg)
 	try:
 		items = frappe.parse_json(items) if isinstance(items, str) else items
 	except Exception:
@@ -1162,11 +1173,20 @@ def upsert_record(doctype: str, record: dict | str, match_by: str | None = None)
 	"""Cria ou atualiza um único registro com resolução inteligente de identidade (credtech#375).
 
 	- Requer chave de API com escopo de escrita correspondente (cards_write, contacts_write, organizations_write).
-	- Resolve o registro automaticamente por name, external_id, cnpj/tax_id (14 dígitos) ou cpf/tax_id (11 dígitos) / email_id.
-	- Devolve o status ('created' ou 'updated'), o ID interno do Frappe (name) e o external_id.
+	- Resolve o registro automaticamente no mesmo espaço (produção vs sandbox) por name, external_id, cnpj/tax_id ou cpf/tax_id/email_id (ou restrito a `match_by`).
+	- Devolve o status ('created' ou 'updated'), o ID interno do Frappe (name), o external_id e o registro público sanitizado (`api_schema.record`).
 	"""
-	from cred_hub import api_guard
-	from cred_hub.bulk import SUPPORTED_DOCTYPES, SYSTEM_KEYS, resolve_record_name
+	from cred_hub import api_guard, api_schema
+	from cred_hub.bulk import (
+		SUPPORTED_DOCTYPES,
+		prepare_upsert_payload,
+		resolve_record_name,
+		sync_contact_channels,
+	)
+
+	key_info = getattr(frappe.local, "credhub_api_key", None)
+	if not key_info:
+		frappe.throw(_("This method is only accessible via API Key."), frappe.PermissionError)
 
 	if doctype not in SUPPORTED_DOCTYPES:
 		frappe.throw(_("Upsert operation is not supported for {0}.").format(doctype), frappe.ValidationError)
@@ -1180,30 +1200,38 @@ def upsert_record(doctype: str, record: dict | str, match_by: str | None = None)
 	if not isinstance(record, dict) or not record:
 		frappe.throw(_("The 'record' parameter must be a non-empty JSON object."), frappe.ValidationError)
 
-	matched_name = resolve_record_name(doctype, record)
+	if record.get("doctype") not in (None, "", doctype):
+		frappe.throw(_("Record doctype must be {0}.").format(doctype), frappe.ValidationError)
+
+	matched_name = resolve_record_name(doctype, record, match_by=match_by)
 	exists = bool(matched_name)
 	if exists and getattr(frappe.local, "credhub_api_is_test", False):
 		if not frappe.has_permission(doctype, "read", doc=matched_name):
 			exists = False
 			matched_name = None
 
-	data = {k: v for k, v in record.items() if k not in SYSTEM_KEYS}
+	data = prepare_upsert_payload(doctype, record)
 	api_guard.check_write(doctype, data, matched_name if exists else None)
 
 	if exists:
 		doc = frappe.get_doc(doctype, matched_name)
 		doc.check_permission("write")
 		doc.update(data)
+		sync_contact_channels(doc, data)
 		doc.save()
 		action = "updated"
 	else:
 		doc_data = {k: v for k, v in data.items() if k != "name"}
 		doc = frappe.get_doc({"doctype": doctype, **doc_data})
+		sync_contact_channels(doc, doc_data)
 		doc.check_permission("create")
 		doc.insert()
 		action = "created"
 
-	frappe.db.commit()
+	public_data = api_schema.record(doc)
+	if "credit_read" not in _scopes(key_info["name"]):
+		for field in CREDIT_FIELDS:
+			public_data.pop(field, None)
 
 	return {
 		"ok": True,
@@ -1211,7 +1239,7 @@ def upsert_record(doctype: str, record: dict | str, match_by: str | None = None)
 		"name": doc.name,
 		"doctype": doc.doctype,
 		"external_id": doc.get("external_id") or None,
-		"data": doc.as_dict(),
+		"data": public_data,
 	}
 
 
