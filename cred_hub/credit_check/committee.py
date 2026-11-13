@@ -216,6 +216,152 @@ def _parse_brl_numbers(text: str) -> list[float]:
 	return values
 
 
+DOC_VALIDATION_SCHEMA: dict[str, Any] = {
+	"type": "OBJECT",
+	"properties": {
+		"is_valid_type": {
+			"type": "BOOLEAN",
+			"description": "True se o documento anexado corresponde ao tipo solicitado pelo analista de crédito.",
+		},
+		"detected_type": {
+			"type": "STRING",
+			"description": "Tipo do documento identificado no texto (ex: Contrato Social, Extrato Bancário, Balanço Patrimonial, CND, Comprovante de Endereço, etc.).",
+		},
+		"cnpj_matches": {
+			"type": "BOOLEAN",
+			"description": "True se o CNPJ impresso no documento confere com o CNPJ esperado da empresa.",
+		},
+		"detected_cnpj": {
+			"type": "STRING",
+			"description": "CNPJ principal encontrado no documento com máscara ou vazio.",
+		},
+		"is_signed": {
+			"type": "BOOLEAN",
+			"description": "True se há evidência de assinatura física, digital (Gov.br/ICP) ou chancela de Junta Comercial / Contador com CRC.",
+		},
+		"is_expired": {
+			"type": "BOOLEAN",
+			"description": "True se a certidão/documento tiver data de validade vencida.",
+		},
+		"expiration_date": {
+			"type": "STRING",
+			"description": "Data de validade ou competência em formato YYYY-MM-DD se identificada, ou vazio.",
+		},
+		"rejection_risk": {
+			"type": "BOOLEAN",
+			"description": "True se há motivo claro para rejeição pelo analista de crédito.",
+		},
+		"rejection_reasons": {
+			"type": "ARRAY",
+			"items": {"type": "STRING"},
+			"description": "Lista de motivos objetivos para rejeição, se houver.",
+		},
+		"extracted_metrics": {
+			"type": "OBJECT",
+			"properties": {
+				"capital_social": {"type": "NUMBER", "description": "Capital social identificado em R$ se aplicável"},
+				"faturamento_anual": {"type": "NUMBER", "description": "Faturamento anual ou receita bruta em R$ se aplicável"},
+				"administrador": {"type": "STRING", "description": "Nome do sócio administrador identificado"},
+				"regime_assinatura": {"type": "STRING", "description": "Isoladamente ou Em conjunto"},
+			},
+		},
+		"summary": {
+			"type": "STRING",
+			"description": "Resumo executivo de 1 a 2 frases para o analista de crédito sobre a conformidade do documento.",
+		},
+	},
+	"required": ["is_valid_type", "detected_type", "cnpj_matches", "rejection_risk", "summary"],
+}
+
+
+def validate_document_with_ai(
+	organization_name: str,
+	item_key: str,
+	label: str,
+	file_name: str,
+	text: str,
+) -> dict[str, Any] | None:
+	"""Valida o documento com o Google Vertex AI (Gemini Flash-Lite). Retorna None se não configurado ou erro."""
+	if not text or not text.strip():
+		return None
+	try:
+		from cred_hub.credit_check.opinion import is_configured as is_vertex_configured, vertex_client
+
+		if not is_vertex_configured():
+			return None
+	except Exception:
+		return None
+
+	org_doc = (
+		frappe.db.get_value("CRM Organization", organization_name, ["organization_name", "cnpj"], as_dict=True)
+		or {}
+	)
+	org_title = org_doc.get("organization_name") or organization_name
+	org_cnpj = format_cnpj(only_digits(org_doc.get("cnpj") or ""))
+
+	system = (
+		"Você é um auditor de conformidade documental para análise de crédito de empresas (PJ). "
+		"Sua função é avaliar se o documento anexado por um cliente PJ corresponde ao item solicitado, "
+		"se pertence à empresa esperada e se há indícios de invalidade, vencimento ou inconsistência. "
+		"Responda estritamente em conformidade com o esquema JSON solicitado."
+	)
+	text_sample = text[:8000]
+	user_text = (
+		f"Dados da Empresa no CRM:\n"
+		f"- Razão Social: {org_title}\n"
+		f"- CNPJ: {org_cnpj}\n\n"
+		f"Item Solicitado na Pasta Digital:\n"
+		f"- Chave: {item_key}\n"
+		f"- Descrição: {label or item_key}\n"
+		f"- Arquivo: {file_name}\n\n"
+		f"Conteúdo do Documento (Amostra extraída):\n"
+		f"---\n{text_sample}\n---"
+	)
+
+	try:
+		client = vertex_client()
+		raw, result = client.generate_json(
+			model="gemini-3.5-flash-lite",
+			system=system,
+			user_text=user_text,
+			schema=DOC_VALIDATION_SCHEMA,
+			max_output_tokens=2048,
+		)
+		rejection_reasons = [str(r).strip() for r in (raw.get("rejection_reasons") or []) if str(r).strip()]
+		rejection_risk = bool(raw.get("rejection_risk"))
+		if not rejection_risk and rejection_reasons:
+			rejection_risk = True
+
+		suggested_action = (
+			"reject"
+			if rejection_risk
+			else ("verify" if raw.get("is_valid_type") and raw.get("cnpj_matches") else "review")
+		)
+		suggested_reason = " · ".join(rejection_reasons) if rejection_risk else ""
+
+		return {
+			"ai_validated": True,
+			"model": "gemini-3.5-flash-lite",
+			"is_valid_type": bool(raw.get("is_valid_type")),
+			"detected_type": str(raw.get("detected_type") or "").strip(),
+			"cnpj_matches": bool(raw.get("cnpj_matches")),
+			"detected_cnpj": str(raw.get("detected_cnpj") or "").strip(),
+			"is_signed": bool(raw.get("is_signed")),
+			"is_expired": bool(raw.get("is_expired")),
+			"expiration_date": str(raw.get("expiration_date") or "").strip(),
+			"rejection_risk": rejection_risk,
+			"rejection_reasons": rejection_reasons,
+			"suggested_action": suggested_action,
+			"suggested_reason": suggested_reason,
+			"extracted_metrics": raw.get("extracted_metrics") or {},
+			"summary": str(raw.get("summary") or "").strip(),
+			"cost_usd": result.cost_usd,
+		}
+	except Exception as e:
+		frappe.log_error(title="Cred Hub: Falha na validação IA de documento", message=str(e))
+		return None
+
+
 def extract_document_insights(
 	organization_name: str,
 	item_key: str,
@@ -223,7 +369,7 @@ def extract_document_insights(
 	file_name: str = "",
 	label: str = "",
 ) -> dict[str, Any]:
-	"""Extrai indicadores estruturados do arquivo anexado (Faturamento, Balanço, Contrato Social, Endividamento)."""
+	"""Extrai indicadores estruturados do arquivo anexado (Faturamento, Balanço, Contrato Social, Endividamento) e valida via IA."""
 	path = _resolve_file_path(file_url)
 	text = _extract_raw_text(path) if path else ""
 	org_cnpj = only_digits(frappe.db.get_value("CRM Organization", organization_name, "cnpj") or "")
@@ -286,6 +432,59 @@ def extract_document_insights(
 			max_debt = max(brl_values)
 			highlights.append(f"Maior exposição/saldo identificado: R$ {max_debt:,.2f}")
 
+	# Executa validação inteligente com Vertex AI (Gemini Flash-Lite)
+	clean_label = label or item_key.replace("_", " ").title()
+	ai_result = validate_document_with_ai(
+		organization_name=organization_name,
+		item_key=item_key,
+		label=clean_label,
+		file_name=file_name or os.path.basename(file_url),
+		text=text,
+	)
+
+	if ai_result:
+		if ai_result.get("rejection_risk"):
+			warnings.append(f"IA: Risco de rejeição — {ai_result['suggested_reason']}")
+		elif ai_result.get("summary"):
+			highlights.append(f"IA: {ai_result['summary']}")
+		suggested_action = ai_result["suggested_action"]
+		suggested_reason = ai_result["suggested_reason"]
+		rejection_risk = ai_result["rejection_risk"]
+	else:
+		# Fallback heurístico caso Vertex AI não esteja configurado
+		if cnpj_match is False and cnpjs_found:
+			suggested_action = "reject"
+			suggested_reason = f"CNPJ lido no arquivo ({', '.join(format_cnpj(c) for c in cnpjs_found[:2])}) diverge do cadastro ({format_cnpj(org_cnpj)})"
+			rejection_risk = True
+		elif cnpj_match is True:
+			suggested_action = "verify"
+			suggested_reason = ""
+			rejection_risk = False
+		else:
+			suggested_action = "review"
+			suggested_reason = ""
+			rejection_risk = False
+
+		ai_result = {
+			"ai_validated": False,
+			"is_valid_type": True,
+			"detected_type": clean_label,
+			"cnpj_matches": cnpj_match,
+			"detected_cnpj": format_cnpj(cnpjs_found[0]) if cnpjs_found else "",
+			"rejection_risk": rejection_risk,
+			"rejection_reasons": [suggested_reason] if suggested_reason else [],
+			"suggested_action": suggested_action,
+			"suggested_reason": suggested_reason,
+			"summary": (
+				"Validação heurística: "
+				+ (
+					"CNPJ conferido"
+					if cnpj_match
+					else ("CNPJ diverge do cadastro" if cnpj_match is False else "Aguardando conferência")
+				)
+			),
+		}
+
 	if not highlights and file_url:
 		ext = os.path.splitext(file_name or file_url)[1].upper().lstrip(".") or "DOC"
 		highlights.append(f"Arquivo {ext} catalogado e vinculado ao dossiê ({len(text)} caracteres lidos)")
@@ -303,6 +502,10 @@ def extract_document_insights(
 		"highlights": highlights,
 		"warnings": warnings,
 		"summary_text": " · ".join(summary_parts),
+		"ai_validation": ai_result,
+		"suggested_action": suggested_action,
+		"suggested_reason": suggested_reason,
+		"rejection_risk": rejection_risk,
 	}
 
 
