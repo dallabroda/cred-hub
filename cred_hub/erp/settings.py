@@ -4,7 +4,9 @@ Credentials live in the Single "Cred Hub ERP Settings" (Password fields, only Sy
 client company, so the settings are already per company.
 """
 
+import re
 import time
+import unicodedata
 
 import frappe
 from frappe import _
@@ -434,8 +436,12 @@ def create_custom_crm_field(target_doctype: str, label: str, fieldtype: str = "D
 	if not clean_label:
 		frappe.throw(_("Field label is required."))
 
-	base_slug = frappe.scrub(clean_label)
-	fieldname = f"custom_{base_slug}" if not base_slug.startswith("custom_") else base_slug
+	# frappe.scrub keeps accents ("situação"), which is not a valid fieldname: fold to ASCII first
+	ascii_label = unicodedata.normalize("NFKD", clean_label).encode("ascii", "ignore").decode("ascii")
+	base_slug = re.sub(r"[^a-z0-9_]+", "_", ascii_label.lower()).strip("_")[:60]
+	if not base_slug:
+		frappe.throw(_("Field label must contain letters or numbers."))
+	fieldname = base_slug if base_slug.startswith("custom_") else f"custom_{base_slug}"
 
 	meta = frappe.get_meta(target_doctype)
 	if meta.has_field(fieldname):
@@ -464,4 +470,3 @@ def create_custom_crm_field(target_doctype: str, label: str, fieldtype: str = "D
 		"label": clean_label,
 		"already_exists": False,
 	}
-
