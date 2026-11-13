@@ -173,3 +173,13 @@ for _doctype, _event, _method in (
 
 # Conversão de lead pela chave de teste só encontra contatos e organizações do sandbox (sem oráculo de dado real)
 extend_doctype_class = {"CRM Lead": ["cred_hub.sandbox.SandboxLeadMixin"]}
+
+# Armazenamento de anexos no Amazon S3 (Pasta Digital, dossiês, pareceres e anexos de cards):
+# quando `credhub_s3` está configurado no site/bench, todos os arquivos novos vão direto para o S3;
+# sem configuração (dev local / testes unitários), cai automaticamente no disco local.
+write_file = "cred_hub.storage.s3.write_file"
+delete_file_data_content = "cred_hub.storage.s3.delete_file_data_content"
+file_exists = "cred_hub.storage.s3.file_exists"
+read_file_content = "cred_hub.storage.s3.read_file_content"
+serve_private_file = "cred_hub.storage.s3.serve_private_file"
+serve_public_file = "cred_hub.storage.s3.serve_public_file"

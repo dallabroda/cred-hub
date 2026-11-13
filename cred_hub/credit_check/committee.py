@@ -156,36 +156,31 @@ def _resolve_file_path(file_url: str) -> str | None:
 	return None
 
 
-def _extract_raw_text(file_path: str) -> str:
-	if not file_path or not os.path.isfile(file_path):
+def _extract_raw_text_from_bytes(raw_bytes: bytes, ext: str) -> str:
+	if not raw_bytes:
 		return ""
-	ext = os.path.splitext(file_path)[1].lower()
+	ext = (ext or "").lower()
 	try:
 		if ext in (".csv", ".txt"):
-			with open(file_path, "rb") as f:
-				raw = f.read(512 * 1024)
-			return raw.decode("utf-8", errors="ignore")
+			return raw_bytes[: 512 * 1024].decode("utf-8", errors="ignore")
 		if ext == ".pdf":
 			for mod_name in ("pypdf", "PyPDF2"):
 				try:
 					pdf_mod = __import__(mod_name)
-					with open(file_path, "rb") as f:
-						reader = pdf_mod.PdfReader(io.BytesIO(f.read()))
-						pages_text = []
-						for p in reader.pages[:15]:
-							pages_text.append(p.extract_text() or "")
-						return "\n".join(pages_text)
+					reader = pdf_mod.PdfReader(io.BytesIO(raw_bytes))
+					pages_text = []
+					for p in reader.pages[:15]:
+						pages_text.append(p.extract_text() or "")
+					return "\n".join(pages_text)
 				except Exception:
 					continue
-			with open(file_path, "rb") as f:
-				raw = f.read(512 * 1024)
-			ascii_chunks = re.findall(rb"[\x20-\x7E\xC0-\xFF]{4,}", raw)
+			ascii_chunks = re.findall(rb"[\x20-\x7E\xC0-\xFF]{4,}", raw_bytes[: 512 * 1024])
 			return "\n".join(c.decode("latin-1", errors="ignore") for c in ascii_chunks[:2000])
 		if ext == ".xlsx":
 			try:
 				import openpyxl
 
-				wb = openpyxl.load_workbook(file_path, data_only=True, read_only=True)
+				wb = openpyxl.load_workbook(io.BytesIO(raw_bytes), data_only=True, read_only=True)
 				lines = []
 				for sheet in wb.worksheets[:3]:
 					for row in sheet.iter_rows(max_row=200, values_only=True):
@@ -198,6 +193,17 @@ def _extract_raw_text(file_path: str) -> str:
 	except Exception:
 		return ""
 	return ""
+
+
+def _extract_raw_text(file_path: str) -> str:
+	if not file_path or not os.path.isfile(file_path):
+		return ""
+	ext = os.path.splitext(file_path)[1].lower()
+	try:
+		with open(file_path, "rb") as f:
+			return _extract_raw_text_from_bytes(f.read(), ext)
+	except Exception:
+		return ""
 
 
 def _parse_brl_numbers(text: str) -> list[float]:
@@ -224,8 +230,11 @@ def extract_document_insights(
 	label: str = "",
 ) -> dict[str, Any]:
 	"""Extrai indicadores estruturados do arquivo anexado (Faturamento, Balanço, Contrato Social, Endividamento)."""
-	path = _resolve_file_path(file_url)
-	text = _extract_raw_text(path) if path else ""
+	from cred_hub.storage.s3 import read_bytes_by_url
+
+	raw_doc_bytes = read_bytes_by_url(file_url)
+	ext_hint = os.path.splitext(file_name or file_url or "")[1].lower()
+	text = _extract_raw_text_from_bytes(raw_doc_bytes, ext_hint) if raw_doc_bytes else ""
 	org_cnpj = only_digits(frappe.db.get_value("CRM Organization", organization_name, "cnpj") or "")
 
 	cnpjs_found = list(
