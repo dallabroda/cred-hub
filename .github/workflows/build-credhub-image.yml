@@ -13,11 +13,11 @@ on:
       cred_hub_ref:
         description: 'dallabroda/cred-hub tag/ref'
         required: false
-        default: 'v0.35.0'
+        default: 'v0.36.0'
       frappe_branch:
         description: 'dallabroda/frappe tag/ref'
         required: false
-        default: 'ch-16.53.0-11'
+        default: 'ch-16.53.0-12'
       frappe_docker_ref:
         description: 'dallabroda/frappe_docker commit SHA'
         required: false
@@ -50,10 +50,10 @@ jobs:
           if [[ "${{ github.ref }}" == refs/tags/v* ]] && [ -z "${{ inputs.cred_hub_ref }}" ]; then
             CH_REF="${GITHUB_REF_NAME}"
           else
-            CH_REF="${{ inputs.cred_hub_ref || 'v0.35.0' }}"
+            CH_REF="${{ inputs.cred_hub_ref || 'v0.36.0' }}"
           fi
           FRAPPE_PATH="https://github.com/dallabroda/frappe"
-          FRAPPE_BRANCH="${{ inputs.frappe_branch || 'ch-16.53.0-11' }}"
+          FRAPPE_BRANCH="${{ inputs.frappe_branch || 'ch-16.53.0-12' }}"
           FRAPPE_DOCKER_REPO="https://github.com/dallabroda/frappe_docker"
           FRAPPE_DOCKER_REF="${{ inputs.frappe_docker_ref || '234e64fe9254ad012f7e1a5b344381fefd3d0153' }}"
 

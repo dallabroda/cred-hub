@@ -37,7 +37,8 @@ scheduler_events = {
 	},
 }
 
-# Chaves da API do HubTech (credtech#175): Bearer hub_..., escopos, rate limit e log das escritas
+# Chaves da API do HubTech (credtech#175) e roteador REST soberano /api/v1/*: Bearer hub_..., escopos, rate limit e log
+before_request = ["cred_hub.rest_v1.ensure_registered"]
 auth_hooks = ["cred_hub.api_keys.authenticate"]
 after_request = ["cred_hub.api_keys.after_request"]
 # O usuário técnico de uma chave nunca entra pela tela

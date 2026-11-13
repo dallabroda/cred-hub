@@ -143,7 +143,9 @@ METHODS = {
 	"upload_file": "files_write",
 	# Comentários / Timeline
 	"frappe.desk.form.utils.add_comment": "comments_write",
+	"cred_hub.timeline.add_comment": "comments_write",
 	"cred_hub.timeline.get_comments": "comments_read",
+	"cred_hub.health.check": "pipelines_read",
 	# Sincronização incremental com exclusões
 	"cred_hub.sync.get_deleted_records": "sync_deletes",
 	# Operações em lote e Upsert Inteligente (Batch & Single Upsert API)
@@ -225,6 +227,9 @@ def _split_token(token: str):
 
 
 def authenticate():
+	from cred_hub import rest_v1
+
+	rest_v1.ensure_registered()
 	header = frappe.get_request_header("Authorization", "") or ""
 	scheme, _sep, token = header.partition(" ")
 	if scheme.lower() in ("token", "basic"):
@@ -237,8 +242,10 @@ def authenticate():
 	# A key never gets a server traceback, whatever the site's allow_error_traceback says (audit M14)
 	frappe.local.flags.disable_traceback = True
 	_set_header("X-Request-Id", request_id)
+	req_verb = (frappe.request.method or "GET").upper()
+	req_path = unquote(frappe.request.path or "")
 	# Version that serves the call (and Deprecation/Sunset when the route is on its way out), on every answer
-	set_version_headers(_set_header, (frappe.request.method or "GET").upper(), unquote(frappe.request.path or ""))
+	set_version_headers(_set_header, req_verb, req_path)
 	# An IP that keeps failing authentication is stopped before any lookup or hashing
 	_check_auth_failures()
 	key_id, secret = _split_token(token.strip())
@@ -265,10 +272,11 @@ def authenticate():
 	frappe.local.credhub_api_is_test = bool(cint(key.is_test))
 	if frappe.local.credhub_api_is_test:
 		_set_header(TEST_HEADER, "1")
+	rest_v1.normalize_v1_form(req_path, req_verb)
 	try:
 		write = _check_route(key.name)
-	except KeyNotAllowed:
-		_refuse(key, request_id, start_time, 403, KeyNotAllowed)
+	except (KeyNotAllowed, frappe.DoesNotExistError, rest_v1.MethodNotAllowedError) as route_exc:
+		_refuse(key, request_id, start_time, getattr(route_exc, "http_status_code", 403), route_exc)
 	rate_info = _rate_limit(key.name, write, key.custom_rate_limit, _write_weight() if write else 1)
 	# set_user zera o form_dict (os argumentos da chamada); o OAuth do Frappe faz o mesmo cuidado
 	form_dict = frappe.local.form_dict
@@ -343,8 +351,15 @@ def _refuse_auth(key_name: str | None):
 	raise frappe.AuthenticationError
 
 
+def _safe_route():
+	try:
+		return _route()
+	except Exception:
+		return None, None, (getattr(frappe.request, "method", None) or "GET").upper()
+
+
 def _log_refusal(key_name: str, status: int, request_id: str | None = None, start_time: float | None = None):
-	kind, target, verb = _route()
+	kind, target, verb = _safe_route()
 	frappe.get_doc(
 		{
 			"doctype": LOG,
@@ -362,7 +377,7 @@ def _log_refusal(key_name: str, status: int, request_id: str | None = None, star
 
 
 def _refuse(key, request_id: str, start_time: float, status: int, exc):
-	"""403 of a key whose secret was verified: logged and counted in its rate limit, so probing the scopes is visible
+	"""403/404/405 of a key whose secret was verified: logged and counted in its rate limit, so probing the scopes is visible
 	and throttled (audit M13). The log is committed: the request fails."""
 	try:
 		_rate_limit(key.name, False, key.custom_rate_limit)
@@ -371,7 +386,7 @@ def _refuse(key, request_id: str, start_time: float, status: int, exc):
 			_log_refusal(key.name, status, request_id, start_time)
 		except Exception:
 			frappe.log_error(title="Cred Hub API: falha ao registrar chamada recusada")
-	if exc is KeyNotAllowed:
+	if exc is KeyNotAllowed or isinstance(exc, KeyNotAllowed):
 		_deny()
 	raise exc
 
@@ -446,7 +461,12 @@ def _deny():
 
 
 def _resource_has_name() -> bool:
+	from cred_hub import rest_v1
+
 	path = unquote(frappe.request.path or "")
+	if rest_v1.is_sovereign_v1_path(path):
+		verb = (frappe.request.method or "GET").upper()
+		return bool(rest_v1.resolve_for_auth(path, verb)[3])
 	for prefix in ("/api/resource/", "/api/v2/document/"):
 		if path.startswith(prefix):
 			return len([p for p in path[len(prefix) :].split("/") if p]) >= 2
@@ -454,7 +474,12 @@ def _resource_has_name() -> bool:
 
 
 def _resource_name() -> str | None:
+	from cred_hub import rest_v1
+
 	path = unquote(frappe.request.path or "")
+	if rest_v1.is_sovereign_v1_path(path):
+		verb = (frappe.request.method or "GET").upper()
+		return rest_v1.resolve_for_auth(path, verb)[3]
 	for prefix in ("/api/resource/", "/api/v2/document/"):
 		if path.startswith(prefix):
 			parts = [p for p in path[len(prefix) :].split("/") if p]
@@ -464,8 +489,13 @@ def _resource_name() -> str | None:
 
 def _route():
 	"""(kind, target, verbo): kind é resource, method, file_download, other (barrado) ou None fora da API."""
+	from cred_hub import rest_v1
+
 	path = unquote(frappe.request.path or "")
 	verb = (frappe.request.method or "GET").upper()
+	if rest_v1.is_sovereign_v1_path(path):
+		kind, target, eff_verb, _rec_name = rest_v1.resolve_for_auth(path, verb)
+		return kind, target, eff_verb
 	if path.startswith("/private/files/") or path.startswith("/files/"):
 		parts = path.strip("/").split("/")
 		return "file_download", parts[-1] if len(parts) > 1 else "", verb
@@ -699,8 +729,19 @@ def _rate_limit(key_name: str, write: bool, custom_limit: int | None = None, wei
 
 
 def after_request(response=None, request=None):
+	from cred_hub import rest_v1
+
+	req_path = getattr(request, "path", None) or (
+		getattr(frappe.request, "path", None) if getattr(frappe, "request", None) else ""
+	)
+	is_v1 = rest_v1.is_sovereign_v1_path(req_path)
 	info = getattr(frappe.local, "credhub_api_key", None)
 	if not info:
+		if is_v1 and response is not None and (getattr(response, "status_code", 200) or 200) >= 400:
+			hdr_req_id = None
+			if hasattr(frappe.local, "response_headers"):
+				hdr_req_id = frappe.local.response_headers.get("X-Request-Id")
+			rest_v1.clean_v1_error_response(response, hdr_req_id)
 		return
 	try:
 		request_id = info.get("request_id") or f"req_{secrets.token_hex(8)}"
@@ -718,7 +759,10 @@ def after_request(response=None, request=None):
 				response.headers["X-RateLimit-Reset"] = str(rate_info.get("reset", 0))
 
 		if status_code >= 400 and response is not None:
-			_error_envelope(response, request_id)
+			if is_v1:
+				status_code = rest_v1.clean_v1_error_response(response, request_id)
+			else:
+				_error_envelope(response, request_id)
 		if info.get("idempotency"):
 			_finish_idempotency(info["idempotency"], response)
 		write = bool(info.get("write"))
@@ -735,7 +779,7 @@ def after_request(response=None, request=None):
 			frappe.cache.set_value(touch_key, 1, expires_in_sec=LAST_USED_THROTTLE_SECONDS)
 			touched = True
 		# Auditoria: escritas e erros; leituras com sucesso não viram linha (audit M12)
-		kind, target, verb = _route()
+		kind, target, verb = _safe_route()
 		if not write and status_code < 400:
 			if touched:
 				frappe.db.commit()
@@ -1244,17 +1288,23 @@ def upsert_record(doctype: str, record: dict | str, match_by: str | None = None)
 
 
 @frappe.whitelist(allow_guest=True)
-def get_openapi_spec(openapi_version: str | None = None, format: str | None = None) -> dict:
-	"""OpenAPI 3.1 (or 3.0.3) of this company's API (credtech#375).
+def get_openapi_spec(
+	openapi_version: str | None = None,
+	format: str | None = None,
+	include_legacy: int | bool = False,
+) -> dict:
+	"""OpenAPI 3.1 (or 3.0.3) of this company's API (v1 sovereign surface by default).
 
 	- Authenticated users/keys get custom fields and visible pipelines.
 	- Guests get the public canonical schema with generic pipeline names.
 	- format="postman" exports a ready Postman Collection v2.1.
 	- openapi_version="3.0" converts to OpenAPI 3.0.3 for legacy ERP tooling.
+	- include_legacy=1 includes legacy /api/resource/* and /api/method/* aliases alongside /api/v1/*.
 	"""
 	from cred_hub.api_schema import openapi_spec, to_openapi_3_0, to_postman_collection
 
-	spec = openapi_spec()
+	surface = "all" if frappe.utils.sbool(include_legacy) else "v1"
+	spec = openapi_spec(surface=surface)
 	if format == "postman":
 		return to_postman_collection(spec)
 	if openapi_version in ("3.0", "3.0.3"):
@@ -1263,11 +1313,12 @@ def get_openapi_spec(openapi_version: str | None = None, format: str | None = No
 
 
 @frappe.whitelist(allow_guest=True)
-def get_postman_collection() -> dict:
-	"""Downloads a ready Postman Collection v2.1 (credtech#375)."""
+def get_postman_collection(include_legacy: int | bool = False) -> dict:
+	"""Downloads a ready Postman Collection v2.1 (sovereign /api/v1/* surface by default)."""
 	from cred_hub.api_schema import openapi_spec, to_postman_collection
 
-	return to_postman_collection(openapi_spec())
+	surface = "all" if frappe.utils.sbool(include_legacy) else "v1"
+	return to_postman_collection(openapi_spec(surface=surface))
 
 
 @frappe.whitelist()
