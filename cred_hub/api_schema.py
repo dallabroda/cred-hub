@@ -817,7 +817,22 @@ def _visible_enums(spec: dict) -> dict:
 	if is_admin():
 		return spec
 	if getattr(frappe.session, "user", None) == "Guest":
-		schemas = dict(spec["components"]["schemas"])
+		schemas = {}
+		for schema_name, schema_def in spec["components"]["schemas"].items():
+			if not isinstance(schema_def, dict) or not isinstance(schema_def.get("properties"), dict):
+				schemas[schema_name] = schema_def
+				continue
+			clean_props = {
+				fname: fdef
+				for fname, fdef in schema_def["properties"].items()
+				if not (isinstance(fdef, dict) and fdef.get("x-custom")) and not fname.startswith("ch_")
+			}
+			schema_copy = dict(schema_def)
+			schema_copy["properties"] = clean_props
+			if isinstance(schema_copy.get("required"), list):
+				schema_copy["required"] = [r for r in schema_copy["required"] if r in clean_props]
+			schemas[schema_name] = schema_copy
+
 		card = dict(schemas["Card"])
 		properties = dict(card["properties"])
 		canonical_enums = {

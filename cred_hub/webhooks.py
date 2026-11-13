@@ -102,10 +102,60 @@ def on_deal_update(doc, method=None):
 	if doc.has_value_changed("outcome") and doc.get("outcome") in OUTCOME_EVENTS:
 		events.append(OUTCOME_EVENTS[doc.outcome])
 	before = doc.get_doc_before_save()
-	if not events and before is not None and _record_changed(before, doc):
-		events.append("deal.updated")
+	if before is not None:
+		ignore = {"status", "outcome", "closed_date"} if events else set()
+		if _record_changed(before, doc, ignore=ignore):
+			events.append("deal.updated")
 	if events:
 		_trigger_record_event(events, doc, pipeline=doc.pipeline)
+	if before is not None:
+		_emit_collection_title_events(before, doc)
+
+
+def _emit_collection_title_events(before, doc):
+	"""Detecta novas promessas de pagamento (titles) e novos acordos parcelados (installments) no card."""
+	before_titles = {r.name: r for r in (before.get("titles") or []) if r.get("name")}
+	for row in doc.get("titles") or []:
+		new_date = row.get("promise_date")
+		if not new_date:
+			continue
+		old = before_titles.get(row.name)
+		old_date = old.get("promise_date") if old else None
+		old_amt = _plain(old.get("promise_amount")) if old else ""
+		if _plain(new_date) != _plain(old_date) or _plain(row.get("promise_amount")) != old_amt:
+			trigger_title_promise(doc, row.name, str(new_date), float(row.get("promise_amount") or 0))
+
+	before_inst = {r.name for r in (before.get("installments") or []) if r.get("name")}
+	new_slots_by_title: dict[str, list] = {}
+	for slot in doc.get("installments") or []:
+		if slot.get("name") in before_inst or slot.get("paid_on") or slot.get("cancelled_on"):
+			continue
+		if slot.get("title"):
+			new_slots_by_title.setdefault(slot.title, []).append(slot)
+
+	if new_slots_by_title:
+		titles_by_name = {r.name: r for r in (doc.get("titles") or []) if r.get("name")}
+		for title_row_name, slots in new_slots_by_title.items():
+			t_row = titles_by_name.get(title_row_name)
+			trigger_title_agreement(
+				doc,
+				{
+					"title_row": title_row_name,
+					"title_number": t_row.get("title_number") if t_row else None,
+					"erp_source": t_row.get("erp_source") if t_row else None,
+					"erp_title_id": t_row.get("erp_title_id") if t_row else None,
+					"installments_count": len(slots),
+					"total_amount": round(sum(float(s.get("amount") or 0) for s in slots), 2),
+					"installments": [
+						{
+							"number": s.get("number"),
+							"due_date": str(s.get("due_date")) if s.get("due_date") else None,
+							"amount": float(s.get("amount") or 0),
+						}
+						for s in slots
+					],
+				},
+			)
 
 
 def on_deal_trash(doc, method=None):
@@ -123,7 +173,7 @@ def on_contact_update(doc, method=None):
 	if doc.flags.in_insert:
 		return
 	before = doc.get_doc_before_save()
-	if before is not None and not _record_changed(before, doc):
+	if before is None or not _record_changed(before, doc):
 		return
 	_trigger_record_event("contact.updated", doc)
 
@@ -138,14 +188,15 @@ def on_organization_update(doc, method=None):
 	if doc.flags.in_insert:
 		return
 	before = doc.get_doc_before_save()
-	if before is not None and not _record_changed(before, doc):
+	if before is None or not _record_changed(before, doc):
 		return
 	_trigger_record_event("organization.updated", doc)
 
 
-def _record_changed(before, doc) -> bool:
+def _record_changed(before, doc, ignore: set[str] | None = None) -> bool:
+	ignored = {"modified", "creation"} | (ignore or set())
 	for fieldname in api_schema.public_fieldnames(doc.doctype):
-		if fieldname in ("modified", "creation"):
+		if fieldname in ignored:
 			continue
 		if _plain(before.get(fieldname)) != _plain(doc.get(fieldname)):
 			return True
@@ -227,9 +278,17 @@ def trigger_credit_limit_decided(
 	)
 
 
-def trigger_cedente_ready_to_register(deal_name: str):
+def has_active_subscribers(event_name: str, pipeline: str | None = None, reference_doctype=None, reference_name=None) -> bool:
+	"""Retorna True se houver pelo menos um webhook ativo inscrito no evento para o funil correspondente."""
+	sandbox_event = sandbox.is_sandbox_pipeline(pipeline) or sandbox.is_sandbox_record(reference_doctype, reference_name)
+	return bool(_subscribers(event_name, pipeline, reference_doctype, reference_name, sandbox_event))
+
+
+def trigger_cedente_ready_to_register(deal_or_name):
 	"""cedente.ready_to_register: card atingiu etapa de cadastro de cedente no ERP externo."""
-	deal = frappe.get_doc("CRM Deal", deal_name)
+	deal = frappe.get_doc("CRM Deal", deal_or_name) if isinstance(deal_or_name, str) else deal_or_name
+	if not has_active_subscribers("cedente.ready_to_register", pipeline=deal.pipeline, reference_doctype="CRM Deal", reference_name=deal.name):
+		return
 	from cred_hub.erp.cedente import cedente_payload
 
 	payload = cedente_payload(deal)
@@ -242,16 +301,19 @@ def trigger_cedente_ready_to_register(deal_name: str):
 	)
 
 
-def trigger_title_promise(deal_name: str, title_row_name: str, promise_date: str, promise_amount: float):
+def trigger_title_promise(deal_or_name, title_row_name: str, promise_date: str, promise_amount: float):
 	"""title.promise_recorded: promessa de pagamento registrada no card para um título."""
-	deal = frappe.get_doc("CRM Deal", deal_name)
-	row = next((r for r in deal.titles if r.name == title_row_name), None)
+	deal = frappe.get_doc("CRM Deal", deal_or_name) if isinstance(deal_or_name, str) else deal_or_name
+	if not has_active_subscribers("title.promise_recorded", pipeline=deal.pipeline, reference_doctype="CRM Deal", reference_name=deal.name):
+		return
+	row = next((r for r in (deal.get("titles") or []) if r.name == title_row_name), None)
 	payload = {
 		"deal": deal.name,
 		"pipeline": deal.pipeline,
 		"title_row": title_row_name,
-		"erp_source": row.erp_source if row else None,
-		"erp_title_id": row.erp_title_id if row else None,
+		"title_number": row.get("title_number") if row else None,
+		"erp_source": row.get("erp_source") if row else None,
+		"erp_title_id": row.get("erp_title_id") if row else None,
 		"promise_date": promise_date,
 		"promise_amount": promise_amount,
 	}
@@ -264,9 +326,11 @@ def trigger_title_promise(deal_name: str, title_row_name: str, promise_date: str
 	)
 
 
-def trigger_title_agreement(deal_name: str, agreement_payload: dict):
+def trigger_title_agreement(deal_or_name, agreement_payload: dict):
 	"""title.agreement_recorded: acordo de parcelamento/repactuação registrado."""
-	deal = frappe.get_doc("CRM Deal", deal_name)
+	deal = frappe.get_doc("CRM Deal", deal_or_name) if isinstance(deal_or_name, str) else deal_or_name
+	if not has_active_subscribers("title.agreement_recorded", pipeline=deal.pipeline, reference_doctype="CRM Deal", reference_name=deal.name):
+		return
 	payload = {
 		"deal": deal.name,
 		"pipeline": deal.pipeline,
