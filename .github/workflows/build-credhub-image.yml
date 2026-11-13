@@ -156,15 +156,16 @@ jobs:
           '
 
       - name: Sovereign Container & Dependency Vulnerability Audit (Trivy)
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          image-ref: '${{ env.GHCR_IMAGE }}'
-          format: 'table'
-          vuln-type: 'library'
-          scanners: 'vuln,secret'
-          severity: 'CRITICAL,HIGH'
-          ignore-unfixed: true
-          exit-code: '0'
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            ghcr.io/aquasecurity/trivy:latest image \
+            --scanners vuln,secret \
+            --pkg-types library \
+            --severity CRITICAL,HIGH \
+            --ignore-unfixed \
+            --exit-code 0 \
+            "${{ env.GHCR_IMAGE }}"
 
       - name: Log in to GitHub Container Registry (GHCR)
         uses: docker/login-action@v3
