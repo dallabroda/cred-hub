@@ -147,3 +147,12 @@ class TestErpFullMapping(IntegrationTestCase):
 		doc.set("title_field_map", [{"erp_column": "TIPO", "crm_field": "species"}, {"erp_column": "VALOR_TOTAL", "crm_field": "updated_amount"}])
 		doc.save(ignore_permissions=True)
 		self.assertEqual([r.crm_field for r in doc.title_field_map], ["updated_amount"])
+
+	def test_create_custom_crm_field(self):
+		res = erp_settings.create_custom_crm_field("CRM Deal Title", "Situação Teste ERP", "Data")
+		self.assertTrue(res["ok"])
+		self.assertEqual(res["fieldname"], "custom_situacao_teste_erp")
+		# Calling again returns already_exists
+		res2 = erp_settings.create_custom_crm_field("CRM Deal Title", "Situação Teste ERP", "Data")
+		self.assertTrue(res2["already_exists"])
+

@@ -4,7 +4,9 @@ Credentials live in the Single "Cred Hub ERP Settings" (Password fields, only Sy
 client company, so the settings are already per company.
 """
 
+import re
 import time
+import unicodedata
 
 import frappe
 from frappe import _
@@ -414,3 +416,57 @@ def erp_lists() -> dict:
 		return data
 	frappe.cache.set_value(LISTS_KEY, data, expires_in_sec=3600)
 	return data
+
+
+@frappe.whitelist(methods=["POST"])
+@requires_feature(CREDIT_AND_COLLECTION)
+def create_custom_crm_field(target_doctype: str, label: str, fieldtype: str = "Data") -> dict:
+	"""Creates a Custom Field directly from the ERP mapping screen. Admins only."""
+	frappe.only_for("System Manager")
+	allowed_doctypes = {"CRM Deal Title", "CRM Organization", "Contact"}
+	if target_doctype not in allowed_doctypes:
+		frappe.throw(_("Invalid target doctype."))
+
+	from .import_map import VALUE_TYPES
+
+	if fieldtype not in VALUE_TYPES:
+		fieldtype = "Data"
+
+	clean_label = (label or "").strip()
+	if not clean_label:
+		frappe.throw(_("Field label is required."))
+
+	# frappe.scrub keeps accents ("situação"), which is not a valid fieldname: fold to ASCII first
+	ascii_label = unicodedata.normalize("NFKD", clean_label).encode("ascii", "ignore").decode("ascii")
+	base_slug = re.sub(r"[^a-z0-9_]+", "_", ascii_label.lower()).strip("_")[:60]
+	if not base_slug:
+		frappe.throw(_("Field label must contain letters or numbers."))
+	fieldname = base_slug if base_slug.startswith("custom_") else f"custom_{base_slug}"
+
+	meta = frappe.get_meta(target_doctype)
+	if meta.has_field(fieldname):
+		existing = meta.get_field(fieldname)
+		return {
+			"ok": True,
+			"fieldname": fieldname,
+			"label": existing.label or clean_label,
+			"already_exists": True,
+		}
+
+	from frappe.custom.doctype.custom_field.custom_field import create_custom_field
+
+	df = {
+		"fieldname": fieldname,
+		"label": clean_label,
+		"fieldtype": fieldtype,
+		"insert_after": meta.fields[-1].fieldname if meta.fields else None,
+	}
+	create_custom_field(target_doctype, df, ignore_validate=True)
+	frappe.clear_cache(doctype=target_doctype)
+
+	return {
+		"ok": True,
+		"fieldname": fieldname,
+		"label": clean_label,
+		"already_exists": False,
+	}
