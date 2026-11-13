@@ -6,7 +6,7 @@ requires-python = ">=3.10"
 readme = "README.md"
 license = { text = "AGPL-3.0-or-later" }
 dynamic = ["version"]
-dependencies = ["ddgs>=9.0"]
+dependencies = ["ddgs>=9.0", "defusedxml>=0.7.1"]
 
 [build-system]
 requires = ["flit_core >=3.4,<4"]
