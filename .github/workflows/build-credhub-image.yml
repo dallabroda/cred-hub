@@ -1,0 +1,179 @@
+name: Build and Publish HubTech Docker Image (GHCR)
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      crm_ref:
+        description: 'dallabroda/crm tag/ref'
+        required: false
+        default: 'ch-1.89.1-43'
+      cred_hub_ref:
+        description: 'dallabroda/cred-hub tag/ref'
+        required: false
+        default: 'v0.36.0'
+      frappe_branch:
+        description: 'dallabroda/frappe tag/ref'
+        required: false
+        default: 'ch-16.53.0-12'
+      frappe_docker_ref:
+        description: 'dallabroda/frappe_docker commit SHA'
+        required: false
+        default: '234e64fe9254ad012f7e1a5b344381fefd3d0153'
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: build-credhub-image-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Free unused runner SDKs to guarantee >35 GB disk for Frappe build
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          df -h /
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Generate apps.json, validate ADR 0005 and compute CACHE_BUST
+        run: |
+          set -euo pipefail
+          CRM_REF="${{ inputs.crm_ref || 'ch-1.89.1-43' }}"
+          if [[ "${{ github.ref }}" == refs/tags/v* ]] && [ -z "${{ inputs.cred_hub_ref }}" ]; then
+            CH_REF="${GITHUB_REF_NAME}"
+          else
+            CH_REF="${{ inputs.cred_hub_ref || 'v0.36.0' }}"
+          fi
+          FRAPPE_PATH="https://github.com/dallabroda/frappe"
+          FRAPPE_BRANCH="${{ inputs.frappe_branch || 'ch-16.53.0-12' }}"
+          FRAPPE_DOCKER_REPO="https://github.com/dallabroda/frappe_docker"
+          FRAPPE_DOCKER_REF="${{ inputs.frappe_docker_ref || '234e64fe9254ad012f7e1a5b344381fefd3d0153' }}"
+
+          mkdir -p /tmp/credhub-cfg
+          cat > /tmp/credhub-cfg/apps.json <<EOF
+          [
+            {
+              "url": "https://github.com/dallabroda/crm",
+              "branch": "${CRM_REF}"
+            },
+            {
+              "url": "https://github.com/dallabroda/cred-hub",
+              "branch": "${CH_REF}"
+            }
+          ]
+          EOF
+
+          if grep -Eq 'github\.com/frappe/' /tmp/credhub-cfg/apps.json; then
+            echo "FATAL: apps.json points to upstream repository (violates ADR 0005)"
+            exit 1
+          fi
+
+          CRM_PIN="${CRM_REF#ch-}"
+          CH_PIN="${CH_REF#v}"
+          F_PIN="${FRAPPE_BRANCH#ch-}"
+          IMAGE_TAG="ch1-crm${CRM_PIN}-ch${CH_PIN}-f${F_PIN}"
+          OWNER_LC=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          GHCR_IMAGE="ghcr.io/${OWNER_LC}/cred-hub:${IMAGE_TAG}"
+
+          REFS=$(python3 - /tmp/credhub-cfg/apps.json "$FRAPPE_PATH" "$FRAPPE_BRANCH" <<'PY'
+          import json, subprocess, sys
+          apps = [(a["url"], a["branch"]) for a in json.load(open(sys.argv[1]))] + [(sys.argv[2], sys.argv[3])]
+          for url, ref in apps:
+              wanted = [f"refs/tags/{ref}^{{}}", f"refs/tags/{ref}", f"refs/heads/{ref}"]
+              out = subprocess.run(["git", "ls-remote", url, *wanted], capture_output=True, text=True, timeout=60)
+              found = dict(reversed(line.split("\t")) for line in out.stdout.splitlines() if "\t" in line)
+              sha = next((found[r] for r in wanted if r in found), None)
+              if out.returncode or not sha:
+                  print(f"Missing ref {ref} in {url}", file=sys.stderr)
+                  sys.exit(1)
+              print(url, ref, sha)
+          PY
+          )
+          CACHE_BUST=$({ cat /tmp/credhub-cfg/apps.json; printf '%s\n' "$FRAPPE_PATH" "$FRAPPE_BRANCH" "$REFS"; } | sha256sum | cut -c1-16)
+
+          {
+            echo "GHCR_IMAGE=${GHCR_IMAGE}"
+            echo "FRAPPE_PATH=${FRAPPE_PATH}"
+            echo "FRAPPE_BRANCH=${FRAPPE_BRANCH}"
+            echo "FRAPPE_DOCKER_REPO=${FRAPPE_DOCKER_REPO}"
+            echo "FRAPPE_DOCKER_REF=${FRAPPE_DOCKER_REF}"
+            echo "CACHE_BUST=${CACHE_BUST}"
+          } >> "$GITHUB_ENV"
+          echo "Target image: ${GHCR_IMAGE} (CACHE_BUST=${CACHE_BUST})"
+
+      - name: Clone pinned frappe_docker installer
+        run: |
+          git clone -q "$FRAPPE_DOCKER_REPO" /tmp/frappe_docker
+          git -C /tmp/frappe_docker checkout -q "$FRAPPE_DOCKER_REF"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build HubTech image into local daemon for pre-push audit
+        uses: docker/build-push-action@v6
+        with:
+          context: /tmp/frappe_docker
+          file: /tmp/frappe_docker/images/custom/Containerfile
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: |
+            ${{ env.GHCR_IMAGE }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/dallabroda/cred-hub
+          build-args: |
+            FRAPPE_PATH=${{ env.FRAPPE_PATH }}
+            FRAPPE_BRANCH=${{ env.FRAPPE_BRANCH }}
+            CACHE_BUST=${{ env.CACHE_BUST }}
+          secret-files: |
+            apps_json=/tmp/credhub-cfg/apps.json
+          cache-from: type=gha,scope=credhub-linux-amd64
+          cache-to: type=gha,mode=max,scope=credhub-linux-amd64
+
+      - name: Verify image invariants (apps.txt, ADR 0005, zero secrets & sovereign RCE hardening)
+        run: |
+          set -euo pipefail
+          for app in crm cred_hub; do
+            docker run --rm --entrypoint cat "${{ env.GHCR_IMAGE }}" /home/frappe/frappe-bench/sites/apps.txt | grep -qx "$app"
+          done
+
+          docker run --rm --entrypoint sh "${{ env.GHCR_IMAGE }}" -c '
+            set -e
+            CFG_CONTENT=$(tr -d "[:space:]" < /home/frappe/frappe-bench/sites/common_site_config.json)
+            test "$CFG_CONTENT" = "{}" || { echo "FATAL: common_site_config.json is not empty ($CFG_CONTENT)"; exit 1; }
+            GIT_DIRS=$(find /home/frappe/frappe-bench/apps -mindepth 1 -path "*/.git" | wc -l)
+            test "$GIT_DIRS" -eq 0 || { echo "FATAL: .git directories left in apps/"; exit 1; }
+            grep -q "System Console is disabled by HubTech security policy" /home/frappe/frappe-bench/apps/frappe/frappe/desk/doctype/system_console/system_console.py
+            grep -q "Web backup downloads are disabled by security policy" /home/frappe/frappe-bench/apps/frappe/frappe/utils/response.py
+          '
+
+      - name: Sovereign Container & Dependency Vulnerability Audit (Trivy)
+        run: |
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            ghcr.io/aquasecurity/trivy:latest image \
+            --scanners vuln,secret \
+            --pkg-types library \
+            --severity CRITICAL,HIGH \
+            --ignore-unfixed \
+            --exit-code 0 \
+            "${{ env.GHCR_IMAGE }}"
+
+      - name: Log in to GitHub Container Registry (GHCR)
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push verified HubTech image to GHCR
+        run: |
+          docker push "${{ env.GHCR_IMAGE }}"

@@ -11,7 +11,8 @@ e `cenprot/README.md` da documentação de APIs (credtech#290, módulo 2).
 import time
 import unicodedata
 from datetime import datetime
-from xml.etree import ElementTree as ET
+from defusedxml import ElementTree as ET
+from defusedxml.common import DefusedXmlException
 from xml.sax.saxutils import escape
 
 import requests
@@ -349,7 +350,7 @@ class CenprotClient:
 			raise CenprotError(_("Could not reach CENPROT. Try again in a few minutes.")) from e
 		try:
 			root = ET.fromstring(response.content)
-		except ET.ParseError as e:
+		except (ET.ParseError, DefusedXmlException) as e:
 			raise CenprotError(_("CENPROT answered with an invalid response (HTTP {0}).").format(response.status_code)) from e
 		return root, response.content.decode("utf-8", errors="replace")
 
