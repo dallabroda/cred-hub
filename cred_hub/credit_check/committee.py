@@ -306,10 +306,11 @@ def validate_document_with_ai(
 		"Responda estritamente em conformidade com o esquema JSON solicitado."
 	)
 	text_sample = text[:8000]
+	cnpj_instruction = org_cnpj if org_cnpj else "Não informado no cadastro (ignorar divergência de CNPJ se não houver no cadastro)"
 	user_text = (
 		f"Dados da Empresa no CRM:\n"
 		f"- Razão Social: {org_title}\n"
-		f"- CNPJ: {org_cnpj}\n\n"
+		f"- CNPJ: {cnpj_instruction}\n\n"
 		f"Item Solicitado na Pasta Digital:\n"
 		f"- Chave: {item_key}\n"
 		f"- Descrição: {label or item_key}\n"
@@ -320,6 +321,7 @@ def validate_document_with_ai(
 
 	try:
 		client = vertex_client()
+		client.timeout = 15  # Timeout curto (15s) para validação rápida de documento sem travar upload HTTP
 		raw, result = client.generate_json(
 			model="gemini-3.5-flash-lite",
 			system=system,
@@ -329,13 +331,28 @@ def validate_document_with_ai(
 		)
 		rejection_reasons = [str(r).strip() for r in (raw.get("rejection_reasons") or []) if str(r).strip()]
 		rejection_risk = bool(raw.get("rejection_risk"))
+
+		# Proteção defensiva: se a IA detectou tipo inválido ou CNPJ divergente, garante rejection_risk = True
+		if raw.get("is_valid_type") is False:
+			rejection_risk = True
+			type_reason = f"Documento anexado ({raw.get('detected_type') or 'não reconhecido'}) não confere com o solicitado ({label or item_key})"
+			if type_reason not in rejection_reasons:
+				rejection_reasons.append(type_reason)
+
+		if org_cnpj and raw.get("cnpj_matches") is False and raw.get("detected_cnpj"):
+			rejection_risk = True
+			cnpj_reason = f"CNPJ detectado ({raw.get('detected_cnpj')}) diverge do cadastro ({org_cnpj})"
+			if cnpj_reason not in rejection_reasons:
+				rejection_reasons.append(cnpj_reason)
+
 		if not rejection_risk and rejection_reasons:
 			rejection_risk = True
 
+		cnpj_valid = True if not org_cnpj else bool(raw.get("cnpj_matches"))
 		suggested_action = (
 			"reject"
 			if rejection_risk
-			else ("verify" if raw.get("is_valid_type") and raw.get("cnpj_matches") else "review")
+			else ("verify" if raw.get("is_valid_type") and cnpj_valid else "review")
 		)
 		suggested_reason = " · ".join(rejection_reasons) if rejection_risk else ""
 
