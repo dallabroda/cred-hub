@@ -62,7 +62,7 @@ WEBHOOK_OPT_IN_FIELDS = frozenset({"credit_verdict", "credit_report"})
 # Keys of `related` for each record
 RELATED_KEYS = {DEAL: ("organization", "second_organization", "contacts"), CONTACT: ("organization",)}
 
-OPENAPI_CACHE_KEY = "credhub_openapi_spec"
+OPENAPI_CACHE_KEY = "credhub_openapi_spec_v2"
 OPENAPI_CACHE_SECONDS = 24 * 60 * 60
 # Pipelines and stages listed as enums; past this the enum is left out (the spec stays small)
 MAX_ENUM = 500
@@ -401,7 +401,489 @@ def _shared_schemas() -> dict:
 			},
 			"required": ["event", "version", "delivery_id", "attempt", "timestamp", "data"],
 		},
+		"ErrorEnvelope": {
+			"type": "object",
+			"description": "Unified JSON error envelope returned by all /api/v1/* endpoints.",
+			"properties": {
+				"error": {
+					"type": "object",
+					"properties": {
+						"code": text,
+						"type": text,
+						"message": text,
+						"request_id": text,
+					},
+					"required": ["code", "type", "message", "request_id"],
+				}
+			},
+			"required": ["error"],
+		},
 	}
+
+
+def _name_param() -> list[dict]:
+	return [{"name": "name", "in": "path", "required": True, "schema": {"type": "string"}}]
+
+
+def _v1_error_responses(*codes: str) -> dict:
+	descriptions = {
+		"400": "Invalid request parameter or unsupported API version",
+		"401": "Missing, invalid or expired API key",
+		"403": "Insufficient scope or funnel permission",
+		"404": "Record or endpoint not found",
+		"409": "Idempotency conflict or transient database lock",
+		"422": "Validation error or read-only field refused",
+		"429": "Rate limit exceeded (check Retry-After header)",
+	}
+	return {
+		code: {
+			"description": descriptions.get(code, "Error"),
+			"content": {"application/json": {"schema": _ref("ErrorEnvelope")}},
+		}
+		for code in codes
+	}
+
+
+def _v1_resource_paths(doctype: str, slug: str, supports_upsert: bool = False, supports_comments: bool = False) -> dict:
+	schema = SCHEMA_NAMES[doctype]
+	tag = schema + "s"
+	wrapped = {"type": "object", "properties": {"data": _ref(schema)}}
+	cursor_list = {
+		"type": "object",
+		"properties": {
+			"data": {"type": "array", "items": _ref(schema)},
+			"next_cursor": {"type": ["string", "null"]},
+			"has_more": {"type": "boolean"},
+			"count": {"type": "integer"},
+		},
+	}
+	paths: dict = {
+		f"/api/v1/{slug}": {
+			"get": {
+				"summary": f"List {tag.lower()} (cursor pagination)",
+				"tags": [tag],
+				"parameters": [
+					{"name": "fields", "in": "query", "schema": {"type": "string"}},
+					{"name": "filters", "in": "query", "schema": {"type": "string"}},
+					{"name": "updated_since", "in": "query", "schema": {"type": "string"}},
+					{"name": "limit", "in": "query", "schema": {"type": "integer"}},
+					{"name": "cursor", "in": "query", "schema": {"type": "string"}},
+				],
+				"responses": {
+					"200": {"description": "OK", "content": {"application/json": {"schema": cursor_list}}},
+					**_v1_error_responses("400", "401", "403", "429"),
+				},
+			},
+			"post": {
+				"summary": f"Create a {schema.lower()}",
+				"tags": [tag],
+				"requestBody": {"required": True, "content": {"application/json": {"schema": _ref(schema)}}},
+				"responses": {
+					"201": {"description": "Created", "content": {"application/json": {"schema": wrapped}}},
+					**_v1_error_responses("400", "401", "403", "422", "429"),
+				},
+			},
+		},
+		f"/api/v1/{slug}/{{name}}": {
+			"parameters": _name_param(),
+			"get": {
+				"summary": f"Read a {schema.lower()}",
+				"tags": [tag],
+				"responses": {
+					"200": {"description": "OK", "content": {"application/json": {"schema": wrapped}}},
+					**_v1_error_responses("401", "403", "404"),
+				},
+			},
+			"patch": {
+				"summary": f"Update fields of a {schema.lower()}",
+				"tags": [tag],
+				"requestBody": {"required": True, "content": {"application/json": {"schema": _ref(schema)}}},
+				"responses": {
+					"200": {"description": "Updated", "content": {"application/json": {"schema": wrapped}}},
+					**_v1_error_responses("401", "403", "404", "422"),
+				},
+			},
+			"put": {
+				"summary": f"Update a {schema.lower()}",
+				"tags": [tag],
+				"requestBody": {"required": True, "content": {"application/json": {"schema": _ref(schema)}}},
+				"responses": {
+					"200": {"description": "Updated", "content": {"application/json": {"schema": wrapped}}},
+					**_v1_error_responses("401", "403", "404", "422"),
+				},
+			},
+			"delete": {
+				"summary": f"Delete a {schema.lower()} (requires allow_delete scope)",
+				"tags": [tag],
+				"responses": {
+					"200": {"description": "Deleted"},
+					**_v1_error_responses("401", "403", "404"),
+				},
+			},
+		},
+	}
+	if supports_upsert:
+		paths[f"/api/v1/{slug}/upsert"] = _method(
+			f"Smart upsert of a {schema.lower()} by external_id, tax ID or name",
+			tag,
+			"post",
+			body=_form_body({"record": {"type": "object"}, "match_by": {"type": "string"}}, ["record"]),
+			extra=_v1_error_responses("401", "403", "422"),
+		)
+	if supports_comments:
+		paths[f"/api/v1/{slug}/{{name}}/comments"] = {
+			"parameters": _name_param(),
+			"get": {
+				"summary": f"List timeline comments of a {schema.lower()}",
+				"tags": [tag],
+				"parameters": [{"name": "limit", "in": "query", "schema": {"type": "integer"}}],
+				"responses": {"200": {"description": "OK"}, **_v1_error_responses("401", "403", "404")},
+			},
+			"post": {
+				"summary": f"Add a timeline comment to a {schema.lower()}",
+				"tags": [tag],
+				"requestBody": _form_body({"content": {"type": "string"}}, ["content"]),
+				"responses": {"201": {"description": "Comment created"}, **_v1_error_responses("401", "403", "404", "422")},
+			},
+		}
+	return paths
+
+
+def _v1_paths() -> dict:
+	from crm.fcrm.doctype.crm_pipeline.fields import FIELD_TYPES
+
+	resource_enum = ["deals", "organizations", "contacts", "notes", "tasks", "files"]
+	field_props = {
+		"label": {"type": "string"},
+		"fieldtype": {"type": "string", "enum": list(FIELD_TYPES)},
+		"options": {"type": "string"},
+		"resource": {"type": "string", "enum": ["deals", "contacts", "organizations"], "default": "deals"},
+		"placement": {"type": "array", "items": {"type": "object"}},
+		"required": {"type": "boolean"},
+	}
+	checklist_resp = {
+		"description": "OK",
+		"content": {"application/json": {"schema": {"type": "object", "properties": {"data": _ref("Checklist")}}}},
+	}
+	item_resp = {
+		"description": "Uploaded",
+		"content": {"application/json": {"schema": {"type": "object", "properties": {"data": _ref("ChecklistItem")}}}},
+	}
+	field_resp = {
+		"description": "OK",
+		"content": {"application/json": {"schema": {"type": "object", "properties": {"data": _ref("CatalogField")}}}},
+	}
+
+	paths: dict = {}
+	paths.update(_v1_resource_paths(DEAL, "deals", supports_upsert=True, supports_comments=True))
+	paths.update(_v1_resource_paths(ORGANIZATION, "organizations", supports_upsert=True, supports_comments=True))
+	paths.update(_v1_resource_paths(CONTACT, "contacts", supports_upsert=True, supports_comments=True))
+	paths.update(_v1_resource_paths(NOTE, "notes"))
+	paths.update(_v1_resource_paths(TASK, "tasks"))
+
+	paths["/api/v1/deals/{name}/move"] = {
+		"parameters": _name_param(),
+		**_method(
+			"Move a card to another stage (validates stage rules and Digital Folder gates)",
+			"Cards",
+			"post",
+			body=_form_body({"stage": {"type": "string"}, "values": {"type": "object"}}, ["stage"]),
+			extra=_v1_error_responses("400", "401", "403", "404", "422"),
+		),
+	}
+	paths["/api/v1/deals/{name}/pipeline"] = {
+		"parameters": _name_param(),
+		**_method(
+			"Transfer a card to another pipeline",
+			"Cards",
+			"post",
+			body=_form_body({"pipeline": {"type": "string"}, "stage": {"type": "string"}, "values": {"type": "object"}}, ["pipeline"]),
+			extra=_v1_error_responses("400", "401", "403", "404", "422"),
+		),
+	}
+	paths["/api/v1/deals/{name}/contacts"] = {
+		"parameters": _name_param(),
+		**_method("List contacts linked to a card", "Cards", extra=_v1_error_responses("401", "403", "404")),
+	}
+	paths["/api/v1/leads"] = _method(
+		"Create an incoming lead for automatic funnel conversion and assignment",
+		"Leads",
+		"post",
+		body=_form_body(
+			{
+				"first_name": {"type": "string"},
+				"last_name": {"type": "string"},
+				"email": {"type": "string"},
+				"mobile_no": {"type": "string"},
+				"organization": {"type": "string"},
+				"cnpj": {"type": "string"},
+				"pipeline": {"type": "string"},
+			},
+			["first_name"],
+		),
+		response={"description": "Created"},
+		extra={"201": {"description": "Created"}, **_v1_error_responses("401", "403", "422")},
+	)
+	paths["/api/v1/files"] = {
+		"get": {
+			"summary": "List private attachments visible to this API key",
+			"tags": ["Files"],
+			"parameters": [
+				{"name": "limit", "in": "query", "schema": {"type": "integer"}},
+				{"name": "cursor", "in": "query", "schema": {"type": "string"}},
+			],
+			"responses": {"200": {"description": "OK"}, **_v1_error_responses("401", "403")},
+		},
+		"post": {
+			"summary": "Upload a private file attached to a card, organization or contact",
+			"tags": ["Files"],
+			"requestBody": {
+				"required": True,
+				"content": {
+					"multipart/form-data": {
+						"schema": {
+							"type": "object",
+							"properties": {
+								"file": {"type": "string", "format": "binary"},
+								"resource": {"type": "string", "enum": ["deals", "organizations", "contacts"]},
+								"record_id": {"type": "string"},
+							},
+							"required": ["file"],
+						}
+					}
+				},
+			},
+			"responses": {"201": {"description": "Uploaded"}, **_v1_error_responses("401", "403", "422")},
+		},
+	}
+	paths["/api/v1/files/{name}"] = {
+		"parameters": _name_param(),
+		"get": {"summary": "Read attachment metadata", "tags": ["Files"], "responses": {"200": {"description": "OK"}, **_v1_error_responses("401", "403", "404")}},
+		"delete": {"summary": "Delete an attachment (requires allow_delete)", "tags": ["Files"], "responses": {"200": {"description": "Deleted"}, **_v1_error_responses("401", "403", "404")}},
+	}
+	paths["/api/v1/pipelines"] = _method("List pipelines and stages authorized for this key", "Pipelines", extra=_v1_error_responses("401", "403"))
+	paths["/api/v1/pipelines/{name}"] = {
+		"parameters": _name_param(),
+		"get": {"summary": "Read pipeline configuration, stages and fields", "tags": ["Pipelines"], "responses": {"200": {"description": "OK"}, **_v1_error_responses("401", "403", "404")}},
+		"put": {
+			"summary": "Update pipeline fields and stage rules (fields_admin)",
+			"tags": ["Pipelines"],
+			"requestBody": _form_body({"fields": {"type": "array", "items": {"type": "object"}}, "field_rules": {"type": "object"}}, []),
+			"responses": {"200": {"description": "Updated"}, **_v1_error_responses("401", "403", "422")},
+		},
+	}
+	paths["/api/v1/fields"] = {
+		"get": {
+			"summary": "List standard and custom fields catalog",
+			"tags": ["Fields"],
+			"parameters": [{"name": "resource", "in": "query", "schema": {"type": "string", "enum": ["deals", "contacts", "organizations"]}}],
+			"responses": {"200": {"description": "OK"}, **_v1_error_responses("401", "403")},
+		},
+		"post": {
+			"summary": "Create a custom field (fields_admin)",
+			"tags": ["Fields"],
+			"requestBody": _form_body(field_props, ["label", "fieldtype"]),
+			"responses": {"201": field_resp, **_v1_error_responses("401", "403", "422")},
+		},
+	}
+	paths["/api/v1/fields/{name}"] = {
+		"parameters": _name_param(),
+		"patch": {
+			"summary": "Rename a custom field or update its options (fields_admin)",
+			"tags": ["Fields"],
+			"requestBody": _form_body({"label": {"type": "string"}, "options": {"type": "string"}, "resource": field_props["resource"]}, []),
+			"responses": {"200": field_resp, **_v1_error_responses("401", "403", "422")},
+		},
+		"delete": {
+			"summary": "Disable a custom field while keeping stored data (fields_admin)",
+			"tags": ["Fields"],
+			"parameters": [{"name": "resource", "in": "query", "schema": {"type": "string"}}],
+			"responses": {"200": field_resp, **_v1_error_responses("401", "403", "404")},
+		},
+	}
+	paths["/api/v1/forms/schema"] = {
+		"get": {
+			"summary": "Read form layout, visible, required and read-only fields for a pipeline/stage",
+			"tags": ["Fields"],
+			"parameters": [
+				{"name": "resource", "in": "query", "schema": {"type": "string"}},
+				{"name": "pipeline", "in": "query", "schema": {"type": "string"}},
+				{"name": "stage", "in": "query", "schema": {"type": "string"}},
+				{"name": "block", "in": "query", "schema": {"type": "string"}},
+			],
+			"responses": {"200": {"description": "OK"}, **_v1_error_responses("401", "403")},
+		},
+		"put": {
+			"summary": "Save form configuration for a pipeline/stage or entity (fields_admin)",
+			"tags": ["Fields"],
+			"requestBody": _form_body(
+				{
+					"resource": field_props["resource"],
+					"pipeline": {"type": "string"},
+					"stage": {"type": "string"},
+					"block": {"type": "string"},
+					"fields": {"type": "array", "items": {"type": "object"}},
+				},
+				["fields"],
+			),
+			"responses": {"200": {"description": "Saved"}, **_v1_error_responses("401", "403", "422")},
+		},
+	}
+	paths["/api/v1/lookup"] = _method(
+		"Unified 360 lookup by CNPJ or CPF (organization/contact, open cards, Digital Folder and credit verdict)",
+		"Search",
+		params=[("document", True)],
+		extra=_v1_error_responses("401", "403", "422"),
+	)
+	paths["/api/v1/sync/records"] = _method(
+		"Deterministic cursor pagination with updated_since delta for ERP synchronization",
+		"Sync",
+		params=[("resource", True), ("fields", False), ("updated_since", False), ("limit", False), ("cursor", False)],
+		extra=_v1_error_responses("400", "401", "403"),
+	)
+	paths["/api/v1/sync/deleted"] = _method(
+		"Incremental log of deleted records since a timestamp",
+		"Sync",
+		params=[("resource", True), ("since", False)],
+		extra=_v1_error_responses("400", "401", "403"),
+	)
+	paths["/api/v1/bulk/upsert"] = _method(
+		"Batch create or update up to 50 records with per-item savepoint isolation",
+		"Sync",
+		"post",
+		body=_form_body(
+			{"resource": {"type": "string", "enum": resource_enum[:3]}, "records": {"type": "array", "items": {"type": "object"}}},
+			["resource", "records"],
+		),
+		extra=_v1_error_responses("401", "403", "409", "422"),
+	)
+	paths["/api/v1/bulk/delete"] = _method(
+		"Batch delete up to 50 records (requires allow_delete scope)",
+		"Sync",
+		"post",
+		body=_form_body(
+			{"resource": {"type": "string", "enum": resource_enum[:3]}, "names": {"type": "array", "items": {"type": "string"}}},
+			["resource", "names"],
+		),
+		extra=_v1_error_responses("401", "403", "409", "422"),
+	)
+	paths["/api/v1/credit/onboarding"] = _method(
+		"Read Credit PJ onboarding summary, Digital Folder status, portal link and visit report",
+		"Digital Folder",
+		params=[("organization", False), ("deal", False)],
+		extra=_v1_error_responses("401", "403", "404"),
+	)
+	paths["/api/v1/credit/checklist"] = _method(
+		"Read Digital Folder checklist item by item",
+		"Digital Folder",
+		params=[("organization", False), ("deal", False)],
+		response=checklist_resp,
+		extra=_v1_error_responses("401", "403", "404"),
+	)
+	paths["/api/v1/credit/checklist/upload"] = {
+		"post": {
+			"summary": "Upload a document into a Digital Folder checklist item (files_write + credit_read)",
+			"tags": ["Digital Folder"],
+			"requestBody": {
+				"required": True,
+				"content": {
+					"multipart/form-data": {
+						"schema": {
+							"type": "object",
+							"properties": {
+								"item_key": {"type": "string"},
+								"organization": {"type": "string"},
+								"deal": {"type": "string"},
+								"valid_until": {"type": "string", "format": "date"},
+								"file": {"type": "string", "format": "binary"},
+							},
+							"required": ["item_key", "file"],
+						}
+					}
+				},
+			},
+			"responses": {"201": item_resp, **_v1_error_responses("401", "403", "422")},
+		}
+	}
+	paths["/api/v1/credit/checklist/items"] = _method(
+		"Update status or review notes of a Digital Folder checklist item",
+		"Digital Folder",
+		"patch",
+		body=_form_body(
+			{
+				"organization": {"type": "string"},
+				"deal": {"type": "string"},
+				"item_key": {"type": "string"},
+				"status": {"type": "string", "enum": ["pending", "attached", "verified", "rejected"]},
+				"reason": {"type": "string"},
+				"notes": {"type": "string"},
+				"valid_until": {"type": "string", "format": "date"},
+			},
+			["item_key", "status"],
+		),
+		extra=_v1_error_responses("401", "403", "422"),
+	)
+	paths["/api/v1/credit/portal-link"] = {
+		"post": {
+			"summary": "Create or retrieve the CNPJ-protected external upload link",
+			"tags": ["Digital Folder"],
+			"requestBody": _form_body({"organization": {"type": "string"}, "deal": {"type": "string"}, "regenerate": {"type": "boolean"}}, []),
+			"responses": {"200": {"description": "OK"}, **_v1_error_responses("401", "403", "422")},
+		},
+		"delete": {
+			"summary": "Revoke the external upload link",
+			"tags": ["Digital Folder"],
+			"requestBody": _form_body({"organization": {"type": "string"}, "deal": {"type": "string"}}, []),
+			"responses": {"200": {"description": "Revoked"}, **_v1_error_responses("401", "403")},
+		},
+	}
+	paths["/api/v1/credit/checks"] = _method(
+		"Trigger credit bureau check for a card (requires opt-in credit_paid_queries scope)",
+		"Digital Folder",
+		"post",
+		body=_form_body({"deal": {"type": "string"}}, ["deal"]),
+		extra=_v1_error_responses("401", "403", "422"),
+	)
+	paths["/api/v1/erp/titles"] = _method(
+		"Push batch of open/overdue titles from external ERP into the collection funnel",
+		"ERP Push",
+		"post",
+		body=_form_body({"titles": {"type": "array", "items": {"type": "object"}}, "erp_source": {"type": "string"}}, ["titles"]),
+		extra=_v1_error_responses("401", "403", "422"),
+	)
+	paths["/api/v1/erp/settlements"] = _method(
+		"Push batch of settlements/liquidations from external ERP to close titles",
+		"ERP Push",
+		"post",
+		body=_form_body({"settlements": {"type": "array", "items": {"type": "object"}}, "erp_source": {"type": "string"}}, ["settlements"]),
+		extra=_v1_error_responses("401", "403", "422"),
+	)
+	paths["/api/v1/erp/registrations"] = _method(
+		"Register ERP customer registration confirmation or error",
+		"ERP Push",
+		"post",
+		body=_form_body(
+			{
+				"deal": {"type": "string"},
+				"status": {"type": "string"},
+				"erp_source": {"type": "string"},
+				"external_id": {"type": "string"},
+				"error_message": {"type": "string"},
+			},
+			["deal", "status", "erp_source"],
+		),
+		extra=_v1_error_responses("401", "403", "422"),
+	)
+	paths["/api/v1/openapi.json"] = _method(
+		"Download OpenAPI specification (3.1.0 default, or openapi_version=3.0)",
+		"Schema",
+		params=[("openapi_version", False), ("format", False)],
+	)
+	paths["/api/v1/postman.json"] = _method(
+		"Download ready-to-import Postman Collection v2.1",
+		"Schema",
+	)
+	return paths
 
 
 def _method_paths() -> dict:
@@ -661,6 +1143,7 @@ def build_openapi_spec() -> dict:
 	schemas = {SCHEMA_NAMES[dt]: record_schema(dt, pipelines, stages) for dt in PUBLIC_DOCTYPES}
 	schemas.update(_shared_schemas())
 	paths = {}
+	paths.update(_v1_paths())
 	for doctype in PUBLIC_DOCTYPES:
 		paths.update(_resource_paths(doctype))
 	paths.update(_method_paths())
@@ -669,13 +1152,14 @@ def build_openapi_spec() -> dict:
 		"openapi": "3.1.0",
 		"info": {
 			"title": "HubTech CRM API",
-			"version": "2.0.0",
+			"version": "1.0.0",
 			"description": (
-				"REST and RPC API of HubTech CRM for this company: cards, organizations, contacts, tasks, notes, "
-				"pipelines, fields and the Digital Folder. Record schemas include the company's own fields (x-custom). "
-				"API version 1: every answer carries X-HubTech-API-Version; send the same header to pin it (an unknown "
-				"version answers 400). Breaking changes only in a new version, announced at least 90 days ahead with "
-				"Deprecation and Sunset headers."
+				"REST API v1 of HubTech CRM for this company: cards, organizations, contacts, leads, tasks, notes, "
+				"files, pipelines, dynamic fields, ERP Push and the Digital Folder. Record schemas include the "
+				"company's own fields (x-custom). API version 1: every answer carries X-HubTech-API-Version: 1; send "
+				"the same header to pin it (an unknown version answers 400). Errors on /api/v1/* return a unified JSON "
+				"envelope {error: {code, type, message, request_id}}. Breaking changes only ship in a new version, "
+				"announced at least 90 days ahead with Deprecation and Sunset headers."
 			),
 			"x-hubtech-api-version": "1",
 		},
@@ -733,7 +1217,7 @@ def to_postman_collection(spec: dict) -> dict:
 			"name": spec.get("info", {}).get("title") or "HubTech CRM API",
 			"description": spec.get("info", {}).get("description") or "",
 			"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-			"version": spec.get("info", {}).get("version") or "2.0.0",
+			"version": spec.get("info", {}).get("version") or "1.0.0",
 		},
 		"auth": {
 			"type": "bearer",
@@ -795,13 +1279,16 @@ def to_postman_collection(spec: dict) -> dict:
 	return collection
 
 
-def openapi_spec(openapi_version: str | None = None) -> dict:
-	"""Cached per site; the server URL is filled in per call (the same site answers on more than one host)."""
+def openapi_spec(openapi_version: str | None = None, surface: str = "all") -> dict:
+	"""Cached per site; the server URL is filled in per call (the same site answers on more than one host).
+	`surface="v1"` exposes exclusively sovereign `/api/v1/*` paths."""
 	spec = frappe.cache.get_value(OPENAPI_CACHE_KEY)
 	if not spec:
 		spec = build_openapi_spec()
 		frappe.cache.set_value(OPENAPI_CACHE_KEY, spec, expires_in_sec=OPENAPI_CACHE_SECONDS)
 	spec = _visible_enums(copy.copy(spec))
+	if surface == "v1":
+		spec["paths"] = {p: item for p, item in (spec.get("paths") or {}).items() if p.startswith("/api/v1/")}
 	spec["servers"] = [{"url": frappe.utils.get_url()}]
 	if openapi_version in ("3.0", "3.0.3"):
 		return to_openapi_3_0(spec)
