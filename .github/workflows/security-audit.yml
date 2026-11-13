@@ -63,7 +63,7 @@ jobs:
         run: |
           # Audit direct runtime dependencies of cred-hub
           python -m venv /tmp/audit-venv
-          /tmp/audit-venv/bin/pip install -q requests "PyJWT[crypto]" ddgs
+          /tmp/audit-venv/bin/pip install -q requests "PyJWT[crypto]" ddgs defusedxml
           /tmp/audit-venv/bin/pip install -q pip-audit
           /tmp/audit-venv/bin/pip-audit --desc
 
